@@ -474,11 +474,17 @@ tr:hover td{background:#F9F9F9}
           <div class="form-group col-2"><label>Link da Ordem de Compra</label><input type="url" id="f-link-ordem" placeholder="https://..."></div>
           <div class="form-group"><label>Nota fiscal *</label><input type="text" id="f-nf" placeholder="Ex: 001234"></div>
           <div class="form-group"><label>Data da ordem *</label><input type="date" id="f-data"></div>
-          <div class="form-group"><label>Categoria *</label><select id="f-categoria"><option value="">Selecione...</option><option value="Serviço">Serviço</option><option value="Produto">Produto</option></select></div>
-          <div class="form-group col-2"><label>Item / descrição *</label><input type="text" id="f-item" placeholder="Ex: Troca de óleo, filtro de ar..."></div>
-          <div class="form-group"><label>Valor por item (R$)</label><input type="number" id="f-valor-item" placeholder="0,00" step="0.01" oninput="calcTotal()"></div>
-          <div class="form-group"><label>Quantidade</label><input type="number" id="f-qtd" value="1" oninput="calcTotal()"></div>
-          <div class="form-group"><label>Valor total (R$)</label><input type="number" id="f-valor-total" step="0.01" readonly style="background:#F5F5F5"></div>
+          <div class="form-group col-3" style="margin-top:4px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <label style="font-weight:500;color:#1E3A5F">Itens da ordem *</label>
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="font-size:12px;color:#666">Total da OC: <strong id="cad-itens-total" style="color:#0C447C">R$ 0,00</strong></span>
+                <button type="button" class="btn" style="padding:5px 12px;font-size:12px" onclick="adicionarItemCadastro()">+ Adicionar item</button>
+              </div>
+            </div>
+            <div id="cad-itens-list" style="display:flex;flex-direction:column;gap:8px"></div>
+            <p style="font-size:11px;color:#888;margin-top:6px">💡 Cada item será salvo como uma ordem de compra separada (mesmo padrão da conversão em manutenção), todos com o mesmo Nº OC, fornecedor, NF, placa, etc.</p>
+          </div>
           <div class="form-group col-3"><label>Observação da ordem</label><textarea id="f-obs-ordem" placeholder="Notas sobre esta ordem (opcional)"></textarea></div>
           <span class="section-label">Fornecedor</span>
           <div class="form-group col-2"><label>Fornecedor *</label><input type="text" id="f-fornecedor" placeholder="Razão social"></div>
@@ -1221,6 +1227,7 @@ function showPage(id){
   if(id==='usuarios') carregarUsuarios()
   if(id==='relatorios') document.getElementById('rel-placa').focus()
   if(id==='analise') carregarAnalise()
+  if(id==='cadastro' && cadastroItens.length===0){cadastroItens=[novoItemCadastro()];renderItensCadastro()}
   if(id==='manutencao') carregarManutencao()
 }
 
@@ -2843,19 +2850,111 @@ async function excluirUsuario(id){
 // ── CADASTRO ORDEM ────────────────────────────────────────────
 function calcTotal(){const vi=parseFloat(document.getElementById('f-valor-item').value)||0;const qt=parseFloat(document.getElementById('f-qtd').value)||1;document.getElementById('f-valor-total').value=(vi*qt).toFixed(2)}
 function maskCNPJ(el){let v=el.value.replace(/\D/g,'');v=v.replace(/^(\d{2})(\d)/,'$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/,'$1.$2.$3').replace(/\.(\d{3})(\d)/,'.$1/$2').replace(/(\d{4})(\d)/,'$1-$2');el.value=v}
-function limparForm(){['f-placa','f-localidade','f-supervisor','f-km','f-revisao','f-num-ordem','f-link-ordem','f-nf','f-data','f-item','f-valor-item','f-qtd','f-valor-total','f-fornecedor','f-cnpj','f-obs-veiculo','f-obs-ordem','f-obs-fornecedor'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});document.getElementById('f-categoria').value='';document.getElementById('f-status').value='Pendente';document.getElementById('f-qtd').value='1'}
+function limparForm(){
+  ['f-placa','f-localidade','f-supervisor','f-km','f-revisao','f-num-ordem','f-link-ordem','f-nf','f-data','f-fornecedor','f-cnpj','f-obs-veiculo','f-obs-ordem','f-obs-fornecedor'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''})
+  const stEl=document.getElementById('f-status');if(stEl) stEl.value='Pendente'
+  cadastroItens=[novoItemCadastro()]
+  renderItensCadastro()
+}
 function showAlert(msg,type='info'){const el=document.getElementById('alert-cadastro');el.innerHTML=`<div class="alert-banner alert-${type}">${msg}</div>`;el.style.display='block';if(type!=='danger')setTimeout(()=>{el.style.display='none'},3500)}
+
+// ── Multi-itens no cadastro de OC ─────────────────────────────
+let cadastroItens=[]
+function novoItemCadastro(){return{item:'',categoria:'Serviço',valor_item:0,quantidade:1}}
+function adicionarItemCadastro(){cadastroItens.push(novoItemCadastro());renderItensCadastro()}
+function removerItemCadastro(i){cadastroItens.splice(i,1);renderItensCadastro()}
+function renderItensCadastro(){
+  const wrap=document.getElementById('cad-itens-list');if(!wrap) return
+  if(cadastroItens.length===0){
+    wrap.innerHTML='<p style="font-size:12px;color:#999;padding:10px;border:1px dashed #DDD;border-radius:6px;text-align:center">Nenhum item. Clique em <strong>"+ Adicionar item"</strong> para começar.</p>'
+  }else{
+    wrap.innerHTML=cadastroItens.map((it,i)=>`
+      <div style="display:grid;grid-template-columns:30px 2.2fr 1fr 1fr 0.7fr 1fr auto;gap:8px;align-items:end;border:1px solid #E0E0E0;border-radius:8px;padding:10px;background:#FAFCFE">
+        <div style="font-weight:600;color:#0C447C;text-align:center;padding-bottom:6px">${i+1}</div>
+        <div><label style="font-size:11px;color:#666">Item / descrição *</label>
+          <input value="${(it.item||'').replace(/"/g,'&quot;')}" placeholder="Ex: Troca de óleo" oninput="cadastroItens[${i}].item=this.value" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #DDD;border-radius:4px"></div>
+        <div><label style="font-size:11px;color:#666">Categoria *</label>
+          <select onchange="cadastroItens[${i}].categoria=this.value" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #DDD;border-radius:4px">
+            <option value="Serviço" ${it.categoria==='Serviço'?'selected':''}>Serviço</option>
+            <option value="Produto" ${it.categoria==='Produto'?'selected':''}>Produto</option>
+          </select></div>
+        <div><label style="font-size:11px;color:#666">Valor unit. (R$)</label>
+          <input type="number" step="0.01" min="0" value="${it.valor_item||0}" oninput="cadastroItens[${i}].valor_item=parseFloat(this.value)||0;atualizarTotalCadastro()" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #DDD;border-radius:4px"></div>
+        <div><label style="font-size:11px;color:#666">Qtd.</label>
+          <input type="number" min="1" value="${it.quantidade||1}" oninput="cadastroItens[${i}].quantidade=parseInt(this.value)||1;atualizarTotalCadastro()" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #DDD;border-radius:4px"></div>
+        <div><label style="font-size:11px;color:#666">Subtotal</label>
+          <input type="text" readonly value="R$ ${((parseFloat(it.valor_item)||0)*(parseInt(it.quantidade)||1)).toFixed(2).replace('.',',')}" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #DDD;border-radius:4px;background:#F5F5F5;font-weight:500;color:#0C447C"></div>
+        <button type="button" class="btn" style="padding:6px 10px;font-size:13px;color:#a00;border-color:#f0c0c0" onclick="removerItemCadastro(${i})" title="Remover este item">🗑️</button>
+      </div>`).join('')
+  }
+  atualizarTotalCadastro()
+}
+function atualizarTotalCadastro(){
+  const tot=cadastroItens.reduce((s,it)=>s+(parseFloat(it.valor_item)||0)*(parseInt(it.quantidade)||1),0)
+  const el=document.getElementById('cad-itens-total')
+  if(el) el.textContent='R$ '+tot.toFixed(2).replace('.',',')
+  // mantém os subtotais sincronizados sem rerender pesado
+  cadastroItens.forEach((it,i)=>{
+    const inputs=document.querySelectorAll('#cad-itens-list > div')[i]?.querySelectorAll('input')
+    if(inputs && inputs[3]) inputs[3].value='R$ '+((parseFloat(it.valor_item)||0)*(parseInt(it.quantidade)||1)).toFixed(2).replace('.',',')
+  })
+}
 
 async function salvarOrdem(){
   if(currentPerfil!=='administrador'){showAlert('Sem permissão para cadastrar ordens.','danger');return}
-  const campos=['f-placa','f-localidade','f-supervisor','f-nf','f-item','f-categoria','f-fornecedor','f-cnpj']
-  for(const c of campos){if(!document.getElementById(c).value.trim()){showAlert('Preencha todos os campos obrigatórios (*)','danger');return}}
-  const btn=document.getElementById('btn-salvar');btn.textContent='Salvando...';btn.disabled=true
+  // Validação dos campos compartilhados
+  const camposBase=['f-placa','f-localidade','f-supervisor','f-nf','f-fornecedor','f-cnpj']
+  for(const c of camposBase){if(!document.getElementById(c).value.trim()){showAlert('Preencha todos os campos obrigatórios (*)','danger');return}}
+  // Validação dos itens
+  const itensValidos=cadastroItens
+    .map(it=>({item:(it.item||'').trim(),categoria:it.categoria||'Serviço',valor_item:parseFloat(it.valor_item)||0,quantidade:parseInt(it.quantidade)||1}))
+    .filter(it=>it.item)
+  if(itensValidos.length===0){showAlert('Adicione pelo menos 1 item à ordem (com descrição preenchida).','danger');return}
+
+  const btn=document.getElementById('btn-salvar');const txtBtn=btn.textContent
+  btn.textContent='Salvando...';btn.disabled=true
+  // Dados compartilhados entre todos os itens
+  const base={
+    placa:                document.getElementById('f-placa').value.toUpperCase().trim(),
+    localidade:           document.getElementById('f-localidade').value.trim(),
+    supervisor:           document.getElementById('f-supervisor').value.trim(),
+    km_atual:             document.getElementById('f-km').value||null,
+    proxima_revisao:      document.getElementById('f-revisao').value||null,
+    observacao_veiculo:   document.getElementById('f-obs-veiculo').value.trim()||null,
+    num_ordem:            document.getElementById('f-num-ordem').value.trim()||null,
+    link_ordem:           document.getElementById('f-link-ordem').value.trim()||null,
+    nota_fiscal:          document.getElementById('f-nf').value.trim(),
+    data_ordem:           document.getElementById('f-data').value||new Date().toISOString().split('T')[0],
+    observacao:           document.getElementById('f-obs-ordem').value.trim()||null,
+    fornecedor:           document.getElementById('f-fornecedor').value.trim(),
+    cnpj:                 document.getElementById('f-cnpj').value.trim(),
+    observacao_fornecedor:document.getElementById('f-obs-fornecedor').value.trim()||null,
+    status:               document.getElementById('f-status').value,
+    origem:'Manual'
+  }
+  let okCount=0, falhas=[]
   try{
-    await apiCall('/api/ordens','POST',{placa:document.getElementById('f-placa').value.toUpperCase().trim(),localidade:document.getElementById('f-localidade').value.trim(),supervisor:document.getElementById('f-supervisor').value.trim(),km_atual:document.getElementById('f-km').value||null,proxima_revisao:document.getElementById('f-revisao').value||null,observacao_veiculo:document.getElementById('f-obs-veiculo').value.trim()||null,num_ordem:document.getElementById('f-num-ordem').value.trim()||null,link_ordem:document.getElementById('f-link-ordem').value.trim()||null,nota_fiscal:document.getElementById('f-nf').value.trim(),data_ordem:document.getElementById('f-data').value||new Date().toISOString().split('T')[0],categoria:document.getElementById('f-categoria').value,item:document.getElementById('f-item').value.trim(),valor_item:parseFloat(document.getElementById('f-valor-item').value)||0,quantidade:parseInt(document.getElementById('f-qtd').value)||1,observacao:document.getElementById('f-obs-ordem').value.trim()||null,fornecedor:document.getElementById('f-fornecedor').value.trim(),cnpj:document.getElementById('f-cnpj').value.trim(),observacao_fornecedor:document.getElementById('f-obs-fornecedor').value.trim()||null,status:document.getElementById('f-status').value,origem:'Manual'})
-    showAlert('✓ Ordem salva com sucesso no banco de dados!','success');limparForm();setTimeout(()=>showPage('ordens'),1500)
-  }catch(e){showAlert('Erro ao salvar: '+e.message,'danger')}
-  finally{btn.textContent='Salvar ordem';btn.disabled=false}
+    btn.textContent=`Salvando 0/${itensValidos.length}...`
+    for(let i=0;i<itensValidos.length;i++){
+      const it=itensValidos[i]
+      btn.textContent=`Salvando ${i+1}/${itensValidos.length}...`
+      try{
+        await apiCall('/api/ordens','POST',{...base,categoria:it.categoria,item:it.item,valor_item:it.valor_item,quantidade:it.quantidade})
+        okCount++
+      }catch(err){
+        falhas.push(`Item ${i+1} (${it.item}): ${err.message}`)
+      }
+    }
+    if(okCount===itensValidos.length){
+      showAlert(`✓ ${okCount} ordem(ns) de compra salva(s) com sucesso!`,'success')
+      limparForm()
+      setTimeout(()=>showPage('ordens'),1500)
+    }else if(okCount>0){
+      showAlert(`⚠ ${okCount} de ${itensValidos.length} salvas. Falhas: ${falhas.join(' | ')}`,'danger')
+    }else{
+      showAlert('Erro ao salvar: '+falhas.join(' | '),'danger')
+    }
+  }finally{btn.textContent=txtBtn;btn.disabled=false}
 }
 
 function editarOrdem(id){
