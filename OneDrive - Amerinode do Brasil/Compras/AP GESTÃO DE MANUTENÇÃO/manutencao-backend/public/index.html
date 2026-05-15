@@ -1173,7 +1173,14 @@ sb.auth.onAuthStateChange((event,session)=>{
     },0)
     return
   }
-  if(session?.user) setTimeout(()=>iniciarSessao(session.user),0)
+  // Só (re)inicia sessão no login real ou na primeira carga.
+  // Ignoramos TOKEN_REFRESHED e USER_UPDATED para não recarregar dashboard
+  // nem resetar o estado das telas enquanto o usuário está usando o sistema
+  // (era isso que fazia a tela de cadastro "fechar do nada").
+  const ehLoginReal = (event==='SIGNED_IN' || event==='INITIAL_SESSION')
+  if(ehLoginReal && session?.user && !currentUser){
+    setTimeout(()=>iniciarSessao(session.user),0)
+  }
 })
 
 // ── API ───────────────────────────────────────────────────────
