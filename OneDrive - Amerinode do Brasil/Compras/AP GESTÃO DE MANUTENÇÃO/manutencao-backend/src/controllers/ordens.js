@@ -152,36 +152,74 @@ async function atualizar(req, res) {
       camposOrdem.valor_total = vi * qt
     }
 
-    // Buscar a ordem para pegar veiculo_id e fornecedor_id
+    // Buscar a ordem com dados atuais de veículo e fornecedor (para detectar troca real)
     const { data: ordemAtual } = await supabase
-      .from('ordens').select('veiculo_id, fornecedor_id').eq('id', req.params.id).single()
+      .from('ordens')
+      .select('veiculo_id, fornecedor_id, veiculo:veiculos(placa), fornecedor:fornecedores(cnpj)')
+      .eq('id', req.params.id).single()
 
-    // Atualizar veículo
-    if (ordemAtual?.veiculo_id) {
-      const veiculoUpdate = { updated_at: new Date().toISOString() }
-      if (placa)                          veiculoUpdate.placa = placa
-      if (localidade)                     veiculoUpdate.localidade = localidade
-      if (km_atual !== undefined)         veiculoUpdate.km_atual = km_atual
-      if (proxima_revisao !== undefined)  veiculoUpdate.proxima_revisao = proxima_revisao || null
-      if (observacao_veiculo !== undefined) veiculoUpdate.observacao = observacao_veiculo || null
-      if (Object.keys(veiculoUpdate).length > 1) {
-        await tentarSemColunaFaltante(veiculoUpdate, p =>
-          supabase.from('veiculos').update(p).eq('id', ordemAtual.veiculo_id)
+    // ── Veículo ───────────────────────────────────────────────────────────────
+    // Se a placa mudou (diferente da atual), faz UPSERT por placa e troca o
+    // veiculo_id desta ordem (evita renomear veículo compartilhado por outras ordens).
+    // Se a placa é a mesma (ou ausente), só atualiza dados do veículo existente.
+    if (ordemAtual) {
+      const placaAtual = (ordemAtual.veiculo?.placa || '').toUpperCase().trim()
+      const placaNova  = placa ? placa.toUpperCase().trim() : null
+      const trocouVeiculo = placaNova && placaNova !== placaAtual
+
+      if (trocouVeiculo) {
+        const veiculoPayload = { placa: placaNova }
+        if (localidade)                       veiculoPayload.localidade = localidade
+        if (km_atual !== undefined)           veiculoPayload.km_atual = km_atual
+        if (proxima_revisao !== undefined)    veiculoPayload.proxima_revisao = proxima_revisao || null
+        if (observacao_veiculo !== undefined) veiculoPayload.observacao = observacao_veiculo || null
+        const { data: novoVeic, error: vErr } = await tentarSemColunaFaltante(
+          veiculoPayload,
+          p => supabase.from('veiculos').upsert(p, { onConflict: 'placa' }).select().single()
+        )
+        if (vErr) throw vErr
+        camposOrdem.veiculo_id = novoVeic.id
+      } else if (ordemAtual.veiculo_id) {
+        const veiculoUpdate = { updated_at: new Date().toISOString() }
+        if (localidade)                       veiculoUpdate.localidade = localidade
+        if (km_atual !== undefined)           veiculoUpdate.km_atual = km_atual
+        if (proxima_revisao !== undefined)    veiculoUpdate.proxima_revisao = proxima_revisao || null
+        if (observacao_veiculo !== undefined) veiculoUpdate.observacao = observacao_veiculo || null
+        if (Object.keys(veiculoUpdate).length > 1) {
+          await tentarSemColunaFaltante(veiculoUpdate, p =>
+            supabase.from('veiculos').update(p).eq('id', ordemAtual.veiculo_id)
+          )
+        }
+      }
+
+      // ── Fornecedor ─────────────────────────────────────────────────────────
+      // Se o CNPJ mudou (diferente do atual), faz UPSERT por CNPJ e troca o
+      // fornecedor_id desta ordem (evita renomear fornecedor compartilhado).
+      // Se o CNPJ é o mesmo, só atualiza dados do fornecedor existente.
+      const cnpjAtual = (ordemAtual.fornecedor?.cnpj || '').replace(/\D/g, '')
+      const cnpjNovo  = cnpj ? cnpj.replace(/\D/g, '') : null
+      const trocouFornecedor = cnpjNovo && cnpjNovo !== cnpjAtual
+
+      if (trocouFornecedor) {
+        const fornecedorPayload = { razao_social: fornecedor || '(sem nome)', cnpj: cnpjNovo }
+        if (observacao_fornecedor !== undefined) fornecedorPayload.observacao = observacao_fornecedor || null
+        const { data: novoForn, error: fErr } = await tentarSemColunaFaltante(
+          fornecedorPayload,
+          p => supabase.from('fornecedores').upsert(p, { onConflict: 'cnpj' }).select().single()
+        )
+        if (fErr) throw fErr
+        camposOrdem.fornecedor_id = novoForn.id
+      } else if (ordemAtual.fornecedor_id && (fornecedor || observacao_fornecedor !== undefined)) {
+        const fornecedorUpdate = { updated_at: new Date().toISOString() }
+        if (fornecedor) fornecedorUpdate.razao_social = fornecedor
+        if (observacao_fornecedor !== undefined) fornecedorUpdate.observacao = observacao_fornecedor || null
+        await tentarSemColunaFaltante(fornecedorUpdate, p =>
+          supabase.from('fornecedores').update(p).eq('id', ordemAtual.fornecedor_id)
         )
       }
     }
 
-    // Atualizar fornecedor
-    if (ordemAtual?.fornecedor_id && (fornecedor || observacao_fornecedor !== undefined)) {
-      const fornecedorUpdate = { updated_at: new Date().toISOString() }
-      if (fornecedor) fornecedorUpdate.razao_social = fornecedor
-      if (observacao_fornecedor !== undefined) fornecedorUpdate.observacao = observacao_fornecedor || null
-      await tentarSemColunaFaltante(fornecedorUpdate, p =>
-        supabase.from('fornecedores').update(p).eq('id', ordemAtual.fornecedor_id)
-      )
-    }
-
-    // Atualizar ordem
+    // Atualizar ordem (inclui possivelmente novos veiculo_id / fornecedor_id)
     const { data, error } = await tentarSemColunaFaltante(
       { ...camposOrdem, updated_at: new Date().toISOString() },
       p => supabase.from('ordens').update(p).eq('id', req.params.id).select().single()
