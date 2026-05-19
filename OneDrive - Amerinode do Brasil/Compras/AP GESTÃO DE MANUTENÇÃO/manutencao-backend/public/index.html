@@ -3003,12 +3003,26 @@ async function salvarEdicao(){
     const placa  = document.getElementById('e-placa').value.toUpperCase().trim()
     const local  = document.getElementById('e-localidade').value.trim()
 
-    // Atualizar campos da ordem
     const obsVeic    = document.getElementById('e-obs-veiculo')?.value ?? ''
     const obsOrdem   = document.getElementById('e-obs-ordem')?.value ?? ''
     const obsForn    = document.getElementById('e-obs-fornecedor')?.value ?? ''
 
-    await apiCall(`/api/ordens/${editId}`,'PUT',{
+    // Envia TUDO via backend — ele já cuida de:
+    // • Detectar troca real de fornecedor (CNPJ diferente) sem renomear
+    //   fornecedor compartilhado por outras ordens
+    // • Detectar troca real de veículo (placa diferente) sem renomear
+    //   veículo compartilhado por outras ordens
+    // • Propagar campos da CABEÇA da OC (placa, fornecedor, NF, supervisor,
+    //   data, status, observações) para TODAS as ordens com o mesmo nº de OC,
+    //   mantendo isolados os campos do ITEM (item, categoria, valor, qtd)
+    const r = await apiCall(`/api/ordens/${editId}`,'PUT',{
+      // Dados do veículo
+      placa,
+      localidade:            local,
+      km_atual:              kmVal ? parseInt(kmVal) : null,
+      proxima_revisao:       revVal || null,
+      observacao_veiculo:    obsVeic.trim()||null,
+      // Dados da ordem
       supervisor:   document.getElementById('e-supervisor').value,
       num_ordem:    document.getElementById('e-num-ordem').value||null,
       link_ordem:   document.getElementById('e-link-ordem').value||null,
@@ -3021,33 +3035,20 @@ async function salvarEdicao(){
       valor_total:  parseFloat(document.getElementById('e-valor-total').value)||0,
       observacao:   obsOrdem.trim()||null,
       status:       document.getElementById('e-status').value,
+      // Dados do fornecedor
       fornecedor:   document.getElementById('e-fornecedor').value||null,
       cnpj:         document.getElementById('e-cnpj').value.replace(/\D/g,'')||null,
-      observacao_fornecedor: obsForn.trim()||null,
-      observacao_veiculo:    obsVeic.trim()||null
+      observacao_fornecedor: obsForn.trim()||null
     })
-
-    // Atualizar veículo direto no Supabase (service key via sb client)
-    const ordemAtual = ordens.find(o=>o.id===editId)
-    const veiculoId  = ordemAtual?.veiculo_id || ordemAtual?.veiculo?.id
-    if(veiculoId){
-      const upd = {
-        placa,
-        localidade: local,
-        observacao: obsVeic.trim()||null,
-        updated_at: new Date().toISOString()
-      }
-      if(kmVal)  upd.km_atual = parseInt(kmVal)
-      if(revVal) upd.proxima_revisao = revVal
-      else       upd.proxima_revisao = null
-
-      const { error } = await sb.from('veiculos').update(upd).eq('id', veiculoId)
-      if(error) console.warn('Aviso veículo:', error.message)
-    }
 
     closeModal('edit-modal')
     await carregarOrdens()
-    alert('✅ Alterações salvas com sucesso!')
+    const nIrmas = r?._irmasAtualizadas || 0
+    if(nIrmas > 0){
+      alert(`✅ Alterações salvas!\n\nAtualizada esta ordem + ${nIrmas} outra(s) ordem(ns) com o mesmo nº de OC (campos compartilhados: placa, fornecedor, NF, data, status, supervisor, observações).\n\nOs campos do item (descrição, valor, qtd) ficam isolados em cada ordem.`)
+    } else {
+      alert('✅ Alterações salvas com sucesso!')
+    }
   }catch(e){
     alert('Erro ao salvar: '+e.message)
   }

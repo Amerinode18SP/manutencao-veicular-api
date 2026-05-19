@@ -219,14 +219,41 @@ async function atualizar(req, res) {
       }
     }
 
-    // Atualizar ordem (inclui possivelmente novos veiculo_id / fornecedor_id)
+    // Atualizar a própria ordem (com todos os campos, inclusive específicos do item)
     const { data, error } = await tentarSemColunaFaltante(
       { ...camposOrdem, updated_at: new Date().toISOString() },
       p => supabase.from('ordens').update(p).eq('id', req.params.id).select().single()
     )
-
     if (error) throw error
-    res.json(data)
+
+    // ── Propagar campos compartilhados às ordens "irmãs" (mesmo num_ordem) ───
+    // Quando uma OC tem múltiplos itens cadastrados como ordens separadas, ao
+    // editar uma delas os dados da CABEÇA da OC (placa, fornecedor, supervisor,
+    // NF, data, status, observação, link) devem refletir em todas as demais.
+    // Campos do ITEM (categoria, item, valor_item, quantidade, valor_total)
+    // permanecem isolados na ordem editada.
+    const COLUNAS_ITEM_ESPECIFICAS = ['categoria','item','valor_item','quantidade','valor_total']
+    const camposCompartilhados = {}
+    for (const k of Object.keys(camposOrdem)) {
+      if (!COLUNAS_ITEM_ESPECIFICAS.includes(k)) camposCompartilhados[k] = camposOrdem[k]
+    }
+    const numOC = (data?.num_ordem || '').trim()
+    let irmasAtualizadas = 0
+    if (numOC && Object.keys(camposCompartilhados).length > 0) {
+      const payloadIrmas = { ...camposCompartilhados, updated_at: new Date().toISOString() }
+      const { data: irmas, error: irmaErr } = await tentarSemColunaFaltante(
+        payloadIrmas,
+        p => supabase.from('ordens')
+          .update(p)
+          .eq('num_ordem', numOC)
+          .neq('id', req.params.id)
+          .select('id')
+      )
+      if (irmaErr) throw irmaErr
+      irmasAtualizadas = Array.isArray(irmas) ? irmas.length : 0
+    }
+
+    res.json({ ...data, _irmasAtualizadas: irmasAtualizadas })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
