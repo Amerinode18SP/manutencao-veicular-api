@@ -9,6 +9,7 @@ const fornecedoresRoutes = require('./routes/fornecedores')
 const importRoutes      = require('./routes/importar')
 const dashboardRoutes   = require('./routes/dashboard')
 const manutencaoRoutes  = require('./routes/manutencao')
+const vidaUtilRoutes    = require('./routes/vidaUtil')
 const { runMigrations } = require('./migrate')
 
 const app  = express()
@@ -34,6 +35,7 @@ app.use('/api/fornecedores', fornecedoresRoutes)
 app.use('/api/importar',     importRoutes)
 app.use('/api/dashboard',    dashboardRoutes)
 app.use('/api/manutencao',   manutencaoRoutes)
+app.use('/api/vida-util',    vidaUtilRoutes)
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
