@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>[PREVIEW] Próximas Revisões → Tabela de Vida Útil</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+body{background:#F5F5F5;color:#222;font-size:14px;padding:0}
+.preview-banner{background:#FFF3CD;border-bottom:2px solid #F4B400;padding:8px 16px;font-size:12px;color:#664700;text-align:center}
+.preview-banner strong{color:#A07000}
+.shell{display:flex;height:calc(100vh - 38px)}
+.sidebar{width:220px;background:#FAFAFA;border-right:1px solid #E0E0E0;padding:16px 0;display:flex;flex-direction:column}
+.sidebar-logo{padding:0 16px 16px;border-bottom:1px solid #EEE}
+.sidebar-logo strong{display:block;color:#0C447C;font-size:14px}
+.sidebar-logo p{font-size:10px;color:#888;margin-top:2px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;font-size:13px;color:#666;border-left:2px solid transparent;margin-top:2px}
+.nav-item.active{background:#E6F1FB;color:#0C447C;border-left-color:#378ADD;font-weight:500}
+.main{flex:1;overflow-y:auto;padding:0}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:#fff;border-bottom:1px solid #E0E0E0}
+.topbar h1{font-size:18px;color:#1E3A5F;font-weight:600}
+.content{padding:20px 24px}
+
+/* Sub-tabs */
+.subtabs{display:flex;gap:0;border-bottom:2px solid #E0E0E0;margin-bottom:16px}
+.subtab{padding:10px 18px;cursor:pointer;font-size:13px;color:#666;border-bottom:3px solid transparent;margin-bottom:-2px;font-weight:500;display:flex;align-items:center;gap:6px}
+.subtab:hover{color:#0C447C;background:#F5F8FB}
+.subtab.active{color:#0C447C;border-bottom-color:#378ADD;background:#fff}
+
+.card{background:#fff;border:1px solid #E0E0E0;border-radius:12px;padding:16px}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px}
+.card-title{font-size:14px;color:#1E3A5F;font-weight:600}
+
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.search-input{padding:7px 12px;border:1px solid #DDD;border-radius:8px;font-size:13px;min-width:240px}
+.btn{padding:7px 14px;border:1px solid #DDD;background:#fff;border-radius:8px;font-size:12px;color:#333;cursor:pointer;font-weight:500}
+.btn:hover{background:#F5F5F5}
+.btn-primary{background:#185FA5;color:#fff;border-color:#185FA5}
+.btn-primary:hover{background:#0C447C}
+.btn-danger{color:#a00;border-color:#f0c0c0;background:#fff}
+.btn-danger:hover{background:#FCEBEB}
+
+.tipo-filter{display:flex;gap:4px;background:#F0F4F9;border-radius:8px;padding:3px}
+.tipo-filter button{border:none;background:transparent;padding:5px 10px;border-radius:6px;font-size:11px;color:#666;cursor:pointer;font-weight:500}
+.tipo-filter button.active{background:#fff;color:#1E3A5F;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+
+.table-wrap{overflow-x:auto;border:1px solid #E0E0E0;border-radius:8px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{background:#F5F8FB;color:#1E3A5F;font-weight:600;text-align:left;padding:11px 12px;border-bottom:2px solid #DCE6F1;font-size:12px;text-transform:uppercase;letter-spacing:.3px}
+tbody td{padding:10px 12px;border-bottom:1px solid #F0F0F0;vertical-align:middle}
+tbody tr:hover td{background:#FAFCFE}
+tbody tr.editing td{background:#FFFBEA}
+tbody tr.editing td:first-child{box-shadow:inset 3px 0 0 #F4B400}
+
+.cell-edit{width:100%;padding:5px 8px;border:1px solid #B7D4F0;border-radius:5px;font-size:13px;font-family:inherit;background:#fff}
+.cell-edit:focus{outline:none;border-color:#185FA5;box-shadow:0 0 0 2px rgba(24,95,165,.15)}
+
+.badge{display:inline-block;padding:3px 9px;border-radius:11px;font-size:11px;font-weight:500;white-space:nowrap}
+.badge-blue{background:#E6F1FB;color:#0C447C}
+.badge-red{background:#FCEBEB;color:#791F1F}
+.badge-amber{background:#FFF3CD;color:#664700}
+.badge-mix{background:#F0E6FB;color:#3C1F7C}
+
+.action-cell{white-space:nowrap;text-align:right}
+.icon-btn{border:none;background:transparent;cursor:pointer;font-size:15px;padding:3px 7px;border-radius:4px;margin-left:2px}
+.icon-btn:hover{background:#F0F4F9}
+.icon-btn.danger:hover{background:#FCEBEB}
+
+.row-count{font-size:11px;color:#888;font-weight:400;margin-left:6px}
+
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;padding:10px 14px;background:#FAFCFE;border-radius:8px;border:1px dashed #DCE6F1;font-size:11px;color:#666}
+.legend strong{color:#1E3A5F}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:99;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:12px;padding:20px;width:480px;max-width:90vw;box-shadow:0 10px 40px rgba(0,0,0,.2)}
+.modal h3{font-size:15px;color:#1E3A5F;margin-bottom:12px}
+.modal-field{margin-bottom:12px}
+.modal-field label{display:block;font-size:11px;color:#666;margin-bottom:4px;font-weight:500}
+.modal-field input,.modal-field select,.modal-field textarea{width:100%;padding:8px 10px;border:1px solid #DDD;border-radius:6px;font-size:13px;font-family:inherit}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+</style>
+</head>
+<body>
+
+<div class="preview-banner">
+  🎨 <strong>MOCKUP / PREVIEW</strong> — Esta é uma simulação visual da nova subaba. Os botões abaixo demonstram o comportamento mas <strong>não salvam no banco</strong>. Após sua aprovação, o time aplica o mesmo design no sistema real.
+</div>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <strong>Amerinode</strong>
+      <p>Gestão de Manutenção</p>
+    </div>
+    <div class="nav-item">📊 Dashboard</div>
+    <div class="nav-item">📋 Ordens de Compra</div>
+    <div class="nav-item">➕ Novo Cadastro</div>
+    <div class="nav-item">📥 Importar Excel</div>
+    <div class="nav-item active">🛡️ Próximas Revisões</div>
+    <div class="nav-item">📑 Relatórios</div>
+    <div class="nav-item">💰 Análise de Gastos</div>
+    <div class="nav-item">🔧 Em Manutenção</div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <h1>Próximas Revisões</h1>
+      <span style="font-size:12px;color:#888">Ana Paula • Administrador</span>
+    </div>
+
+    <div class="content">
+
+      <!-- ⭐ ABAS DENTRO DA PÁGINA ⭐ -->
+      <div class="subtabs">
+        <div class="subtab" onclick="alert('Esta aba continua igual à atual — lista de veículos com revisão próxima')">🛡️ Próximas Revisões</div>
+        <div class="subtab active">📋 Tabela de Vida Útil</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <span class="card-title">📋 Tabela de Vida Útil dos Componentes</span>
+            <span class="row-count" id="rowCount">— 34 itens</span>
+          </div>
+          <div class="toolbar">
+            <input class="search-input" id="searchInput" placeholder="🔎 Buscar item ou observação..." oninput="filterTable()">
+            <div class="tipo-filter">
+              <button class="active" onclick="filterTipo('',event)">Todos</button>
+              <button onclick="filterTipo('Preventiva',event)">Preventiva</button>
+              <button onclick="filterTipo('Corretiva',event)">Corretiva</button>
+              <button onclick="filterTipo('Segurança',event)">Segurança</button>
+            </div>
+            <button class="btn btn-primary" onclick="abrirModalNovo()">+ Adicionar item</button>
+            <button class="btn" onclick="alert('Importará XLSX com colunas: Item | Vida Útil Média | Tipo | Observação')">⬆ Importar XLSX</button>
+            <button class="btn" onclick="alert('Exportará a tabela atual como XLSX')">⬇ Exportar XLSX</button>
+            <button class="btn btn-danger" onclick="alert('Vai restaurar os 34 itens originais da tabela padrão.\\n\\nObs: edições suas serão sobrescritas.')">↺ Restaurar padrão</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:32px">#</th>
+                <th>Item / Componente</th>
+                <th style="width:170px">Vida Útil Média</th>
+                <th style="width:160px">Tipo</th>
+                <th>Observação</th>
+                <th style="width:90px;text-align:right">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="legend">
+          <span><strong>Como usar:</strong> clique em ✏️ para editar uma linha (todos os campos viram editáveis), 💾 salva e ❌ cancela. 🗑️ remove a linha.</span>
+        </div>
+        <div class="legend">
+          <span><span class="badge badge-blue">Preventiva</span> manutenção planejada</span>
+          <span><span class="badge badge-red">Corretiva</span> conserto após falha</span>
+          <span><span class="badge badge-amber">Segurança</span> item crítico de segurança</span>
+          <span><span class="badge badge-mix">Mista</span> preventiva + corretiva</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Modal Novo Item -->
+<div class="modal-overlay" id="modalNovo">
+  <div class="modal">
+    <h3>Adicionar novo item de vida útil</h3>
+    <div class="modal-field">
+      <label>Item / Componente *</label>
+      <input id="m-item" placeholder="Ex: Sensor de oxigênio">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="modal-field">
+        <label>Vida Útil Média *</label>
+        <input id="m-vida" placeholder="Ex: 60.000 km ou 24 meses">
+      </div>
+      <div class="modal-field">
+        <label>Tipo de Manutenção *</label>
+        <select id="m-tipo">
+          <option>Preventiva</option>
+          <option>Corretiva</option>
+          <option>Segurança</option>
+          <option>Corretiva/Preventiva</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-field">
+      <label>Observação</label>
+      <textarea id="m-obs" rows="2" placeholder="Notas técnicas, periodicidade, marca recomendada..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="document.getElementById('modalNovo').classList.remove('open')">Cancelar</button>
+      <button class="btn btn-primary" onclick="adicionarNovo()">Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const dadosOriginais = [
+  ["Óleo do motor","10.000 km","Preventiva","Conforme fabricante e tipo de óleo"],
+  ["Filtro de óleo","Troca junto com óleo","Preventiva","Obrigatório em cada troca"],
+  ["Filtro de ar motor","10.000 km","Preventiva","Reduz consumo e desgaste"],
+  ["Filtro de combustível","10.000 km","Preventiva","Diesel exige atenção maior"],
+  ["Filtro cabine/ar-condicionado","10.000 km","Preventiva","Influência climatização"],
+  ["Velas de ignição","50.000 km","Preventiva","Iridium pode durar mais"],
+  ["Correia dentada","50.000 a 100.000 km","Preventiva","Seguir manual rigorosamente"],
+  ["Tensor e rolamentos","Troca junto correia","Preventiva","Evita quebra prematura"],
+  ["Correia acessórios","40.000 km","Preventiva","Verificar rachaduras"],
+  ["Bateria","2 a 3 anos","Preventiva","Teste em revisões"],
+  ["Pastilha de freio","30.000 km","Preventiva","Depende condução"],
+  ["Disco de freio","50.000 km","Preventiva","Avaliar espessura"],
+  ["Fluido de freio","12 meses","Preventiva","Item de segurança"],
+  ["Amortecedores","40.000 km","Preventiva","Influencia estabilidade"],
+  ["Molas suspensão","80.000 km","Preventiva","Inspecionar deformações"],
+  ["Bandeja suspensão","50.000 km","Corretiva/Preventiva","Verificar folgas"],
+  ["Buchas suspensão","50.000 km","Preventiva","Ruídos e vibrações"],
+  ["Pivô suspensão","50.000 km","Segurança","Pode causar perda direção"],
+  ["Terminal direção","50.000 km","Segurança","Fazer alinhamento"],
+  ["Barra axial","50.000 km","Preventiva","Verificar folgas"],
+  ["Rolamento roda","70.000 km","Corretiva","Ruído indica desgaste"],
+  ["Pneus passeio","60.000 km","Preventiva","Rodízio aumenta vida útil"],
+  ["Pneus utilitário/frota","70.000 km","Preventiva","Controle alinhamento"],
+  ["Alinhamento","10.000 km","Preventiva","Após impacto também"],
+  ["Balanceamento","10.000 km","Preventiva","Evita desgaste irregular"],
+  ["Rodízio pneus","10.000 km","Preventiva","Aumenta durabilidade"],
+  ["Embreagem","70.000 km","Corretiva","Depende utilização"],
+  ["Óleo câmbio automático","50.000 km","Preventiva","Fundamental"],
+  ["Radiador limpeza","40.000 km","Preventiva","Evita superaquecimento"],
+  ["Fluido arrefecimento","12 a 24 meses","Preventiva","Nunca usar água comum"],
+  ["Compressor ar-condicionado","80.000 km","Corretiva","Fazer limpeza sistema"],
+  ["Limpador para-brisa","6 a 12 meses","Preventiva","Segurança"],
+  ["Catalisador","90.000 km","Corretiva","Emissões e desempenho"],
+  ["Revisão geral frota","A cada 10.000 km","Preventiva","Checklist obrigatório"]
+];
+let dados = dadosOriginais.map(r => ({item:r[0], vida:r[1], tipo:r[2], obs:r[3], editing:false}));
+let filtroTipo = '', filtroBusca = '';
+
+function badge(tipo){
+  if(tipo === 'Preventiva') return '<span class="badge badge-blue">Preventiva</span>';
+  if(tipo === 'Corretiva')  return '<span class="badge badge-red">Corretiva</span>';
+  if(tipo === 'Segurança')  return '<span class="badge badge-amber">Segurança</span>';
+  return '<span class="badge badge-mix">'+tipo+'</span>';
+}
+
+function render(){
+  const tb = document.getElementById('tbody');
+  const filtrados = dados
+    .map((d,i)=>({...d, _idx:i}))
+    .filter(d => !filtroTipo || d.tipo.includes(filtroTipo))
+    .filter(d => {
+      if(!filtroBusca) return true;
+      const t = (d.item+' '+d.vida+' '+d.obs).toLowerCase();
+      return t.includes(filtroBusca.toLowerCase());
+    });
+  document.getElementById('rowCount').textContent = `— ${filtrados.length} de ${dados.length} itens`;
+  if(!filtrados.length){
+    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:30px">Nenhum item encontrado.</td></tr>';
+    return;
+  }
+  tb.innerHTML = filtrados.map(d => {
+    const i = d._idx;
+    if(d.editing){
+      return `<tr class="editing">
+        <td>${i+1}</td>
+        <td><input class="cell-edit" value="${escapeHtml(d.item)}" oninput="dados[${i}].item=this.value"></td>
+        <td><input class="cell-edit" value="${escapeHtml(d.vida)}" oninput="dados[${i}].vida=this.value"></td>
+        <td><select class="cell-edit" onchange="dados[${i}].tipo=this.value">
+          <option ${d.tipo==='Preventiva'?'selected':''}>Preventiva</option>
+          <option ${d.tipo==='Corretiva'?'selected':''}>Corretiva</option>
+          <option ${d.tipo==='Segurança'?'selected':''}>Segurança</option>
+          <option ${d.tipo==='Corretiva/Preventiva'?'selected':''}>Corretiva/Preventiva</option>
+        </select></td>
+        <td><input class="cell-edit" value="${escapeHtml(d.obs)}" oninput="dados[${i}].obs=this.value"></td>
+        <td class="action-cell">
+          <button class="icon-btn" title="Salvar" onclick="salvar(${i})">💾</button>
+          <button class="icon-btn danger" title="Cancelar" onclick="cancelar(${i})">❌</button>
+        </td>
+      </tr>`;
+    }
+    return `<tr>
+      <td style="color:#999">${i+1}</td>
+      <td><strong>${escapeHtml(d.item)}</strong></td>
+      <td>${escapeHtml(d.vida)}</td>
+      <td>${badge(d.tipo)}</td>
+      <td style="color:#555">${escapeHtml(d.obs)}</td>
+      <td class="action-cell">
+        <button class="icon-btn" title="Editar" onclick="editar(${i})">✏️</button>
+        <button class="icon-btn danger" title="Excluir" onclick="excluir(${i})">🗑️</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function escapeHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function editar(i){dados[i].editing = true; dados[i]._backup = {...dados[i]}; render();}
+function salvar(i){delete dados[i]._backup; dados[i].editing = false; render(); /* aqui chamará API PUT */}
+function cancelar(i){if(dados[i]._backup) dados[i] = dados[i]._backup; dados[i].editing = false; render();}
+function excluir(i){if(confirm(`Excluir "${dados[i].item}"?`)){dados.splice(i,1); render();}}
+function filterTable(){filtroBusca = document.getElementById('searchInput').value; render();}
+function filterTipo(t,ev){filtroTipo = t; document.querySelectorAll('.tipo-filter button').forEach(b=>b.classList.remove('active')); ev.target.classList.add('active'); render();}
+function abrirModalNovo(){document.getElementById('modalNovo').classList.add('open'); document.getElementById('m-item').value=''; document.getElementById('m-vida').value=''; document.getElementById('m-obs').value=''; document.getElementById('m-tipo').value='Preventiva';}
+function adicionarNovo(){
+  const item = document.getElementById('m-item').value.trim();
+  const vida = document.getElementById('m-vida').value.trim();
+  if(!item || !vida){alert('Preencha Item e Vida Útil'); return;}
+  dados.unshift({item, vida, tipo: document.getElementById('m-tipo').value, obs: document.getElementById('m-obs').value.trim(), editing:false});
+  document.getElementById('modalNovo').classList.remove('open');
+  render();
+}
+
+render();
+</script>
+
+</body>
+</html>
