@@ -1,6 +1,5 @@
-// Cliente HTTP para a API da Cobli.
-// Autenticação: header 'cobli-api-key: <token>'  (NÃO usa Bearer).
-// Token vem do Railway via process.env.COBLI_API_TOKEN — nunca commite.
+// Cliente HTTP para a API da Cobli (base /public/v1).
+// Autenticação: header 'cobli-api-key: <token>'. Token vem do Railway.
 
 const COBLI_BASE = 'https://api.cobli.co'
 
@@ -37,22 +36,26 @@ async function call(method, path, { body, query } = {}) {
   return data
 }
 
-// Associações de cartões de combustível — usamos para descobrir
-// quais veículos existem e a qual grupo pertencem.
-function getAssociations() {
-  return call('GET', '/herbie-1.1/fuel/card/associations', { query: { fuelCardStatus: 'active' } })
+// GET /public/v1/vehicles — paginado via pagination.next
+function getVehiclesPage({ page = 1, limit = 200 } = {}) {
+  return call('GET', '/public/v1/vehicles', { query: { page, limit } })
 }
 
-// Distância percorrida — POST com body, paginado (limit max 2000).
+// GET /public/v1/groups — lista grupos com vehicle_ids
+function getGroups() {
+  return call('GET', '/public/v1/groups')
+}
+
+// POST /public/v1/vehicles/report/distance-driven
 function getDistanceDriven({ start_date, end_date, vehicle_ids, page = 1, limit = 2000 }) {
   return call('POST', '/public/v1/vehicles/report/distance-driven', {
     body: { start_date, end_date, vehicle_ids, page, limit, timezone: 'America/Sao_Paulo' },
   })
 }
 
-// Transações de combustível no período (paginado).
-function getFuelTransactions({ start_date, end_date, page = 1, limit = 1000 } = {}) {
-  return call('GET', '/herbie-1.1/fuel/transactions', { query: { start_date, end_date, page, limit } })
+// GET /public/v1/fuel/transactions?period=YYYY-MM&limit=200&page=N
+function getFuelTransactions({ period, page = 1, limit = 200 }) {
+  return call('GET', '/public/v1/fuel/transactions', { query: { period, page, limit } })
 }
 
-module.exports = { getAssociations, getDistanceDriven, getFuelTransactions }
+module.exports = { getVehiclesPage, getGroups, getDistanceDriven, getFuelTransactions }
