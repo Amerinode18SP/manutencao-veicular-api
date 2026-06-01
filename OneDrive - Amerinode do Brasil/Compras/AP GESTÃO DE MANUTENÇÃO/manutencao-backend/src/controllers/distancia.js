@@ -352,4 +352,54 @@ async function sync(req, res) {
   }
 }
 
-module.exports = { resumo, top, modelo, regioes, salvarRegiao, sync }
+// Rota de sondagem temporária — testa várias URLs/params da Cobli e
+// reporta status + amostra do corpo. Remover quando módulo estiver validado.
+async function probe(req, res) {
+  const COBLI_BASE = 'https://api.cobli.co'
+  const token = process.env.COBLI_API_TOKEN
+  if (!token) return res.status(500).json({ error: 'COBLI_API_TOKEN ausente' })
+
+  const today = new Date().toISOString().slice(0, 10)
+  const firstOfMonth = today.slice(0, 7) + '-01'
+  const monthShort = today.slice(0, 7) // YYYY-MM
+
+  const candidates = [
+    // associações / cartões / veículos
+    { label: 'assoc:fuel/card/associations',     method: 'GET', path: '/herbie-1.1/fuel/card/associations' },
+    { label: 'assoc:fuel/cards/associations',    method: 'GET', path: '/herbie-1.1/fuel/cards/associations' },
+    { label: 'assoc:fuel-card/associations',     method: 'GET', path: '/herbie-1.1/fuel-card/associations' },
+    { label: 'assoc:fuelcards/associations',     method: 'GET', path: '/herbie-1.1/fuelcards/associations' },
+    { label: 'vehicles:herbie-1.1/vehicles',     method: 'GET', path: '/herbie-1.1/vehicles' },
+    { label: 'vehicles:public/v1/vehicles',      method: 'GET', path: '/public/v1/vehicles' },
+    { label: 'vehicles:public/v1/vehicles/list', method: 'GET', path: '/public/v1/vehicles/list' },
+    { label: 'fleets:herbie-1.1/fleets',         method: 'GET', path: '/herbie-1.1/fleets' },
+    { label: 'groups:herbie-1.1/groups',         method: 'GET', path: '/herbie-1.1/groups' },
+    // combustível — tentar param "period" com vários formatos
+    { label: 'fuel:tx?period=YYYY-MM',           method: 'GET', path: `/herbie-1.1/fuel/transactions?period=${monthShort}` },
+    { label: 'fuel:tx?period=YYYY-MM-DD',        method: 'GET', path: `/herbie-1.1/fuel/transactions?period=${today}` },
+    { label: 'fuel:tx?period=last_month',        method: 'GET', path: '/herbie-1.1/fuel/transactions?period=last_month' },
+    { label: 'fuel:tx?period=current_month',     method: 'GET', path: '/herbie-1.1/fuel/transactions?period=current_month' },
+    { label: 'fuel:tx?periodStart=&periodEnd=',  method: 'GET', path: `/herbie-1.1/fuel/transactions?periodStart=${firstOfMonth}&periodEnd=${today}` },
+    { label: 'fuel:tx?start=&end=',              method: 'GET', path: `/herbie-1.1/fuel/transactions?start=${firstOfMonth}&end=${today}` },
+  ]
+
+  const results = []
+  for (const c of candidates) {
+    try {
+      const r = await fetch(COBLI_BASE + c.path, {
+        method: c.method, headers: { 'cobli-api-key': token, 'Accept': 'application/json' },
+      })
+      const txt = await r.text()
+      results.push({
+        label: c.label, status: r.status,
+        ok: r.ok,
+        sample: txt.slice(0, 250),
+      })
+    } catch (e) {
+      results.push({ label: c.label, status: 'fetch-error', error: e.message })
+    }
+  }
+  res.json({ now: new Date().toISOString(), results })
+}
+
+module.exports = { resumo, top, modelo, regioes, salvarRegiao, sync, probe }

@@ -12,5 +12,6 @@ router.get('/modelo',  c.modelo)
 router.get('/regioes', c.regioes)
 router.put('/regioes', c.salvarRegiao)
 router.post('/sync',   c.sync)
+router.get('/_probe',  c.probe)
 
 module.exports = router
