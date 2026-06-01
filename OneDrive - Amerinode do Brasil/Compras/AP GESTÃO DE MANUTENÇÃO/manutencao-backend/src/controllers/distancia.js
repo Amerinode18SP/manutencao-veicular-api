@@ -364,36 +364,38 @@ async function probe(req, res) {
   const monthShort = today.slice(0, 7) // YYYY-MM
 
   const candidates = [
-    // associações / cartões / veículos
-    { label: 'assoc:fuel/card/associations',     method: 'GET', path: '/herbie-1.1/fuel/card/associations' },
-    { label: 'assoc:fuel/cards/associations',    method: 'GET', path: '/herbie-1.1/fuel/cards/associations' },
-    { label: 'assoc:fuel-card/associations',     method: 'GET', path: '/herbie-1.1/fuel-card/associations' },
-    { label: 'assoc:fuelcards/associations',     method: 'GET', path: '/herbie-1.1/fuelcards/associations' },
-    { label: 'vehicles:herbie-1.1/vehicles',     method: 'GET', path: '/herbie-1.1/vehicles' },
-    { label: 'vehicles:public/v1/vehicles',      method: 'GET', path: '/public/v1/vehicles' },
-    { label: 'vehicles:public/v1/vehicles/list', method: 'GET', path: '/public/v1/vehicles/list' },
-    { label: 'fleets:herbie-1.1/fleets',         method: 'GET', path: '/herbie-1.1/fleets' },
-    { label: 'groups:herbie-1.1/groups',         method: 'GET', path: '/herbie-1.1/groups' },
-    // combustível — tentar param "period" com vários formatos
-    { label: 'fuel:tx?period=YYYY-MM',           method: 'GET', path: `/herbie-1.1/fuel/transactions?period=${monthShort}` },
-    { label: 'fuel:tx?period=YYYY-MM-DD',        method: 'GET', path: `/herbie-1.1/fuel/transactions?period=${today}` },
-    { label: 'fuel:tx?period=last_month',        method: 'GET', path: '/herbie-1.1/fuel/transactions?period=last_month' },
-    { label: 'fuel:tx?period=current_month',     method: 'GET', path: '/herbie-1.1/fuel/transactions?period=current_month' },
-    { label: 'fuel:tx?periodStart=&periodEnd=',  method: 'GET', path: `/herbie-1.1/fuel/transactions?periodStart=${firstOfMonth}&periodEnd=${today}` },
-    { label: 'fuel:tx?start=&end=',              method: 'GET', path: `/herbie-1.1/fuel/transactions?start=${firstOfMonth}&end=${today}` },
+    // veículos — sample maior pra ver grupo
+    { label: 'vehicles:public/v1/vehicles?limit=2', method: 'GET', path: '/public/v1/vehicles?limit=2', sampleLen: 2000 },
+    { label: 'vehicles:public/v1/vehicles/groups',  method: 'GET', path: '/public/v1/vehicles/groups' },
+    { label: 'groups:public/v1/groups',             method: 'GET', path: '/public/v1/groups' },
+    { label: 'fleets:public/v1/fleets',             method: 'GET', path: '/public/v1/fleets' },
+    // combustível — muitas variantes
+    { label: 'fuel:tx GET (sem param)',                method: 'GET', path: '/herbie-1.1/fuel/transactions' },
+    { label: 'fuel:tx GET ?period=YYYYMM',             method: 'GET', path: `/herbie-1.1/fuel/transactions?period=${today.slice(0,4)}${today.slice(5,7)}` },
+    { label: 'fuel:tx GET ?period=YYYY/MM',            method: 'GET', path: `/herbie-1.1/fuel/transactions?period=${today.slice(0,4)}%2F${today.slice(5,7)}` },
+    { label: 'fuel:tx GET ?period=MM-YYYY',            method: 'GET', path: `/herbie-1.1/fuel/transactions?period=${today.slice(5,7)}-${today.slice(0,4)}` },
+    { label: 'fuel:tx POST body period=YYYY-MM',       method: 'POST', path: '/herbie-1.1/fuel/transactions', body: { period: monthShort } },
+    { label: 'fuel:tx GET ?Period=YYYY-MM (case)',     method: 'GET', path: `/herbie-1.1/fuel/transactions?Period=${monthShort}` },
+    { label: 'fuel:tx GET /:period path YYYY-MM',      method: 'GET', path: `/herbie-1.1/fuel/transactions/${monthShort}` },
+    { label: 'fuel:tx GET ?period[]=YYYY-MM',          method: 'GET', path: `/herbie-1.1/fuel/transactions?period%5B%5D=${monthShort}` },
+    { label: 'fuel:tx public/v1?period=YYYY-MM',       method: 'GET', path: `/public/v1/fuel/transactions?period=${monthShort}` },
+    // listagem alternativa de combustível?
+    { label: 'fuel:report public/v1',                  method: 'GET', path: '/public/v1/fuel/report' },
+    { label: 'fuel:report public/v1/transactions',     method: 'GET', path: '/public/v1/fuel/transactions' },
   ]
 
   const results = []
   for (const c of candidates) {
     try {
       const r = await fetch(COBLI_BASE + c.path, {
-        method: c.method, headers: { 'cobli-api-key': token, 'Accept': 'application/json' },
+        method: c.method,
+        headers: { 'cobli-api-key': token, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: c.body ? JSON.stringify(c.body) : undefined,
       })
       const txt = await r.text()
       results.push({
-        label: c.label, status: r.status,
-        ok: r.ok,
-        sample: txt.slice(0, 250),
+        label: c.label, status: r.status, ok: r.ok,
+        sample: txt.slice(0, c.sampleLen || 300),
       })
     } catch (e) {
       results.push({ label: c.label, status: 'fetch-error', error: e.message })
