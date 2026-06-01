@@ -521,24 +521,41 @@ async function sync(req, res) {
         const rowsRaw = await cobli.getFuelReport({ begin, end: endMs })
         if (!rowsRaw || !rowsRaw.length) continue
 
-        const rows = rowsRaw.map(r => {
+        // 1 linha por (placa, combustível). Dedupe por (cobli_id, ano_mes)
+        // somando gasto/litros e mantendo km (que é o mesmo em todas as linhas do veículo).
+        const byKey = new Map()
+        for (const r of rowsRaw) {
           const placa = pickColumn(r, ['Placa'])
           const cobli_id = placaToId.get(placa)
-          if (!cobli_id) return null
-          return {
-            cobli_id,
-            ano_mes: ym,
-            placa,
-            gasto_brl:    numBR(pickColumn(r, ['Gasto total', 'Total no per'])),
-            litros:       numBR(pickColumn(r, ['Quantidade consumida', 'Litros'])),
-            km_cobli:     numBR(pickColumn(r, ['metros rodados', 'Km'])),
-            custo_km:     numBR(pickColumn(r, ['Custo por km'])),
-            custo_litro:  numBR(pickColumn(r, ['Custo por litro'])),
-            consumo_km_l: numBR(pickColumn(r, ['Consumo calculado'])),
-            combustivel:  pickColumn(r, ['Combust']),
-            atualizado_em: new Date().toISOString(),
+          if (!cobli_id) continue
+          const key = `${cobli_id}|${ym}`
+          const gasto = numBR(pickColumn(r, ['Gasto total', 'Total no per']))
+          const litros = numBR(pickColumn(r, ['Quantidade consumida', 'Litros']))
+          const km = numBR(pickColumn(r, ['metros rodados', 'Km']))
+          const comb = pickColumn(r, ['Combust'])
+          if (byKey.has(key)) {
+            const ex = byKey.get(key)
+            ex.gasto_brl += gasto
+            ex.litros += litros
+            ex.km_cobli = Math.max(ex.km_cobli, km) // mesmo veículo, mesmo período → km é total
+            if (comb && !ex.combustivel.includes(comb)) ex.combustivel += '+' + comb
+          } else {
+            byKey.set(key, {
+              cobli_id, ano_mes: ym, placa,
+              gasto_brl: gasto, litros, km_cobli: km,
+              custo_km: 0, custo_litro: 0, consumo_km_l: 0,  // calculados abaixo
+              combustivel: comb || '',
+              atualizado_em: new Date().toISOString(),
+            })
           }
-        }).filter(Boolean)
+        }
+        // ratios calculados após somar
+        for (const r of byKey.values()) {
+          r.custo_km    = r.km_cobli > 0 ? r.gasto_brl / r.km_cobli : 0
+          r.custo_litro = r.litros   > 0 ? r.gasto_brl / r.litros   : 0
+          r.consumo_km_l= r.litros   > 0 ? r.km_cobli  / r.litros   : 0
+        }
+        const rows = [...byKey.values()]
 
         if (rows.length) {
           const { error: upErr } = await supabase.from('cobli_fuel_mensal').upsert(rows, { onConflict: 'cobli_id,ano_mes' })
