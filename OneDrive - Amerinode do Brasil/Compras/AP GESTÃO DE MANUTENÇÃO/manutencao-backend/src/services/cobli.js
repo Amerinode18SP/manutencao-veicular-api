@@ -58,4 +58,25 @@ function getFuelTransactions({ period, page = 1, limit = 200 }) {
   return call('GET', '/public/v1/fuel/transactions', { query: { period, page, limit } })
 }
 
-module.exports = { getVehiclesPage, getGroups, getDistanceDriven, getFuelTransactions }
+// GET /herbie-1.1/fuel/transactions/report — RELATÓRIO completo (XLSX).
+// Inclui TODAS as fontes (não só TicketLog), é o que o dashboard da Cobli usa.
+// Parâmetros: begin/end = Unix timestamp em ms, tz = timezone.
+// Retorna array de objetos JS (uma linha por transação).
+async function getFuelReport({ begin, end, tz = 'America/Sao_Paulo' }) {
+  const XLSX = require('xlsx')
+  const url = new URL(COBLI_BASE + '/herbie-1.1/fuel/transactions/report')
+  url.searchParams.set('begin', begin)
+  url.searchParams.set('end', end)
+  url.searchParams.set('tz', tz)
+  const res = await fetch(url, { method: 'GET', headers: { 'cobli-api-key': getToken() } })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Cobli report ${res.status}: ${String(text).slice(0, 200)}`)
+  }
+  const buf = Buffer.from(await res.arrayBuffer())
+  const wb = XLSX.read(buf, { type: 'buffer' })
+  const sheet = wb.Sheets[wb.SheetNames[0]]
+  return XLSX.utils.sheet_to_json(sheet, { raw: false, defval: null })
+}
+
+module.exports = { getVehiclesPage, getGroups, getDistanceDriven, getFuelTransactions, getFuelReport }

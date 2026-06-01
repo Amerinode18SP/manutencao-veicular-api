@@ -593,4 +593,21 @@ async function probe(req, res) {
   res.json({ now: new Date().toISOString(), results })
 }
 
-module.exports = { resumo, top, modelo, placas, modelos, rodizio, regioes, salvarRegiao, sync, probe }
+// Debug: vê estrutura do relatório XLSX da Cobli
+async function fuelReportDebug(req, res) {
+  try {
+    const begin = Number(req.query.begin) || new Date('2026-05-01T00:00:00-03:00').getTime()
+    const end   = Number(req.query.end)   || new Date('2026-05-31T23:59:59-03:00').getTime()
+    const data = await cobli.getFuelReport({ begin, end })
+    res.json({
+      count: data.length,
+      columns: data[0] ? Object.keys(data[0]) : [],
+      sample: data.slice(0, 3),
+      sumTotalCost: data.reduce((s, r) => s + Number(String(r['Total (R$)'] || r['Total'] || r['Valor'] || r['Custo Total'] || 0).replace(',', '.')) || 0, 0),
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
+module.exports = { resumo, top, modelo, placas, modelos, rodizio, regioes, salvarRegiao, sync, probe, fuelReportDebug }
