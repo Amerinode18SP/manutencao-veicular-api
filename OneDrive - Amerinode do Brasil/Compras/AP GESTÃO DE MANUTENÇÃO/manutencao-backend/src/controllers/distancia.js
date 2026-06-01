@@ -626,6 +626,21 @@ async function probe(req, res) {
   res.json({ now: new Date().toISOString(), results })
 }
 
+// Debug: vê o que tá na tabela cobli_fuel_mensal
+async function fuelMensalDebug(req, res) {
+  try {
+    const { data, error } = await supabase.from('cobli_fuel_mensal').select('*').limit(10)
+    const { data: total } = await supabase.from('cobli_fuel_mensal').select('cobli_id, ano_mes, gasto_brl').gte('ano_mes', '2026-05').lte('ano_mes', '2026-05')
+    const sum = (total||[]).reduce((s,r) => s + Number(r.gasto_brl||0), 0)
+    res.json({
+      error: error ? error.message : null,
+      sampleRows: data,
+      total_may2026_rows: (total||[]).length,
+      total_may2026_sum: sum,
+    })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+}
+
 // Debug: vê estrutura do relatório XLSX da Cobli
 async function fuelReportDebug(req, res) {
   try {
@@ -643,4 +658,4 @@ async function fuelReportDebug(req, res) {
   }
 }
 
-module.exports = { resumo, top, modelo, placas, modelos, rodizio, regioes, salvarRegiao, sync, probe, fuelReportDebug }
+module.exports = { resumo, top, modelo, placas, modelos, rodizio, regioes, salvarRegiao, sync, probe, fuelReportDebug, fuelMensalDebug }
