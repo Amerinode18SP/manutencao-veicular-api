@@ -4699,15 +4699,144 @@ function distExportXLSX(){
   XLSX.writeFile(wb, `distancia_combustivel_${distFileSuffix()}.xlsx`)
 }
 function distExportPDF(){
-  const { jsPDF } = window.jspdf; const doc = new jsPDF('landscape')
+  const { jsPDF } = window.jspdf
+  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' })
   const k = (distCache.resumo&&distCache.resumo.kpis)||{}
   const placa = document.getElementById('dist-placa').value
-  doc.setFontSize(14); doc.text('Distância & Combustível', 14, 16)
-  doc.setFontSize(10)
-  doc.text(`Período: ${distPeriodoLabel()} · Placa: ${placa||'Todas'} · Região: ${document.getElementById('dist-regiao').value||'Todas'} · Modelo: ${document.getElementById('dist-modelo').value||'Todos'}`, 14, 24)
-  doc.text(`Distância: ${distFmtN(k.km)} km · Gasto: ${distFmtR(k.gasto_rs)} · Custo/km: ${distFmtR(k.custo_km)} · Gerado em ${new Date().toLocaleString('pt-BR')}`, 14, 30)
-  let y = 40; doc.text('Top 10 veículos', 14, y); y+=6
-  distCache.top.forEach((v,i)=>{ doc.text(`${i+1}. ${v.placa||'-'}  ${v.modelo||'-'}  ${v.regiao||'-'}  ${distFmtN(v.km)} km  ${distFmtR(v.rs)}`, 14, y); y+=6 })
+  const pageW = doc.internal.pageSize.getWidth()
+  const pageH = doc.internal.pageSize.getHeight()
+  const M = 12
+  let y = M
+
+  // ── Cabeçalho com cor Amerinode ──
+  doc.setFillColor(12, 68, 124) // #0C447C
+  doc.rect(0, 0, pageW, 18, 'F')
+  doc.setTextColor(255); doc.setFontSize(15); doc.setFont('helvetica','bold')
+  doc.text('Distância & Combustível', M, 12)
+  doc.setFontSize(9); doc.setFont('helvetica','normal')
+  doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, pageW - M, 12, { align:'right' })
+  y = 24
+
+  // ── Filtros aplicados ──
+  doc.setTextColor(80); doc.setFontSize(9)
+  const filtros = [
+    `Período: ${distPeriodoLabel()}`,
+    `Placa: ${placa||'Todas'}`,
+    `Região: ${document.getElementById('dist-regiao').value||'Todas'}`,
+    `Modelo: ${document.getElementById('dist-modelo').value||'Todos'}`,
+  ].join('    ·    ')
+  doc.text(filtros, M, y); y += 6
+
+  // ── KPIs em 4 cards ──
+  const kpis = [
+    ['Distância total',  `${distFmtN(k.km)} km`],
+    ['Gasto combustível', distFmtR(k.gasto_rs)],
+    ['Custo por km',      distFmtR(k.custo_km)],
+    ['Veículos ativos',   String(k.veiculos||0)],
+  ]
+  const cardW = (pageW - 2*M - 9) / 4
+  kpis.forEach(([label,val], i) => {
+    const x = M + i*(cardW + 3)
+    doc.setFillColor(245,248,251); doc.roundedRect(x, y, cardW, 18, 2, 2, 'F')
+    doc.setTextColor(102); doc.setFontSize(8); doc.text(label, x+3, y+6)
+    doc.setTextColor(12,68,124); doc.setFontSize(13); doc.setFont('helvetica','bold')
+    doc.text(val, x+3, y+14)
+    doc.setFont('helvetica','normal')
+  })
+  y += 22
+
+  // ── Gráfico (captura do canvas Chart.js como imagem) ──
+  try {
+    const canvas = document.getElementById('dist-chart')
+    if (canvas) {
+      const img = canvas.toDataURL('image/png', 1.0)
+      const chartW = pageW - 2*M
+      const chartH = 55
+      if (y + chartH > pageH - M) { doc.addPage(); y = M }
+      doc.addImage(img, 'PNG', M, y, chartW, chartH)
+      y += chartH + 4
+    }
+  } catch (e) { console.warn('chart toDataURL falhou', e) }
+
+  // ── Tabela Top 10 ──
+  if (distCache.top && distCache.top.length) {
+    if (y + 30 > pageH - M) { doc.addPage(); y = M }
+    doc.setTextColor(12,68,124); doc.setFontSize(11); doc.setFont('helvetica','bold')
+    doc.text('Top 10 veículos', M, y); y += 1
+    doc.autoTable({
+      startY: y + 2,
+      head: [['#','Placa','Modelo','Região','Km','Gasto (R$)']],
+      body: distCache.top.map((v,i) => [i+1, v.placa||'-', v.modelo||'-', v.regiao||'-', distFmtN(v.km), distFmtR(v.rs)]),
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [24,95,165], textColor: 255 },
+      columnStyles: { 4: { halign:'right' }, 5: { halign:'right' } },
+      margin: { left: M, right: M },
+    })
+    y = doc.lastAutoTable.finalY + 6
+  }
+
+  // ── Gasto médio por modelo ──
+  if (distCache.modelos && distCache.modelos.length) {
+    if (y + 30 > pageH - M) { doc.addPage(); y = M }
+    doc.setTextColor(12,68,124); doc.setFontSize(11); doc.setFont('helvetica','bold')
+    doc.text('Gasto médio por modelo (R$/km)', M, y); y += 1
+    doc.autoTable({
+      startY: y + 2,
+      head: [['Modelo','R$/km']],
+      body: distCache.modelos.map(m => [m.modelo, distFmtR(m.custo_km)]),
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [24,95,165], textColor: 255 },
+      columnStyles: { 1: { halign:'right' } },
+      margin: { left: M, right: M },
+    })
+    y = doc.lastAutoTable.finalY + 6
+  }
+
+  // ── Alertas ──
+  if (distCache.alertas && distCache.alertas.length) {
+    if (y + 30 > pageH - M) { doc.addPage(); y = M }
+    doc.setTextColor(163,45,45); doc.setFontSize(11); doc.setFont('helvetica','bold')
+    doc.text('Alertas de gasto excessivo', M, y); y += 1
+    doc.autoTable({
+      startY: y + 2,
+      head: [['Placa','Modelo','Região','R$/km','Desvio','Ação']],
+      body: distCache.alertas.map(a => [a.placa||'-', a.modelo||'-', a.regiao||'-', distFmtR(a.custo_km), `+${a.desvio}%`, a.acao==='troca'?'Avaliar troca':'Agendar manutenção']),
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [163,45,45], textColor: 255 },
+      columnStyles: { 3: { halign:'right' }, 4: { halign:'right' } },
+      margin: { left: M, right: M },
+    })
+    y = doc.lastAutoTable.finalY + 6
+  }
+
+  // ── Recomendações de rodízio ──
+  if (distCache.rodizio && distCache.rodizio.length) {
+    if (y + 30 > pageH - M) { doc.addPage(); y = M }
+    doc.setTextColor(186,117,23); doc.setFontSize(11); doc.setFont('helvetica','bold')
+    doc.text('Recomendações de rodízio', M, y); y += 1
+    doc.autoTable({
+      startY: y + 2,
+      head: [['Grupo','Sobrecarregado','Km','vs média','Sugerido p/ troca','Km','vs média']],
+      body: distCache.rodizio.map(s => [
+        s.grupo, `${s.alto.placa} (${s.alto.modelo||''})`, distFmtN(s.alto.km), `+${s.alto.desvio}%`,
+        `${s.baixo.placa} (${s.baixo.modelo||''})`, distFmtN(s.baixo.km), `${s.baixo.desvio}%`,
+      ]),
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [186,117,23], textColor: 255 },
+      columnStyles: { 2: { halign:'right' }, 3: { halign:'right' }, 5: { halign:'right' }, 6: { halign:'right' } },
+      margin: { left: M, right: M },
+    })
+  }
+
+  // ── Rodapé com paginação ──
+  const total = doc.internal.getNumberOfPages()
+  for (let i = 1; i <= total; i++) {
+    doc.setPage(i)
+    doc.setTextColor(140); doc.setFontSize(8); doc.setFont('helvetica','normal')
+    doc.text(`Amerinode · Gestão de Manutenção Veicular`, M, pageH - 5)
+    doc.text(`Página ${i} de ${total}`, pageW - M, pageH - 5, { align:'right' })
+  }
+
   doc.save(`distancia_combustivel_${distFileSuffix()}.pdf`)
 }
 
