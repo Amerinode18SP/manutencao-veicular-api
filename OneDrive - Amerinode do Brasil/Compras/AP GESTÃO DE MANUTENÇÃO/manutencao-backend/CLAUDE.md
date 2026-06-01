@@ -193,3 +193,48 @@ Esta sessão trabalhou via worktree em `C:/Users/Ana/.claude/worktrees/...`. Se 
 - Sem emojis em código a não ser quando já tem (botões/UI)
 - Não criar markdown novo sem necessidade
 - Edit prefere alterar `index.html` existente, não criar arquivos novos
+
+---
+
+## 🚗 Módulo Distância & Combustível (preview — gated)
+
+Integração com a API da **Cobli** para visualizar km rodados, gasto com combustível,
+custo por km, top 10 veículos, gasto médio por modelo e alertas de gasto excessivo.
+
+**Status:** preview. A aba só aparece no menu quando `window.FEATURES.distanciaCobli === true`
+no `public/index.html`. Hoje está em `false`.
+
+### Endpoints da Cobli consumidos
+Auth via header `cobli-api-key: <token>` (NÃO usa Bearer).
+- `POST https://api.cobli.co/public/v1/vehicles/report/distance-driven`
+- `GET  https://api.cobli.co/herbie-1.1/fuel/transactions`
+- `GET  https://api.cobli.co/herbie-1.1/fuel/card/associations`
+
+### Arquivos
+- `scripts/distancia.sql` — schema (`cobli_vehicles`, `cobli_distance`, `cobli_fuel`, `cobli_regiao_override`)
+- `src/services/cobli.js` — cliente HTTP da Cobli
+- `src/controllers/distancia.js` — lógica do módulo
+- `src/routes/distancia.js` — registra em `/api/distancia/*`
+
+### Rotas expostas
+| Método | Rota | Descrição |
+|---|---|---|
+| GET  | `/api/distancia/resumo`  | KPIs + série mensal |
+| GET  | `/api/distancia/top`     | Top 10 veículos por km |
+| GET  | `/api/distancia/modelo`  | Custo médio R$/km por modelo + alertas |
+| GET  | `/api/distancia/regioes` | Lista grupos Cobli + override |
+| PUT  | `/api/distancia/regioes` | Admin sobrescreve grupo→região |
+| POST | `/api/distancia/sync`    | Chama a Cobli e popula Supabase |
+
+### Sincronização
+**Manual** via botão "🔄 Atualizar agora" na UI. Não há cron. Os endpoints de leitura
+servem do cache no Supabase, então são rápidos e não dependem da Cobli estar de pé.
+
+### Env vars (Railway)
+- `COBLI_API_TOKEN` — token gerado em painel.cobli.co → APIs
+
+### Pendente de validação
+Os normalizadores em `controllers/distancia.js` (`normalizeVehicle`, `normalizeDistance`,
+`normalizeFuel`) usam fallbacks defensivos porque a doc pública da Cobli não expõe os
+nomes exatos dos campos de resposta. Na primeira sync real, conferir logs do Railway
+para ajustar se necessário.

@@ -321,6 +321,7 @@ tr:hover td{background:#F9F9F9}
   <div class="nav-item" onclick="showPage('relatorios')">📑 Relatórios</div>
   <div class="nav-item" onclick="showPage('analise')">💰 Análise de Gastos</div>
   <div class="nav-item" onclick="showPage('manutencao')">🔧 Em Manutenção</div>
+  <div class="nav-item" id="nav-distancia" onclick="showPage('distancia')" style="display:none">🚗 Distância &amp; Combustível</div>
   <div class="nav-sep"></div>
   <div class="nav-item" id="nav-usuarios" onclick="showPage('usuarios')">👥 Usuários</div>
   <div class="sidebar-bottom">
@@ -900,6 +901,77 @@ tr:hover td{background:#F9F9F9}
 
     </div><!-- /page-manutencao -->
 
+    <!-- DISTÂNCIA & COMBUSTÍVEL (preview, gated por FEATURES.distanciaCobli) -->
+    <div class="page" id="page-distancia">
+      <div class="card-header">
+        <h2>Distância &amp; Combustível</h2>
+        <span id="dist-atualizado" style="color:#666;font-size:13px"></span>
+      </div>
+
+      <!-- filtros -->
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:12px 0">
+        <label>Período
+          <select id="dist-periodo" onchange="distCarregar()">
+            <option value="mes">Mês</option><option value="tri">Trimestre</option>
+            <option value="sem">Semestre</option><option value="ano">Anual</option>
+          </select>
+        </label>
+        <label>Região
+          <select id="dist-regiao" onchange="distCarregar()"><option value="">Todas</option></select>
+        </label>
+        <label>Modelo
+          <select id="dist-modelo" onchange="distCarregar()"><option value="">Todos</option></select>
+        </label>
+        <label>Tolerância
+          <select id="dist-limiar" onchange="distCarregar()">
+            <option value="10">+10%</option><option value="20" selected>+20%</option>
+            <option value="30">+30%</option><option value="40">+40%</option>
+          </select>
+        </label>
+        <span style="flex:1"></span>
+        <button class="btn btn-primary" id="btn-dist-sync" onclick="distSync()">🔄 Atualizar agora</button>
+        <button class="btn" onclick="distExportXLSX()">⬇️ Excel</button>
+        <button class="btn" onclick="distExportPDF()">⬇️ PDF</button>
+      </div>
+
+      <!-- KPIs -->
+      <div id="dist-kpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px"></div>
+
+      <!-- gráfico -->
+      <div class="table-wrap" style="padding:12px;margin-bottom:16px">
+        <canvas id="dist-chart" height="90"></canvas>
+      </div>
+
+      <!-- top 10 -->
+      <div class="table-wrap" style="margin-bottom:16px">
+        <div class="card-header"><h3>Top 10 veículos</h3></div>
+        <table><thead><tr><th>#</th><th>Placa</th><th>Modelo</th><th>Região</th>
+          <th style="text-align:right">Km</th><th style="text-align:right">Gasto (R$)</th></tr></thead>
+          <tbody id="dist-top"></tbody></table>
+      </div>
+
+      <!-- média por modelo + alertas -->
+      <div class="table-wrap" style="margin-bottom:16px">
+        <div class="card-header"><h3>Gasto médio por modelo (R$/km)</h3></div>
+        <table><thead><tr><th>Modelo</th><th style="text-align:right">R$/km</th></tr></thead>
+          <tbody id="dist-modelos"></tbody></table>
+      </div>
+      <div class="table-wrap" style="margin-bottom:16px">
+        <div class="card-header"><h3>Alertas de gasto excessivo</h3></div>
+        <table><thead><tr><th>Placa</th><th>Modelo</th><th>Região</th>
+          <th style="text-align:right">R$/km</th><th style="text-align:right">Desvio</th><th>Ação</th></tr></thead>
+          <tbody id="dist-alertas"></tbody></table>
+      </div>
+
+      <!-- região por grupo (override administrativo) -->
+      <div class="table-wrap">
+        <div class="card-header"><h3>Região por grupo</h3></div>
+        <p style="color:#666;font-size:13px;padding:0 12px">A região vem do grupo da Cobli. Você pode sobrescrever aqui sem alterar o cadastro na Cobli.</p>
+        <table><thead><tr><th>Grupo</th><th>Região</th><th>Origem</th><th></th></tr></thead>
+          <tbody id="dist-regioes"></tbody></table>
+      </div>
+    </div><!-- /page-distancia -->
+
   </div>
 </div>
 </div>
@@ -1062,6 +1134,13 @@ tr:hover td{background:#F9F9F9}
 <script>
 // ── CONFIG ────────────────────────────────────────────────────
 const API = 'https://manutencao-veicular-api-production.up.railway.app'
+
+// ── FEATURES (release gates) ──────────────────────────────────────
+// distanciaCobli: módulo Distância & Combustível (preview).
+// Trocar para true SOMENTE após validar a sincronização com a Cobli.
+window.FEATURES = window.FEATURES || {}
+window.FEATURES.distanciaCobli = false
+
 const SUPABASE_URL = 'https://pjasyczbgghatkbgnovs.supabase.co'
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBqYXN5Y3piZ2doYXRrYmdub3ZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1NTY2NjMsImV4cCI6MjA5MzEzMjY2M30.h-fhhwockOgH9kjnAL9Dkv3-sB2B2TjZi_dY5nzhNJ4'
 
@@ -4345,6 +4424,169 @@ function baixarTemplateManutencao(){
 }
 
 document.querySelectorAll('.modal-overlay').forEach(m=>{m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')})})
+
+// ── DISTÂNCIA & COMBUSTÍVEL ──────────────────────────────────────
+let distChartRef = null
+let distCache = { resumo:null, top:[], modelos:[], alertas:[] }
+const distFmtN = n => Number(n||0).toLocaleString('pt-BR')
+const distFmtR = n => 'R$ ' + Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
+
+function distQuery(){
+  const p = new URLSearchParams()
+  p.set('periodo', document.getElementById('dist-periodo').value)
+  const r = document.getElementById('dist-regiao').value; if(r) p.set('regiao', r)
+  const m = document.getElementById('dist-modelo').value; if(m) p.set('modelo', m)
+  return p
+}
+
+async function distCarregar(){
+  if(!window.FEATURES || !window.FEATURES.distanciaCobli) return
+  try{
+    const base = distQuery()
+    const limiar = document.getElementById('dist-limiar').value
+    const [resumo, top, modelo] = await Promise.all([
+      fetch(`${API}/api/distancia/resumo?${base}`).then(r=>r.json()),
+      fetch(`${API}/api/distancia/top?${base}`).then(r=>r.json()),
+      fetch(`${API}/api/distancia/modelo?${base}&limiar=${limiar}`).then(r=>r.json()),
+    ])
+    distCache = { resumo, top, modelos: modelo.mediaModelo||[], alertas: modelo.alertas||[] }
+    distRenderKpis(resumo.kpis||{}); distRenderChart(resumo.serie||[])
+    distRenderTop(top||[]); distRenderModelos(distCache.modelos); distRenderAlertas(distCache.alertas)
+  }catch(e){ console.error('distancia', e) }
+}
+
+async function distSync(){
+  if(typeof currentPerfil!=='undefined' && currentPerfil!=='administrador'){
+    alert('Sem permissão para sincronizar com a Cobli.'); return
+  }
+  const btn = document.getElementById('btn-dist-sync')
+  const status = document.getElementById('dist-atualizado')
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Sincronizando…' }
+  if(status) status.textContent = 'Buscando dados da Cobli…'
+  try{
+    const periodo = document.getElementById('dist-periodo').value
+    const r = await fetch(`${API}/api/distancia/sync`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ periodo })
+    }).then(r=>r.json())
+    if(r.ok){
+      if(status) status.textContent = `Atualizado em ${new Date().toLocaleString('pt-BR')} · ${r.counts.veiculos} veículos, ${r.counts.distancia} registros de km, ${r.counts.combustivel} transações`
+    } else {
+      if(status) status.textContent = 'Sincronização parcial — veja console para detalhes'
+      console.warn('sync com erros:', r)
+    }
+    await distCarregarRegioes()
+    await distCarregar()
+  }catch(e){
+    console.error('sync', e)
+    if(status) status.textContent = 'Erro ao sincronizar — confira COBLI_API_TOKEN no Railway'
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '🔄 Atualizar agora' }
+  }
+}
+
+function distRenderKpis(k){
+  const card=(t,v)=>`<div style="background:#F5F8FB;border-radius:8px;padding:12px">
+    <div style="color:#666;font-size:12px">${t}</div><div style="font-size:22px;font-weight:600;color:#0C447C">${v}</div></div>`
+  document.getElementById('dist-kpis').innerHTML =
+    card('Distância total', distFmtN(k.km)+' km') + card('Gasto combustível', distFmtR(k.gasto_rs)) +
+    card('Custo por km', distFmtR(k.custo_km)) + card('Veículos ativos', k.veiculos||0)
+}
+function distRenderChart(serie){
+  const labels = serie.map(s=>s.mes)
+  const km = serie.map(s=>s.km), rs = serie.map(s=>s.rs)
+  if(distChartRef) distChartRef.destroy()
+  distChartRef = new Chart(document.getElementById('dist-chart'), {
+    data:{ labels, datasets:[
+      { type:'bar',  label:'Distância (km)', data:km, backgroundColor:'#185FA5', yAxisID:'y' },
+      { type:'line', label:'Gasto (R$)',     data:rs, borderColor:'#BA7517', backgroundColor:'#BA7517', yAxisID:'y1', tension:.3 },
+    ]},
+    options:{ responsive:true, scales:{ y:{position:'left'}, y1:{position:'right', grid:{drawOnChartArea:false}} } }
+  })
+}
+function distRenderTop(lista){
+  document.getElementById('dist-top').innerHTML = lista.length ? lista.map((v,i)=>
+    `<tr><td>${i+1}</td><td>${v.placa||'-'}</td><td>${v.modelo||'-'}</td><td>${v.regiao||'-'}</td>
+     <td style="text-align:right">${distFmtN(v.km)}</td><td style="text-align:right">${distFmtR(v.rs)}</td></tr>`).join('')
+    : '<tr><td colspan="6" style="color:#666">Sem dados. Clique em <b>Atualizar agora</b> para sincronizar com a Cobli.</td></tr>'
+}
+function distRenderModelos(lista){
+  document.getElementById('dist-modelos').innerHTML = lista.map(m=>
+    `<tr><td>${m.modelo}</td><td style="text-align:right">${distFmtR(m.custo_km)}</td></tr>`).join('')
+    || '<tr><td colspan="2" style="color:#666">—</td></tr>'
+}
+function distRenderAlertas(lista){
+  if(!lista.length){ document.getElementById('dist-alertas').innerHTML =
+    '<tr><td colspan="6" style="color:#2e7d32">Nenhum veículo acima do limite neste período.</td></tr>'; return }
+  document.getElementById('dist-alertas').innerHTML = lista.map(a=>{
+    const troca = a.acao==='troca'
+    const cor = troca ? '#A32D2D' : '#BA7517'
+    const txt = troca ? 'Avaliar troca' : 'Agendar manutenção'
+    return `<tr><td>${a.placa||'-'}</td><td>${a.modelo||'-'}</td><td>${a.regiao||'-'}</td>
+      <td style="text-align:right">${distFmtR(a.custo_km)}</td>
+      <td style="text-align:right;color:${cor}">+${a.desvio}%</td>
+      <td style="color:${cor}">${txt}</td></tr>`
+  }).join('')
+}
+
+async function distCarregarRegioes(){
+  const regs = await fetch(`${API}/api/distancia/regioes`).then(r=>r.json())
+  const selR = document.getElementById('dist-regiao')
+  const atuais = new Set([...selR.options].map(o=>o.value))
+  ;[...new Set(regs.map(r=>r.regiao_efetiva))].forEach(reg=>{
+    if(reg && !atuais.has(reg)){ const o=document.createElement('option'); o.value=o.textContent=reg; selR.appendChild(o) }
+  })
+  const admin = (typeof currentPerfil!=='undefined') && currentPerfil==='administrador'
+  document.getElementById('dist-regioes').innerHTML = regs.length ? regs.map(r=>`
+    <tr><td>${r.grupo}</td>
+      <td>${ admin
+        ? `<input id="reg-${r.grupo}" value="${r.regiao_efetiva||''}" style="width:140px">`
+        : (r.regiao_efetiva||'-') }</td>
+      <td>${ r.personalizado ? '<span style="color:#BA7517">personalizado</span>' : '<span style="color:#185FA5">padrão Cobli</span>' }</td>
+      <td>${ admin ? `<button class="btn" onclick="distSalvarRegiao('${r.grupo}')">Salvar</button>` : '' }</td></tr>`).join('')
+    : '<tr><td colspan="4" style="color:#666">Nenhum grupo encontrado. Clique em <b>Atualizar agora</b>.</td></tr>'
+}
+async function distSalvarRegiao(grupo){
+  const v = document.getElementById('reg-'+grupo).value
+  await fetch(`${API}/api/distancia/regioes`, { method:'PUT',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({ grupo, regiao: v }) })
+  distCarregarRegioes(); distCarregar()
+}
+
+function distExportXLSX(){
+  const wb = XLSX.utils.book_new()
+  const k = (distCache.resumo&&distCache.resumo.kpis)||{}
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
+    { Filtro:'Período', Valor:document.getElementById('dist-periodo').value },
+    { Filtro:'Região',  Valor:document.getElementById('dist-regiao').value||'Todas' },
+    { Filtro:'Modelo',  Valor:document.getElementById('dist-modelo').value||'Todos' },
+    { Filtro:'Distância (km)', Valor:k.km }, { Filtro:'Gasto (R$)', Valor:k.gasto_rs },
+    { Filtro:'Custo por km',   Valor:k.custo_km },
+    { Filtro:'Gerado em', Valor:new Date().toLocaleString('pt-BR') },
+  ]), 'Resumo')
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(distCache.top),     'Por veiculo')
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(distCache.modelos), 'Media por modelo')
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(distCache.alertas), 'Alertas')
+  XLSX.writeFile(wb, `distancia_combustivel_${document.getElementById('dist-periodo').value}.xlsx`)
+}
+function distExportPDF(){
+  const { jsPDF } = window.jspdf; const doc = new jsPDF('landscape')
+  const k = (distCache.resumo&&distCache.resumo.kpis)||{}
+  doc.setFontSize(14); doc.text('Distância & Combustível', 14, 16)
+  doc.setFontSize(10)
+  doc.text(`Período: ${document.getElementById('dist-periodo').value} · Região: ${document.getElementById('dist-regiao').value||'Todas'} · Modelo: ${document.getElementById('dist-modelo').value||'Todos'}`, 14, 24)
+  doc.text(`Distância: ${distFmtN(k.km)} km · Gasto: ${distFmtR(k.gasto_rs)} · Custo/km: ${distFmtR(k.custo_km)} · Gerado em ${new Date().toLocaleString('pt-BR')}`, 14, 30)
+  let y = 40; doc.text('Top 10 veículos', 14, y); y+=6
+  distCache.top.forEach((v,i)=>{ doc.text(`${i+1}. ${v.placa||'-'}  ${v.modelo||'-'}  ${v.regiao||'-'}  ${distFmtN(v.km)} km  ${distFmtR(v.rs)}`, 14, y); y+=6 })
+  doc.save(`distancia_combustivel_${document.getElementById('dist-periodo').value}.pdf`)
+}
+
+function distInit(){
+  if(!window.FEATURES || !window.FEATURES.distanciaCobli) return
+  const menu = document.getElementById('nav-distancia'); if(menu) menu.style.display=''
+  distCarregarRegioes().then(distCarregar)
+}
+document.addEventListener('DOMContentLoaded', distInit)
 </script>
 </body>
 </html>

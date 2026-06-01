@@ -220,3 +220,55 @@ npm run dev
 - [ ] Integração com API do Cotabox
 - [ ] Exportação de relatórios em PDF/Excel
 - [ ] Notificações por e-mail para revisões próximas
+
+---
+
+## 🚗 Módulo Distância & Combustível (preview — Cobli)
+
+Módulo integrado à API da **Cobli** que mostra quilometragem, gasto com combustível, custo por km, top 10 veículos, gasto médio por modelo e alertas de veículos acima do limite. Está **desligado por padrão** (gated por `FEATURES.distanciaCobli=false` no `public/index.html`).
+
+### Endpoints novos
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET  | `/api/distancia/resumo`  | KPIs + série mensal |
+| GET  | `/api/distancia/top`     | Top 10 veículos por km |
+| GET  | `/api/distancia/modelo`  | Custo médio R$/km por modelo + alertas |
+| GET  | `/api/distancia/regioes` | Lista grupos Cobli e regiões efetivas |
+| PUT  | `/api/distancia/regioes` | Admin: sobrescreve região do grupo |
+| POST | `/api/distancia/sync`    | Chama a Cobli e atualiza o Supabase |
+
+### Passo a passo para ativar
+
+**1) Rodar o SQL no Supabase** (uma única vez)
+- Abra o Supabase → SQL Editor → New query
+- Cole o conteúdo de `scripts/distancia.sql` e clique em **Run**
+- Cria 4 tabelas: `cobli_vehicles`, `cobli_distance`, `cobli_fuel`, `cobli_regiao_override`
+
+**2) Configurar o token da Cobli no Railway**
+- Acesse o projeto no Railway → aba **Variables**
+- Adicione:
+  ```
+  COBLI_API_TOKEN = <cole o token gerado em painel.cobli.co → APIs → Criar chave de API>
+  ```
+- O token vai apenas pro Railway. **Nunca** colar no código ou no Git.
+
+**3) Fazer deploy do código**
+- `git add . && git commit -m "feat: módulo Distância & Combustível (preview)" && git push`
+- Railway sobe automaticamente.
+
+**4) Validar antes de liberar para os usuários**
+- Editar `public/index.html`, procurar `window.FEATURES.distanciaCobli = false` e trocar para `true`
+- Subir essa mudança em um **deploy de teste** (ou local com `npm run dev`)
+- Entrar no sistema como administrador → a aba **🚗 Distância & Combustível** aparece no menu
+- Clicar em **🔄 Atualizar agora** → o backend chama a Cobli e popula o Supabase
+- Conferir nos logs do Railway se a sync rodou sem erro
+- Se houver `erros` no JSON de retorno do `/sync`, ajustar os normalizadores em `src/controllers/distancia.js` (Cobli pode usar nomes de campo diferentes do esperado — os fallbacks já cobrem os mais comuns)
+
+**5) Liberar oficialmente**
+- Quando a validação estiver OK, mantenha `FEATURES.distanciaCobli = true` no `index.html` e dê push.
+
+### Como funciona
+- A sync é **manual** (botão na UI). Não há cron job nem agendamento.
+- Os endpoints de leitura (resumo/top/modelo/regioes) servem do **cache no Supabase**, então são rápidos e não dependem da Cobli estar de pé.
+- A coluna "Região" vem do grupo do veículo na Cobli. O administrador pode sobrescrever na tabela "Região por grupo" sem alterar o cadastro na Cobli.
+
