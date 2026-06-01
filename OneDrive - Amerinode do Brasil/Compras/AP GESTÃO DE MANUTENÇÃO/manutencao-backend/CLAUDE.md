@@ -196,45 +196,62 @@ Esta sessão trabalhou via worktree em `C:/Users/Ana/.claude/worktrees/...`. Se 
 
 ---
 
-## 🚗 Módulo Distância & Combustível (preview — gated)
+## 🚗 Módulo Distância & Combustível (PRODUÇÃO)
 
 Integração com a API da **Cobli** para visualizar km rodados, gasto com combustível,
-custo por km, top 10 veículos, gasto médio por modelo e alertas de gasto excessivo.
+custo por km, top 10 veículos, gasto médio por modelo, alertas e recomendações de rodízio.
 
-**Status:** preview. A aba só aparece no menu quando `window.FEATURES.distanciaCobli === true`
-no `public/index.html`. Hoje está em `false`.
+**Status:** ativo em produção. Flag `window.FEATURES.distanciaCobli = true` no `index.html`.
+Aba visível para todos os perfis; botões de ação (Atualizar/Excel/PDF) só para administrador.
+
+**Validado:** maio/2026 R$ 75.473,23 — bate exatamente com o dashboard da Cobli.
 
 ### Endpoints da Cobli consumidos
 Auth via header `cobli-api-key: <token>` (NÃO usa Bearer).
-- `POST https://api.cobli.co/public/v1/vehicles/report/distance-driven`
-- `GET  https://api.cobli.co/herbie-1.1/fuel/transactions`
-- `GET  https://api.cobli.co/herbie-1.1/fuel/card/associations`
+- `GET  /public/v1/vehicles` — paginado, campos: id, license_plate, brand, model, groups[]
+- `GET  /public/v1/groups` — grupos com vehicle_ids
+- `POST /public/v1/vehicles/report/distance-driven` — body: {start_date, end_date, vehicle_ids[]}, response: data[].distance_driven_in_km
+- `GET  /herbie-1.1/fuel/transactions/report?begin=&end=&tz=` — **retorna XLSX (não JSON)**, parseado server-side com SheetJS. É o que o dashboard da Cobli usa, inclui todas as fontes (TicketLog + outras). Uma linha por (Placa × Combustível) — `sync` dedupe por (cobli_id, ano_mes).
+
+### Histórico de dados na Cobli
+- Distância: disponível a partir de **janeiro/2025** (12 meses backfill funcionou)
+- Combustível: disponível a partir de **agosto/2025** (quando o cartão Cobli foi ativado para a Amerinode). Períodos anteriores retornam vazios.
+
+### Tabelas no Supabase
+- `cobli_vehicles` (cobli_id, placa, modelo, grupo) — cache da frota
+- `cobli_distance` (cobli_id, ano_mes, km) — km mensal por veículo
+- `cobli_fuel_mensal` (cobli_id, ano_mes, placa, gasto_brl, litros, km_cobli, custo_km, custo_litro, consumo_km_l, combustivel) — **tabela usada hoje**, vem do relatório XLSX
+- `cobli_fuel` (per-transaction, LEGADO) — não populada pelo sync atual
+- `cobli_regiao_override` (grupo → região amigável) — admin sobrescreve sem alterar Cobli
 
 ### Arquivos
-- `scripts/distancia.sql` — schema (`cobli_vehicles`, `cobli_distance`, `cobli_fuel`, `cobli_regiao_override`)
-- `src/services/cobli.js` — cliente HTTP da Cobli
-- `src/controllers/distancia.js` — lógica do módulo
+- `scripts/distancia.sql` — schema completo (rodar manualmente no Supabase)
+- `src/services/cobli.js` — cliente HTTP (incluindo XLSX parse via require('xlsx'))
+- `src/controllers/distancia.js` — handlers, lógica, dedupe, normalizers
 - `src/routes/distancia.js` — registra em `/api/distancia/*`
 
 ### Rotas expostas
 | Método | Rota | Descrição |
 |---|---|---|
-| GET  | `/api/distancia/resumo`  | KPIs + série mensal |
+| GET  | `/api/distancia/resumo`  | KPIs + série mensal/anual (aceita `?ano`, `?meses=1,2,3`, `?placa`, `?regiao`, `?modelo`) |
 | GET  | `/api/distancia/top`     | Top 10 veículos por km |
-| GET  | `/api/distancia/modelo`  | Custo médio R$/km por modelo + alertas |
+| GET  | `/api/distancia/modelo`  | Custo médio R$/km por modelo + alertas de desvio |
+| GET  | `/api/distancia/placas`  | Lista de placas (dropdown) |
+| GET  | `/api/distancia/modelos` | Lista de modelos (dropdown) |
+| GET  | `/api/distancia/rodizio` | Recomendações de troca entre veículos do mesmo grupo |
 | GET  | `/api/distancia/regioes` | Lista grupos Cobli + override |
 | PUT  | `/api/distancia/regioes` | Admin sobrescreve grupo→região |
-| POST | `/api/distancia/sync`    | Chama a Cobli e popula Supabase |
+| POST | `/api/distancia/sync`    | Body `{ano: 2025}` ou `{periodo: 'mes'}` — chama Cobli e popula Supabase |
 
 ### Sincronização
-**Manual** via botão "🔄 Atualizar agora" na UI. Não há cron. Os endpoints de leitura
-servem do cache no Supabase, então são rápidos e não dependem da Cobli estar de pé.
+**Manual** via botão "🔄 Atualizar agora" na UI (só admin). Não há cron. Os endpoints
+de leitura servem do cache no Supabase, então são rápidos e não dependem da Cobli estar de pé.
 
 ### Env vars (Railway)
-- `COBLI_API_TOKEN` — token gerado em painel.cobli.co → APIs
+- `COBLI_API_TOKEN` — token gerado em painel.cobli.co → APIs (header `cobli-api-key`)
 
-### Pendente de validação
-Os normalizadores em `controllers/distancia.js` (`normalizeVehicle`, `normalizeDistance`,
-`normalizeFuel`) usam fallbacks defensivos porque a doc pública da Cobli não expõe os
-nomes exatos dos campos de resposta. Na primeira sync real, conferir logs do Railway
-para ajustar se necessário.
+### Pontos de atenção
+- O endpoint `fuel/transactions/report` ignora `Accept: application/json` e sempre devolve XLSX. Parsing feito com SheetJS server-side.
+- Encoding dos nomes de coluna do XLSX vem com UTF-8 duplo-encoded (ex: `Ã­` para `í`). Por isso `pickColumn()` usa match por substring case-insensitive.
+- Valores numéricos vêm como string com formato PT-BR. `numBR()` trata.
+- O XLSX retorna 1 linha por (Placa × Combustível). O sync agrega por (cobli_id, ano_mes) somando gasto e litros, mantendo km como máximo (não é aditivo), e concatena combustíveis (`"ETANOL+GASOLINA"`).

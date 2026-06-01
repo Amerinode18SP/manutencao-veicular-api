@@ -15,8 +15,5 @@ router.get('/rodizio', c.rodizio)
 router.get('/regioes', c.regioes)
 router.put('/regioes', c.salvarRegiao)
 router.post('/sync',   c.sync)
-router.get('/_probe',  c.probe)
-router.get('/_fuelreport', c.fuelReportDebug)
-router.get('/_fuelmensal', c.fuelMensalDebug)
 
 module.exports = router

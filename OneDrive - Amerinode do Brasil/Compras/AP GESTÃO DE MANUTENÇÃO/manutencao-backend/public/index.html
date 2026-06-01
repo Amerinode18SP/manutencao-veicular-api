@@ -933,9 +933,9 @@ tr:hover td{background:#F9F9F9}
           </select>
         </label>
         <span style="flex:1"></span>
-        <button class="btn btn-primary" id="btn-dist-sync" onclick="distSync()">🔄 Atualizar agora</button>
-        <button class="btn" onclick="distExportXLSX()">⬇️ Excel</button>
-        <button class="btn" onclick="distExportPDF()">⬇️ PDF</button>
+        <button class="btn btn-primary" id="btn-dist-sync" onclick="distSync()" style="display:none">🔄 Atualizar agora</button>
+        <button class="btn" id="btn-dist-xlsx" onclick="distExportXLSX()" style="display:none">⬇️ Excel</button>
+        <button class="btn" id="btn-dist-pdf" onclick="distExportPDF()" style="display:none">⬇️ PDF</button>
       </div>
 
       <!-- chips de meses -->
@@ -1162,7 +1162,7 @@ const API = 'https://manutencao-veicular-api-production.up.railway.app'
 // distanciaCobli: módulo Distância & Combustível (preview).
 // Trocar para true SOMENTE após validar a sincronização com a Cobli.
 window.FEATURES = window.FEATURES || {}
-window.FEATURES.distanciaCobli = false
+window.FEATURES.distanciaCobli = true
 
 const SUPABASE_URL = 'https://pjasyczbgghatkbgnovs.supabase.co'
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBqYXN5Y3piZ2doYXRrYmdub3ZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1NTY2NjMsImV4cCI6MjA5MzEzMjY2M30.h-fhhwockOgH9kjnAL9Dkv3-sB2B2TjZi_dY5nzhNJ4'
@@ -4686,7 +4686,21 @@ function distInit(){
   if(!window.FEATURES || !window.FEATURES.distanciaCobli) return
   const menu = document.getElementById('nav-distancia'); if(menu) menu.style.display=''
   distRenderMesesChips()
+  // botões de ação só pra administrador (atualizar, exportar)
+  const admin = (typeof currentPerfil!=='undefined') && currentPerfil==='administrador'
+  if(admin){
+    ;['btn-dist-sync','btn-dist-xlsx','btn-dist-pdf'].forEach(id=>{
+      const b = document.getElementById(id); if(b) b.style.display=''
+    })
+  }
   Promise.all([distCarregarRegioes(), distCarregarPlacas(), distCarregarModelos()]).then(distCarregar)
+}
+// Re-checa permissão após login (currentPerfil muda depois do DOMContentLoaded)
+window.distReaplicarPermissoes = function(){
+  const admin = (typeof currentPerfil!=='undefined') && currentPerfil==='administrador'
+  ;['btn-dist-sync','btn-dist-xlsx','btn-dist-pdf'].forEach(id=>{
+    const b = document.getElementById(id); if(b) b.style.display = admin ? '' : 'none'
+  })
 }
 document.addEventListener('DOMContentLoaded', distInit)
 </script>
