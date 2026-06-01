@@ -541,8 +541,13 @@ async function sync(req, res) {
         }).filter(Boolean)
 
         if (rows.length) {
-          await supabase.from('cobli_fuel_mensal').upsert(rows, { onConflict: 'cobli_id,ano_mes' })
-          counts.combustivel += rows.length
+          const { error: upErr } = await supabase.from('cobli_fuel_mensal').upsert(rows, { onConflict: 'cobli_id,ano_mes' })
+          if (upErr) {
+            console.error('[cobli sync] upsert fuel_mensal err:', upErr.message, 'first row:', JSON.stringify(rows[0]))
+            erros.push({ etapa: 'combustivel_upsert', detalhe: upErr.message, sample: rows[0] })
+          } else {
+            counts.combustivel += rows.length
+          }
         }
       }
     } catch (e) {
