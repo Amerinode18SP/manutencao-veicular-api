@@ -568,6 +568,9 @@ async function probe(req, res) {
     { label: 'fuel:period=2026-05 size=200',     method: 'GET', path: '/public/v1/fuel/transactions?period=2026-05&size=200', sampleLen: 3000 },
     { label: 'fuel:period=2026-05 only',         method: 'GET', path: '/public/v1/fuel/transactions?period=2026-05', sampleLen: 3000 },
     { label: 'distance:public/v1 sample',              method: 'POST', path: '/public/v1/vehicles/report/distance-driven', body: { start_date: '2026-05-01', end_date: '2026-05-31', vehicle_ids: ['04d94ae4-8eaa-4497-bc63-17d664db8091'] }, sampleLen: 2000 },
+    // NOVO: endpoint de RELATÓRIO de transações (provavelmente o que o dashboard usa)
+    { label: 'fuel:report May2026 JSON', method: 'GET', path: `/herbie-1.1/fuel/transactions/report?begin=${new Date('2026-05-01T00:00:00-03:00').getTime()}&end=${new Date('2026-05-31T23:59:59-03:00').getTime()}&tz=America/Sao_Paulo`, sampleLen: 4000 },
+    { label: 'fuel:report Apr2025 JSON', method: 'GET', path: `/herbie-1.1/fuel/transactions/report?begin=${new Date('2025-04-01T00:00:00-03:00').getTime()}&end=${new Date('2025-04-30T23:59:59-03:00').getTime()}&tz=America/Sao_Paulo`, sampleLen: 2000 },
   ]
 
   const results = []
