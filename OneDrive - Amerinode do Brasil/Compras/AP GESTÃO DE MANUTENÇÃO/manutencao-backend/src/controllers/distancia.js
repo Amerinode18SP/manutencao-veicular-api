@@ -253,95 +253,141 @@ async function salvarRegiao(req, res, next) {
   } catch (e) { next(e) }
 }
 
+// Gera a lista de YYYY-MM entre start_date e end_date (inclusive).
+function monthsInRange(start_date, end_date) {
+  const months = []
+  let [y, m] = start_date.slice(0, 7).split('-').map(Number)
+  const [ey, em] = end_date.slice(0, 7).split('-').map(Number)
+  while (y < ey || (y === ey && m <= em)) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`)
+    m++; if (m > 12) { m = 1; y++ }
+  }
+  return months
+}
+
+// Para um YYYY-MM, retorna { start, end } do mês inteiro (último dia correto).
+function monthBounds(ym) {
+  const [y, m] = ym.split('-').map(Number)
+  const last = new Date(y, m, 0).getDate() // dia 0 do mês seguinte = último do atual
+  return { start: `${ym}-01`, end: `${ym}-${String(last).padStart(2, '0')}` }
+}
+
 // Sync manual: chama a Cobli e popula o Supabase.
-// É o único caminho que efetivamente conversa com a Cobli.
 async function sync(req, res) {
   const counts = { veiculos: 0, distancia: 0, combustivel: 0 }
   const erros = []
   try {
     const { periodo = 'mes' } = req.body || {}
     const { start_date, end_date } = periodToRange(periodo)
-    const ano_mes = end_date.slice(0, 7)
+    const months = monthsInRange(start_date, end_date)
 
-    // (1) Veículos via associações de cartões
-    const vehicleMap = new Map()
+    // (1) Veículos via /public/v1/vehicles (paginado)
+    const allVehicles = []
     try {
-      const assoc = await cobli.getAssociations()
-      const items = asArray(assoc, ['associations'])
-      for (const a of items) {
-        const v = a.vehicle || a.veiculo || a
-        const norm = normalizeVehicle(v)
-        if (!norm.grupo) norm.grupo = pick(a, ['group', 'group_name', 'grupo', 'fleet', 'fleet_name'])
-        if (norm.cobli_id) vehicleMap.set(norm.cobli_id, norm)
+      let page = 1
+      while (page <= 50) {
+        const resp = await cobli.getVehiclesPage({ page, limit: 200 })
+        const items = (resp && resp.data) || []
+        if (!items.length) break
+        for (const v of items) {
+          allVehicles.push({
+            cobli_id: String(v.id),
+            placa:    v.license_plate || null,
+            modelo:   [v.brand, v.model].filter(Boolean).join(' ') || v.model || null,
+            grupo:    (v.groups && v.groups[0] && v.groups[0].name) || null,
+          })
+        }
+        if (!resp.pagination || !resp.pagination.next) break
+        page++
       }
-      const vehicles = [...vehicleMap.values()]
-      if (vehicles.length) {
-        await supabase.from('cobli_vehicles').upsert(
-          vehicles.map(v => ({ ...v, atualizado_em: new Date().toISOString() })),
-          { onConflict: 'cobli_id' },
-        )
+      if (allVehicles.length) {
+        // upsert em lotes pra evitar payload muito grande
+        for (let i = 0; i < allVehicles.length; i += 500) {
+          const batch = allVehicles.slice(i, i + 500)
+          await supabase.from('cobli_vehicles').upsert(
+            batch.map(v => ({ ...v, atualizado_em: new Date().toISOString() })),
+            { onConflict: 'cobli_id' },
+          )
+        }
       }
-      counts.veiculos = vehicles.length
+      counts.veiculos = allVehicles.length
     } catch (e) {
-      console.error('[cobli sync] associações:', e.message)
-      erros.push({ etapa: 'associacoes', detalhe: e.message })
+      console.error('[cobli sync] veiculos:', e.message)
+      erros.push({ etapa: 'veiculos', detalhe: e.message })
     }
 
-    // (2) Distância por veículo no período
-    const allIds = [...vehicleMap.keys()]
-    if (allIds.length) {
+    const ids = allVehicles.map(v => v.cobli_id)
+
+    // (2) Distância — por mês (pra ter granularidade mensal no gráfico)
+    if (ids.length) {
       try {
-        for (let i = 0; i < allIds.length; i += 2000) {
-          const chunk = allIds.slice(i, i + 2000)
-          let page = 1
-          while (page <= 50) {
-            const resp = await cobli.getDistanceDriven({ start_date, end_date, vehicle_ids: chunk, page })
-            const items = asArray(resp)
-            if (!items.length) break
-            const rows = items.map(it => {
-              const n = normalizeDistance(it)
-              return n.cobli_id ? { cobli_id: n.cobli_id, ano_mes, km: n.km, atualizado_em: new Date().toISOString() } : null
-            }).filter(Boolean)
-            if (rows.length) {
-              await supabase.from('cobli_distance').upsert(rows, { onConflict: 'cobli_id,ano_mes' })
-              counts.distancia += rows.length
+        for (const ym of months) {
+          const { start, end } = monthBounds(ym)
+          // ajustar fim se for o mês corrente — não pedir futuro
+          const realEnd = end > end_date ? end_date : end
+          for (let i = 0; i < ids.length; i += 2000) {
+            const chunk = ids.slice(i, i + 2000)
+            let page = 1
+            while (page <= 50) {
+              const resp = await cobli.getDistanceDriven({ start_date: start, end_date: realEnd, vehicle_ids: chunk, page })
+              const items = (resp && resp.data) || []
+              if (!items.length) break
+              const rows = items.map(it => ({
+                cobli_id: String(it.vehicle_id),
+                ano_mes: ym,
+                km: Number(it.distance_driven_in_km || 0),
+                atualizado_em: new Date().toISOString(),
+              })).filter(r => r.cobli_id && r.cobli_id !== 'undefined')
+              if (rows.length) {
+                await supabase.from('cobli_distance').upsert(rows, { onConflict: 'cobli_id,ano_mes' })
+                counts.distancia += rows.length
+              }
+              if (!resp.pagination || !resp.pagination.next) break
+              page++
             }
-            if (items.length < 2000) break
-            page++
           }
         }
       } catch (e) {
-        console.error('[cobli sync] distância:', e.message)
+        console.error('[cobli sync] distancia:', e.message)
         erros.push({ etapa: 'distancia', detalhe: e.message })
       }
     }
 
-    // (3) Transações de combustível no período
+    // (3) Combustível — por mês, com period=YYYY-MM e limit=200
     try {
-      let page = 1
-      while (page <= 50) {
-        const resp = await cobli.getFuelTransactions({ start_date, end_date, page })
-        const items = asArray(resp, ['transactions'])
-        if (!items.length) break
-        const rows = items.map(normalizeFuel).filter(r => r.transaction_id && r.data)
-        if (rows.length) {
-          await supabase.from('cobli_fuel').upsert(
-            rows.map(r => ({ ...r, atualizado_em: new Date().toISOString() })),
-            { onConflict: 'transaction_id' },
-          )
-          counts.combustivel += rows.length
+      for (const ym of months) {
+        let page = 1
+        while (page <= 100) {
+          const resp = await cobli.getFuelTransactions({ period: ym, page, limit: 200 })
+          const items = (resp && resp.data) || []
+          if (!items.length) break
+          const rows = items.map(t => ({
+            transaction_id: String(t.id),
+            cobli_id:       String((t.vehicle && t.vehicle.id) || ''),
+            data:           String(t.transaction_time || '').slice(0, 10) || null,
+            litros:         Number(t.quantity_in_liters || 0),
+            valor_brl:      Number(t.total_cost || 0),
+            atualizado_em:  new Date().toISOString(),
+          })).filter(r => r.transaction_id && r.transaction_id !== 'undefined' && r.data)
+          if (rows.length) {
+            for (let i = 0; i < rows.length; i += 500) {
+              const batch = rows.slice(i, i + 500)
+              await supabase.from('cobli_fuel').upsert(batch, { onConflict: 'transaction_id' })
+            }
+            counts.combustivel += rows.length
+          }
+          if (!resp.pagination || !resp.pagination.next) break
+          page++
         }
-        if (items.length < 1000) break
-        page++
       }
     } catch (e) {
-      console.error('[cobli sync] combustível:', e.message)
+      console.error('[cobli sync] combustivel:', e.message)
       erros.push({ etapa: 'combustivel', detalhe: e.message })
     }
 
     res.json({
       ok: erros.length === 0,
-      periodo: { start_date, end_date },
+      periodo: { start_date, end_date, months },
       counts,
       erros,
       atualizado_em: new Date().toISOString(),
