@@ -383,8 +383,12 @@ async function probe(req, res) {
     { label: 'fuel:report public/v1',                  method: 'GET', path: '/public/v1/fuel/report' },
     { label: 'fuel:report public/v1/transactions',     method: 'GET', path: '/public/v1/fuel/transactions' },
     // FINAL: amostra real de combustível mês passado, size<=200
-    { label: 'fuel:public/v1 period=2026-05 size=10',  method: 'GET', path: '/public/v1/fuel/transactions?period=2026-05&size=10', sampleLen: 3000 },
-    { label: 'fuel:public/v1 period=2026-04 size=10',  method: 'GET', path: '/public/v1/fuel/transactions?period=2026-04&size=10', sampleLen: 3000 },
+    { label: 'fuel:period=2026-05 limit=10',   method: 'GET', path: '/public/v1/fuel/transactions?period=2026-05&limit=10', sampleLen: 3000 },
+    { label: 'fuel:period=2026-05 page_size=10', method: 'GET', path: '/public/v1/fuel/transactions?period=2026-05&page_size=10', sampleLen: 3000 },
+    { label: 'fuel:period=2026-05 per_page=10',  method: 'GET', path: '/public/v1/fuel/transactions?period=2026-05&per_page=10', sampleLen: 3000 },
+    { label: 'fuel:period=2026-05 pageSize=10',  method: 'GET', path: '/public/v1/fuel/transactions?period=2026-05&pageSize=10', sampleLen: 3000 },
+    { label: 'fuel:period=2026-05 size=200',     method: 'GET', path: '/public/v1/fuel/transactions?period=2026-05&size=200', sampleLen: 3000 },
+    { label: 'fuel:period=2026-05 only',         method: 'GET', path: '/public/v1/fuel/transactions?period=2026-05', sampleLen: 3000 },
     { label: 'distance:public/v1 sample',              method: 'POST', path: '/public/v1/vehicles/report/distance-driven', body: { start_date: '2026-05-01', end_date: '2026-05-31', vehicle_ids: ['04d94ae4-8eaa-4497-bc63-17d664db8091'] }, sampleLen: 2000 },
   ]
 
