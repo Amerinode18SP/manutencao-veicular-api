@@ -87,6 +87,30 @@ function applyFilters(vehicles, { regiao, modelo, placa }) {
 
 function safeIn(ids) { return ids.length ? ids : ['__none__'] }
 
+// Acha valor numa linha XLSX usando MATCH PARCIAL (lida com encoding bugado da Cobli).
+function pickColumn(row, substrings) {
+  if (!row) return null
+  const keys = Object.keys(row)
+  for (const s of substrings) {
+    const k = keys.find(k => k.toLowerCase().includes(s.toLowerCase()))
+    if (k && row[k] != null && row[k] !== '') return row[k]
+  }
+  return null
+}
+
+// Parser PT-BR: "1.234,56" → 1234.56; "1234.56" → 1234.56
+function numBR(v) {
+  if (v == null || v === '') return 0
+  const s = String(v).replace(/\s/g, '').replace(/\./g, '').replace(',', '.')
+  // se já não tinha vírgula, manda direto
+  if (!String(v).includes(',')) {
+    const n = Number(String(v).replace(/\s/g, ''))
+    return Number.isFinite(n) ? n : 0
+  }
+  const n = Number(s)
+  return Number.isFinite(n) ? n : 0
+}
+
 // Resolve a janela de datas a partir de query string flexível.
 // Aceita: ?ano=YYYY, ?ano=todos, ?meses=1,2,3 (precisa de ano),
 // e cai pra ?periodo=mes|tri|sem|ano se nada vier.
@@ -133,16 +157,16 @@ async function resumo(req, res, next) {
       supabase.from('cobli_distance').select('cobli_id, ano_mes, km')
         .gte('ano_mes', start_date.slice(0, 7)).lte('ano_mes', end_date.slice(0, 7))
         .in('cobli_id', safeIn(ids)),
-      supabase.from('cobli_fuel').select('cobli_id, data, valor_brl, litros')
-        .gte('data', start_date).lte('data', end_date)
+      supabase.from('cobli_fuel_mensal').select('cobli_id, ano_mes, gasto_brl, litros')
+        .gte('ano_mes', start_date.slice(0, 7)).lte('ano_mes', end_date.slice(0, 7))
         .in('cobli_id', safeIn(ids)),
     ])
 
     const distFiltered = (dist || []).filter(r => inSelectedMonths(r.ano_mes, months))
-    const fuelFiltered = (fuel || []).filter(r => inSelectedMonths(String(r.data || '').slice(0, 7), months))
+    const fuelFiltered = (fuel || []).filter(r => inSelectedMonths(r.ano_mes, months))
 
     const km    = distFiltered.reduce((s, r) => s + Number(r.km || 0), 0)
-    const gasto = fuelFiltered.reduce((s, r) => s + Number(r.valor_brl || 0), 0)
+    const gasto = fuelFiltered.reduce((s, r) => s + Number(r.gasto_brl || 0), 0)
     const veiculosAtivos = new Set(distFiltered.filter(r => Number(r.km || 0) > 0).map(r => r.cobli_id)).size
 
     // Granularidade: por ano quando "Todos", por mês caso contrário
@@ -155,10 +179,9 @@ async function resumo(req, res, next) {
       b.km += Number(r.km || 0); buckets.set(k, b)
     }
     for (const r of fuelFiltered) {
-      const ym = String(r.data || '').slice(0, 7); if (!ym) continue
-      const k = bucketKey(ym)
+      const k = bucketKey(r.ano_mes)
       const b = buckets.get(k) || { mes: k, km: 0, rs: 0 }
-      b.rs += Number(r.valor_brl || 0); buckets.set(k, b)
+      b.rs += Number(r.gasto_brl || 0); buckets.set(k, b)
     }
     const serie = [...buckets.values()].sort((a, b) => a.mes.localeCompare(b.mes))
 
@@ -181,8 +204,8 @@ async function top(req, res, next) {
       supabase.from('cobli_distance').select('cobli_id, ano_mes, km')
         .gte('ano_mes', start_date.slice(0, 7)).lte('ano_mes', end_date.slice(0, 7))
         .in('cobli_id', safeIn(ids)),
-      supabase.from('cobli_fuel').select('cobli_id, data, valor_brl')
-        .gte('data', start_date).lte('data', end_date)
+      supabase.from('cobli_fuel_mensal').select('cobli_id, ano_mes, gasto_brl')
+        .gte('ano_mes', start_date.slice(0, 7)).lte('ano_mes', end_date.slice(0, 7))
         .in('cobli_id', safeIn(ids)),
     ])
 
@@ -192,8 +215,8 @@ async function top(req, res, next) {
       const a = agg.get(r.cobli_id) || { km: 0, rs: 0 }; a.km += Number(r.km || 0); agg.set(r.cobli_id, a)
     }
     for (const r of (fuel || [])) {
-      if (!inSelectedMonths(String(r.data || '').slice(0, 7), months)) continue
-      const a = agg.get(r.cobli_id) || { km: 0, rs: 0 }; a.rs += Number(r.valor_brl || 0); agg.set(r.cobli_id, a)
+      if (!inSelectedMonths(r.ano_mes, months)) continue
+      const a = agg.get(r.cobli_id) || { km: 0, rs: 0 }; a.rs += Number(r.gasto_brl || 0); agg.set(r.cobli_id, a)
     }
 
     const arr = [...agg.entries()]
@@ -220,8 +243,8 @@ async function modelo(req, res, next) {
       supabase.from('cobli_distance').select('cobli_id, ano_mes, km')
         .gte('ano_mes', start_date.slice(0, 7)).lte('ano_mes', end_date.slice(0, 7))
         .in('cobli_id', safeIn(ids)),
-      supabase.from('cobli_fuel').select('cobli_id, data, valor_brl')
-        .gte('data', start_date).lte('data', end_date)
+      supabase.from('cobli_fuel_mensal').select('cobli_id, ano_mes, gasto_brl')
+        .gte('ano_mes', start_date.slice(0, 7)).lte('ano_mes', end_date.slice(0, 7))
         .in('cobli_id', safeIn(ids)),
     ])
 
@@ -231,8 +254,8 @@ async function modelo(req, res, next) {
       const a = perVehicle.get(r.cobli_id) || { km: 0, rs: 0 }; a.km += Number(r.km || 0); perVehicle.set(r.cobli_id, a)
     }
     for (const r of (fuel || [])) {
-      if (!inSelectedMonths(String(r.data || '').slice(0, 7), months)) continue
-      const a = perVehicle.get(r.cobli_id) || { km: 0, rs: 0 }; a.rs += Number(r.valor_brl || 0); perVehicle.set(r.cobli_id, a)
+      if (!inSelectedMonths(r.ano_mes, months)) continue
+      const a = perVehicle.get(r.cobli_id) || { km: 0, rs: 0 }; a.rs += Number(r.gasto_brl || 0); perVehicle.set(r.cobli_id, a)
     }
 
     const porModelo = new Map()
@@ -485,31 +508,41 @@ async function sync(req, res) {
       }
     }
 
-    // (3) Combustível — por mês, com period=YYYY-MM e limit=200
+    // (3) Combustível — usa o RELATÓRIO oficial da Cobli (XLSX), mês a mês.
+    // Bate com o dashboard deles (inclui todas as fontes, não só TicketLog).
+    // Mapeia Placa → cobli_id usando o cache de veículos.
+    const placaToId = new Map(allVehicles.filter(v => v.placa).map(v => [v.placa, v.cobli_id]))
     try {
       for (const ym of months) {
-        let page = 1
-        while (page <= 100) {
-          const resp = await cobli.getFuelTransactions({ period: ym, page, limit: 200 })
-          const items = (resp && resp.data) || []
-          if (!items.length) break
-          const rows = items.map(t => ({
-            transaction_id: String(t.id),
-            cobli_id:       String((t.vehicle && t.vehicle.id) || ''),
-            data:           String(t.transaction_time || '').slice(0, 10) || null,
-            litros:         Number(t.quantity_in_liters || 0),
-            valor_brl:      Number(t.total_cost || 0),
-            atualizado_em:  new Date().toISOString(),
-          })).filter(r => r.transaction_id && r.transaction_id !== 'undefined' && r.data)
-          if (rows.length) {
-            for (let i = 0; i < rows.length; i += 500) {
-              const batch = rows.slice(i, i + 500)
-              await supabase.from('cobli_fuel').upsert(batch, { onConflict: 'transaction_id' })
-            }
-            counts.combustivel += rows.length
+        const { start, end } = monthBounds(ym)
+        const realEnd = end > end_date ? end_date : end
+        const begin = new Date(`${start}T00:00:00-03:00`).getTime()
+        const endMs = new Date(`${realEnd}T23:59:59-03:00`).getTime()
+        const rowsRaw = await cobli.getFuelReport({ begin, end: endMs })
+        if (!rowsRaw || !rowsRaw.length) continue
+
+        const rows = rowsRaw.map(r => {
+          const placa = pickColumn(r, ['Placa'])
+          const cobli_id = placaToId.get(placa)
+          if (!cobli_id) return null
+          return {
+            cobli_id,
+            ano_mes: ym,
+            placa,
+            gasto_brl:    numBR(pickColumn(r, ['Gasto total', 'Total no per'])),
+            litros:       numBR(pickColumn(r, ['Quantidade consumida', 'Litros'])),
+            km_cobli:     numBR(pickColumn(r, ['metros rodados', 'Km'])),
+            custo_km:     numBR(pickColumn(r, ['Custo por km'])),
+            custo_litro:  numBR(pickColumn(r, ['Custo por litro'])),
+            consumo_km_l: numBR(pickColumn(r, ['Consumo calculado'])),
+            combustivel:  pickColumn(r, ['Combust']),
+            atualizado_em: new Date().toISOString(),
           }
-          if (!resp.pagination || !resp.pagination.next) break
-          page++
+        }).filter(Boolean)
+
+        if (rows.length) {
+          await supabase.from('cobli_fuel_mensal').upsert(rows, { onConflict: 'cobli_id,ano_mes' })
+          counts.combustivel += rows.length
         }
       }
     } catch (e) {
