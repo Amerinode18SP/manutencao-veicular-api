@@ -4501,6 +4501,7 @@ function distOnFilterChange(){
 
 async function distCarregar(){
   if(!window.FEATURES || !window.FEATURES.distanciaCobli) return
+  if(typeof distReaplicarPermissoes === 'function') distReaplicarPermissoes()
   try{
     const base = distQuery()
     const limiar = document.getElementById('dist-limiar').value
