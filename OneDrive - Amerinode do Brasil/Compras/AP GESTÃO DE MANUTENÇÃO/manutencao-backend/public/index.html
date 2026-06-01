@@ -910,14 +910,18 @@ tr:hover td{background:#F9F9F9}
 
       <!-- filtros -->
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:12px 0">
-        <label>Período
-          <select id="dist-periodo" onchange="distCarregar()">
-            <option value="mes">Mês</option><option value="tri">Trimestre</option>
-            <option value="sem">Semestre</option><option value="ano">Anual</option>
+        <label>Ano
+          <select id="dist-ano" onchange="distOnAnoChange()">
+            <option value="2026">2026</option>
+            <option value="2025">2025</option>
+            <option value="todos">Todos</option>
           </select>
         </label>
+        <label>Placa
+          <select id="dist-placa" onchange="distCarregar()"><option value="">Todas</option></select>
+        </label>
         <label>Região
-          <select id="dist-regiao" onchange="distCarregar()"><option value="">Todas</option></select>
+          <select id="dist-regiao" onchange="distOnFilterChange()"><option value="">Todas</option></select>
         </label>
         <label>Modelo
           <select id="dist-modelo" onchange="distCarregar()"><option value="">Todos</option></select>
@@ -932,6 +936,13 @@ tr:hover td{background:#F9F9F9}
         <button class="btn btn-primary" id="btn-dist-sync" onclick="distSync()">🔄 Atualizar agora</button>
         <button class="btn" onclick="distExportXLSX()">⬇️ Excel</button>
         <button class="btn" onclick="distExportPDF()">⬇️ PDF</button>
+      </div>
+
+      <!-- chips de meses -->
+      <div id="dist-meses-row" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <span style="color:#666;font-size:12px;font-weight:500;margin-right:6px">Meses:</span>
+        <button type="button" class="btn" id="dist-meses-todos" onclick="distMesesTodos()" style="padding:4px 10px;font-size:12px">Todos</button>
+        <div id="dist-meses-chips" style="display:inline-flex;gap:4px;flex-wrap:wrap"></div>
       </div>
 
       <!-- KPIs -->
@@ -961,6 +972,18 @@ tr:hover td{background:#F9F9F9}
         <table><thead><tr><th>Placa</th><th>Modelo</th><th>Região</th>
           <th style="text-align:right">R$/km</th><th style="text-align:right">Desvio</th><th>Ação</th></tr></thead>
           <tbody id="dist-alertas"></tbody></table>
+      </div>
+
+      <!-- recomendações de rodízio (swap entre veículos do mesmo grupo) -->
+      <div class="table-wrap" style="margin-bottom:16px">
+        <div class="card-header"><h3>Recomendações de rodízio</h3></div>
+        <p style="color:#666;font-size:13px;padding:0 12px">Identifica veículos do mesmo grupo com uso muito desbalanceado (um rodando muito acima da média do grupo, outro abaixo). Trocar reduz desgaste do mais usado e evita descarte prematuro.</p>
+        <table><thead><tr>
+          <th>Grupo</th>
+          <th>Veículo sobrecarregado</th><th style="text-align:right">Km</th><th style="text-align:right">vs média</th>
+          <th>Sugerido para troca</th><th style="text-align:right">Km</th><th style="text-align:right">vs média</th>
+        </tr></thead>
+          <tbody id="dist-rodizio"></tbody></table>
       </div>
 
       <!-- região por grupo (override administrativo) -->
@@ -4431,12 +4454,49 @@ let distCache = { resumo:null, top:[], modelos:[], alertas:[] }
 const distFmtN = n => Number(n||0).toLocaleString('pt-BR')
 const distFmtR = n => 'R$ ' + Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
 
+// estado de meses selecionados (1..12)
+let distMesesSel = new Set([1,2,3,4,5,6,7,8,9,10,11,12])
+
 function distQuery(){
   const p = new URLSearchParams()
-  p.set('periodo', document.getElementById('dist-periodo').value)
+  const ano = document.getElementById('dist-ano').value
+  p.set('ano', ano)
+  if(ano !== 'todos' && distMesesSel.size > 0 && distMesesSel.size < 12){
+    p.set('meses', [...distMesesSel].sort((a,b)=>a-b).join(','))
+  }
   const r = document.getElementById('dist-regiao').value; if(r) p.set('regiao', r)
   const m = document.getElementById('dist-modelo').value; if(m) p.set('modelo', m)
+  const pl = document.getElementById('dist-placa').value; if(pl) p.set('placa', pl)
   return p
+}
+
+function distRenderMesesChips(){
+  const nomes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+  document.getElementById('dist-meses-chips').innerHTML = nomes.map((n,i)=>{
+    const m = i+1, on = distMesesSel.has(m)
+    const bg = on ? '#185FA5' : '#fff', color = on ? '#fff' : '#0C447C', border = on ? '#185FA5' : '#B7D4F0'
+    return `<button type="button" onclick="distToggleMes(${m})" style="padding:4px 10px;font-size:12px;border:1px solid ${border};background:${bg};color:${color};border-radius:14px;cursor:pointer">${n}</button>`
+  }).join('')
+}
+function distToggleMes(m){
+  if(distMesesSel.has(m)) distMesesSel.delete(m); else distMesesSel.add(m)
+  if(distMesesSel.size === 0) distMesesSel = new Set([1,2,3,4,5,6,7,8,9,10,11,12])
+  distRenderMesesChips(); distCarregar()
+}
+function distMesesTodos(){
+  distMesesSel = new Set([1,2,3,4,5,6,7,8,9,10,11,12])
+  distRenderMesesChips(); distCarregar()
+}
+function distOnAnoChange(){
+  const ano = document.getElementById('dist-ano').value
+  document.getElementById('dist-meses-row').style.display = ano === 'todos' ? 'none' : 'flex'
+  distCarregar()
+}
+function distOnFilterChange(){
+  // Mudar região recarrega listas de placa/modelo também
+  distCarregarPlacas()
+  distCarregarModelos()
+  distCarregar()
 }
 
 async function distCarregar(){
@@ -4444,14 +4504,16 @@ async function distCarregar(){
   try{
     const base = distQuery()
     const limiar = document.getElementById('dist-limiar').value
-    const [resumo, top, modelo] = await Promise.all([
+    const [resumo, top, modelo, rodizio] = await Promise.all([
       fetch(`${API}/api/distancia/resumo?${base}`).then(r=>r.json()),
       fetch(`${API}/api/distancia/top?${base}`).then(r=>r.json()),
       fetch(`${API}/api/distancia/modelo?${base}&limiar=${limiar}`).then(r=>r.json()),
+      fetch(`${API}/api/distancia/rodizio?${base}`).then(r=>r.json()),
     ])
-    distCache = { resumo, top, modelos: modelo.mediaModelo||[], alertas: modelo.alertas||[] }
+    distCache = { resumo, top, modelos: modelo.mediaModelo||[], alertas: modelo.alertas||[], rodizio: rodizio||[] }
     distRenderKpis(resumo.kpis||{}); distRenderChart(resumo.serie||[])
     distRenderTop(top||[]); distRenderModelos(distCache.modelos); distRenderAlertas(distCache.alertas)
+    distRenderRodizio(distCache.rodizio)
   }catch(e){ console.error('distancia', e) }
 }
 
@@ -4462,12 +4524,13 @@ async function distSync(){
   const btn = document.getElementById('btn-dist-sync')
   const status = document.getElementById('dist-atualizado')
   if(btn){ btn.disabled = true; btn.textContent = '⏳ Sincronizando…' }
-  if(status) status.textContent = 'Buscando dados da Cobli…'
+  if(status) status.textContent = 'Buscando dados da Cobli (pode levar até 2 min)…'
   try{
-    const periodo = document.getElementById('dist-periodo').value
+    const ano = document.getElementById('dist-ano').value
+    const body = ano === 'todos' ? { periodo: 'ano' } : { ano: Number(ano) }
     const r = await fetch(`${API}/api/distancia/sync`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ periodo })
+      body: JSON.stringify(body)
     }).then(r=>r.json())
     if(r.ok){
       if(status) status.textContent = `Atualizado em ${new Date().toLocaleString('pt-BR')} · ${r.counts.veiculos} veículos, ${r.counts.distancia} registros de km, ${r.counts.combustivel} transações`
@@ -4476,6 +4539,8 @@ async function distSync(){
       console.warn('sync com erros:', r)
     }
     await distCarregarRegioes()
+    await distCarregarPlacas()
+    await distCarregarModelos()
     await distCarregar()
   }catch(e){
     console.error('sync', e)
@@ -4515,6 +4580,24 @@ function distRenderModelos(lista){
     `<tr><td>${m.modelo}</td><td style="text-align:right">${distFmtR(m.custo_km)}</td></tr>`).join('')
     || '<tr><td colspan="2" style="color:#666">—</td></tr>'
 }
+function distRenderRodizio(lista){
+  const tb = document.getElementById('dist-rodizio')
+  if(!tb) return
+  if(!lista || !lista.length){
+    tb.innerHTML = '<tr><td colspan="7" style="color:#2e7d32">Nenhum desbalanceamento significativo encontrado neste período.</td></tr>'
+    return
+  }
+  tb.innerHTML = lista.map(s=>`
+    <tr>
+      <td>${s.grupo||'-'}</td>
+      <td><b>${s.alto.placa||'-'}</b> <span style="color:#666;font-size:12px">${s.alto.modelo||''}</span></td>
+      <td style="text-align:right">${distFmtN(s.alto.km)}</td>
+      <td style="text-align:right;color:#A32D2D">+${s.alto.desvio}%</td>
+      <td><b>${s.baixo.placa||'-'}</b> <span style="color:#666;font-size:12px">${s.baixo.modelo||''}</span></td>
+      <td style="text-align:right">${distFmtN(s.baixo.km)}</td>
+      <td style="text-align:right;color:#2e7d32">${s.baixo.desvio}%</td>
+    </tr>`).join('')
+}
 function distRenderAlertas(lista){
   if(!lista.length){ document.getElementById('dist-alertas').innerHTML =
     '<tr><td colspan="6" style="color:#2e7d32">Nenhum veículo acima do limite neste período.</td></tr>'; return }
@@ -4545,6 +4628,24 @@ async function distCarregarRegioes(){
       <td>${ r.personalizado ? '<span style="color:#BA7517">personalizado</span>' : '<span style="color:#185FA5">padrão Cobli</span>' }</td>
       <td>${ admin ? `<button class="btn" onclick="distSalvarRegiao('${r.grupo}')">Salvar</button>` : '' }</td></tr>`).join('')
     : '<tr><td colspan="4" style="color:#666">Nenhum grupo encontrado. Clique em <b>Atualizar agora</b>.</td></tr>'
+}
+async function distCarregarPlacas(){
+  const regiao = document.getElementById('dist-regiao').value
+  const q = new URLSearchParams(); if(regiao) q.set('regiao', regiao)
+  const placas = await fetch(`${API}/api/distancia/placas?${q}`).then(r=>r.json()).catch(()=>[])
+  const sel = document.getElementById('dist-placa')
+  const current = sel.value
+  sel.innerHTML = '<option value="">Todas</option>' + placas.map(p=>`<option value="${p}">${p}</option>`).join('')
+  if(placas.includes(current)) sel.value = current
+}
+async function distCarregarModelos(){
+  const regiao = document.getElementById('dist-regiao').value
+  const q = new URLSearchParams(); if(regiao) q.set('regiao', regiao)
+  const modelos = await fetch(`${API}/api/distancia/modelos?${q}`).then(r=>r.json()).catch(()=>[])
+  const sel = document.getElementById('dist-modelo')
+  const current = sel.value
+  sel.innerHTML = '<option value="">Todos</option>' + modelos.map(m=>`<option value="${m}">${m}</option>`).join('')
+  if(modelos.includes(current)) sel.value = current
 }
 async function distSalvarRegiao(grupo){
   const v = document.getElementById('reg-'+grupo).value
@@ -4584,7 +4685,8 @@ function distExportPDF(){
 function distInit(){
   if(!window.FEATURES || !window.FEATURES.distanciaCobli) return
   const menu = document.getElementById('nav-distancia'); if(menu) menu.style.display=''
-  distCarregarRegioes().then(distCarregar)
+  distRenderMesesChips()
+  Promise.all([distCarregarRegioes(), distCarregarPlacas(), distCarregarModelos()]).then(distCarregar)
 }
 document.addEventListener('DOMContentLoaded', distInit)
 </script>
