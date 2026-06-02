@@ -165,8 +165,9 @@ async function resumo(req, res, next) {
     const distFiltered = (dist || []).filter(r => inSelectedMonths(r.ano_mes, months))
     const fuelFiltered = (fuel || []).filter(r => inSelectedMonths(r.ano_mes, months))
 
-    const km    = distFiltered.reduce((s, r) => s + Number(r.km || 0), 0)
-    const gasto = fuelFiltered.reduce((s, r) => s + Number(r.gasto_brl || 0), 0)
+    const km     = distFiltered.reduce((s, r) => s + Number(r.km || 0), 0)
+    const gasto  = fuelFiltered.reduce((s, r) => s + Number(r.gasto_brl || 0), 0)
+    const litros = fuelFiltered.reduce((s, r) => s + Number(r.litros || 0), 0)
     const veiculosAtivos = new Set(distFiltered.filter(r => Number(r.km || 0) > 0).map(r => r.cobli_id)).size
 
     // Granularidade: por ano quando "Todos", por mês caso contrário
@@ -186,7 +187,15 @@ async function resumo(req, res, next) {
     const serie = [...buckets.values()].sort((a, b) => a.mes.localeCompare(b.mes))
 
     res.json({
-      kpis: { km, gasto_rs: gasto, custo_km: km > 0 ? gasto / km : 0, veiculos: veiculosAtivos },
+      kpis: {
+        km,
+        gasto_rs: gasto,
+        custo_km: km > 0 ? gasto / km : 0,
+        veiculos: veiculosAtivos,
+        litros,
+        custo_litro: litros > 0 ? gasto / litros : 0,
+        consumo_km_l: litros > 0 ? km / litros : 0,
+      },
       serie,
     })
   } catch (e) { next(e) }
@@ -356,15 +365,19 @@ async function rodizio(req, res, next) {
       porGrupo.get(g).push({ ...v, km: kmPorVeic.get(v.cobli_id) || 0 })
     }
 
+    const KM_MIN_ATIVO = 500 // veículo com menos de 500 km no período é considerado inativo/novo/em manutenção
     const sugestoes = []
     for (const [grupo, lista] of porGrupo) {
-      if (lista.length < 2) continue
-      const total = lista.reduce((s, v) => s + v.km, 0)
-      const media = total / lista.length
+      // Considera só veículos ATIVOS no período (>= KM_MIN_ATIVO)
+      const ativos = lista.filter(v => v.km >= KM_MIN_ATIVO)
+      if (ativos.length < 2) continue
+      const total = ativos.reduce((s, v) => s + v.km, 0)
+      const media = total / ativos.length
       if (media <= 0) continue
 
-      const altos = lista.filter(v => v.km > media * 1.5).sort((a, b) => b.km - a.km)
-      const baixos = lista.filter(v => v.km < media * 0.5 && v.km >= 0).sort((a, b) => a.km - b.km)
+      const altos = ativos.filter(v => v.km > media * 1.5).sort((a, b) => b.km - a.km)
+      // "Baixos" precisam estar ativos mas significativamente abaixo da média
+      const baixos = ativos.filter(v => v.km < media * 0.5).sort((a, b) => a.km - b.km)
 
       const pares = Math.min(altos.length, baixos.length)
       for (let i = 0; i < pares; i++) {
@@ -374,6 +387,7 @@ async function rodizio(req, res, next) {
           alto:  { placa: alto.placa,  modelo: alto.modelo,  km: alto.km,  desvio: Math.round(((alto.km - media)  / media) * 100) },
           baixo: { placa: baixo.placa, modelo: baixo.modelo, km: baixo.km, desvio: Math.round(((baixo.km - media) / media) * 100) },
           media_grupo: media,
+          veiculos_ativos: ativos.length,
         })
       }
     }

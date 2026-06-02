@@ -946,7 +946,7 @@ tr:hover td{background:#F9F9F9}
       </div>
 
       <!-- KPIs -->
-      <div id="dist-kpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px"></div>
+      <div id="dist-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px"></div>
 
       <!-- gráfico -->
       <div class="table-wrap" style="padding:12px;margin-bottom:16px">
@@ -1436,7 +1436,10 @@ function setPeriod(p,btn){currentPeriod=p;document.querySelectorAll('.period-btn
 
 function getPeriodParams(p){
   const now=new Date(),y=now.getFullYear(),m=now.getMonth()
-  if(p==='mes') return `data_inicio=${y}-${String(m+1).padStart(2,'0')}-01&data_fim=${y}-${String(m+1).padStart(2,'0')}-31`
+  if(p==='mes'){
+    const ultimoDia=new Date(y,m+1,0).getDate()
+    return `data_inicio=${y}-${String(m+1).padStart(2,'0')}-01&data_fim=${y}-${String(m+1).padStart(2,'0')}-${String(ultimoDia).padStart(2,'0')}`
+  }
   if(p==='mes_ant'){
     const mesAnt=m===0?12:m, anoAnt=m===0?y-1:y
     const ultimoDia=new Date(anoAnt,mesAnt,0).getDate()
@@ -4553,10 +4556,17 @@ async function distSync(){
 
 function distRenderKpis(k){
   const card=(t,v)=>`<div style="background:#F5F8FB;border-radius:8px;padding:12px">
-    <div style="color:#666;font-size:12px">${t}</div><div style="font-size:22px;font-weight:600;color:#0C447C">${v}</div></div>`
+    <div style="color:#666;font-size:12px">${t}</div><div style="font-size:20px;font-weight:600;color:#0C447C">${v}</div></div>`
+  const fmtL = n => Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:1}) + ' L'
+  const fmtKmL = n => Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' km/L'
   document.getElementById('dist-kpis').innerHTML =
-    card('Distância total', distFmtN(k.km)+' km') + card('Gasto combustível', distFmtR(k.gasto_rs)) +
-    card('Custo por km', distFmtR(k.custo_km)) + card('Veículos ativos', k.veiculos||0)
+    card('Distância total',    distFmtN(k.km)+' km') +
+    card('Gasto combustível',  distFmtR(k.gasto_rs)) +
+    card('Custo por km',       distFmtR(k.custo_km)) +
+    card('Veículos ativos',    k.veiculos||0) +
+    card('Litros totais',      fmtL(k.litros)) +
+    card('Custo por litro',    distFmtR(k.custo_litro) + ' /L') +
+    card('Consumo médio',      fmtKmL(k.consumo_km_l))
 }
 function distRenderChart(serie){
   const labels = serie.map(s=>s.mes)
@@ -4681,10 +4691,14 @@ function distExportXLSX(){
     { Filtro:'Placa',   Valor:placa||'Todas' },
     { Filtro:'Região',  Valor:document.getElementById('dist-regiao').value||'Todas' },
     { Filtro:'Modelo',  Valor:document.getElementById('dist-modelo').value||'Todos' },
-    { Filtro:'Distância (km)', Valor:k.km }, { Filtro:'Gasto (R$)', Valor:k.gasto_rs },
-    { Filtro:'Custo por km',   Valor:k.custo_km },
-    { Filtro:'Veículos ativos', Valor:k.veiculos },
-    { Filtro:'Gerado em', Valor:new Date().toLocaleString('pt-BR') },
+    { Filtro:'Distância (km)',   Valor:k.km },
+    { Filtro:'Gasto (R$)',       Valor:k.gasto_rs },
+    { Filtro:'Custo por km',     Valor:k.custo_km },
+    { Filtro:'Veículos ativos',  Valor:k.veiculos },
+    { Filtro:'Litros totais',    Valor:k.litros },
+    { Filtro:'Custo por litro',  Valor:k.custo_litro },
+    { Filtro:'Consumo (km/L)',   Valor:k.consumo_km_l },
+    { Filtro:'Gerado em',        Valor:new Date().toLocaleString('pt-BR') },
   ]), 'Resumo')
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(distCache.top),     'Por veiculo')
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(distCache.modelos), 'Media por modelo')
@@ -4727,23 +4741,33 @@ function distExportPDF(){
   ].join('    ·    ')
   doc.text(filtros, M, y); y += 6
 
-  // ── KPIs em 4 cards ──
-  const kpis = [
+  // ── KPIs em 7 cards (4 + 3) ──
+  const fmtL = n => Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:1}) + ' L'
+  const fmtKmL = n => Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' km/L'
+  const kpisLinha1 = [
     ['Distância total',  `${distFmtN(k.km)} km`],
     ['Gasto combustível', distFmtR(k.gasto_rs)],
     ['Custo por km',      distFmtR(k.custo_km)],
     ['Veículos ativos',   String(k.veiculos||0)],
   ]
-  const cardW = (pageW - 2*M - 9) / 4
-  kpis.forEach(([label,val], i) => {
-    const x = M + i*(cardW + 3)
-    doc.setFillColor(245,248,251); doc.roundedRect(x, y, cardW, 18, 2, 2, 'F')
-    doc.setTextColor(102); doc.setFontSize(8); doc.text(label, x+3, y+6)
-    doc.setTextColor(12,68,124); doc.setFontSize(13); doc.setFont('helvetica','bold')
-    doc.text(val, x+3, y+14)
-    doc.setFont('helvetica','normal')
-  })
-  y += 22
+  const kpisLinha2 = [
+    ['Litros totais',     fmtL(k.litros)],
+    ['Custo por litro',   distFmtR(k.custo_litro) + ' /L'],
+    ['Consumo médio',     fmtKmL(k.consumo_km_l)],
+  ]
+  const drawCards = (arr, cols, yPos) => {
+    const cardW = (pageW - 2*M - 3*(cols-1)) / cols
+    arr.forEach(([label,val], i) => {
+      const x = M + i*(cardW + 3)
+      doc.setFillColor(245,248,251); doc.roundedRect(x, yPos, cardW, 16, 2, 2, 'F')
+      doc.setTextColor(102); doc.setFontSize(8); doc.text(label, x+3, yPos+6)
+      doc.setTextColor(12,68,124); doc.setFontSize(12); doc.setFont('helvetica','bold')
+      doc.text(val, x+3, yPos+13)
+      doc.setFont('helvetica','normal')
+    })
+  }
+  drawCards(kpisLinha1, 4, y); y += 18
+  drawCards(kpisLinha2, 3, y); y += 22
 
   // ── Gráfico (captura do canvas Chart.js como imagem) ──
   try {
