@@ -376,31 +376,35 @@ async function rodizio(req, res, next) {
     }
 
     const KM_MIN_ATIVO = 500 // veículo com menos de 500 km no período é considerado inativo/novo/em manutenção
+    const RAZAO_MIN = 1.4    // top/bottom precisa ter pelo menos 40% de diferença pra justificar troca
     const sugestoes = []
     for (const { grupo, familia: fam, lista } of porGrupoFamilia.values()) {
-      const ativos = lista.filter(v => v.km >= KM_MIN_ATIVO)
-      if (ativos.length < 2) continue // precisa de pelo menos 2 da mesma família no grupo
+      const ativos = lista.filter(v => v.km >= KM_MIN_ATIVO).sort((a, b) => b.km - a.km)
+      if (ativos.length < 2) continue
       const total = ativos.reduce((s, v) => s + v.km, 0)
       const media = total / ativos.length
       if (media <= 0) continue
 
-      const altos  = ativos.filter(v => v.km > media * 1.5).sort((a, b) => b.km - a.km)
-      const baixos = ativos.filter(v => v.km < media * 0.5).sort((a, b) => a.km - b.km)
-
-      const pares = Math.min(altos.length, baixos.length)
-      for (let i = 0; i < pares; i++) {
-        const alto = altos[i], baixo = baixos[i]
+      // Parear top com bottom, 2º top com 2º bottom, enquanto a razão for significativa.
+      let i = 0, j = ativos.length - 1
+      while (i < j) {
+        const alto = ativos[i], baixo = ativos[j]
+        if (baixo.km <= 0) break
+        const razao = alto.km / baixo.km
+        if (razao < RAZAO_MIN) break
         sugestoes.push({
           grupo,
           familia: fam,
           alto:  { placa: alto.placa,  modelo: alto.modelo,  km: alto.km,  desvio: Math.round(((alto.km - media)  / media) * 100) },
           baixo: { placa: baixo.placa, modelo: baixo.modelo, km: baixo.km, desvio: Math.round(((baixo.km - media) / media) * 100) },
+          razao_max_min: Math.round(razao * 100) / 100,
           media_grupo: media,
           veiculos_ativos: ativos.length,
         })
+        i++; j--
       }
     }
-    sugestoes.sort((a, b) => b.alto.desvio - a.alto.desvio)
+    sugestoes.sort((a, b) => b.razao_max_min - a.razao_max_min)
     res.json(sugestoes)
   } catch (e) { next(e) }
 }
