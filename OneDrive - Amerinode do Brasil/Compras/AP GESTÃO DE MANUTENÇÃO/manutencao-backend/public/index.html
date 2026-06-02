@@ -980,6 +980,7 @@ tr:hover td{background:#F9F9F9}
         <p style="color:#666;font-size:13px;padding:0 12px">Identifica veículos do mesmo grupo com uso muito desbalanceado (um rodando muito acima da média do grupo, outro abaixo). Trocar reduz desgaste do mais usado e evita descarte prematuro.</p>
         <table><thead><tr>
           <th>Grupo</th>
+          <th>Categoria</th>
           <th>Veículo sobrecarregado</th><th style="text-align:right">Km</th><th style="text-align:right">vs média</th>
           <th>Sugerido para troca</th><th style="text-align:right">Km</th><th style="text-align:right">vs média</th>
         </tr></thead>
@@ -4595,12 +4596,13 @@ function distRenderRodizio(lista){
   const tb = document.getElementById('dist-rodizio')
   if(!tb) return
   if(!lista || !lista.length){
-    tb.innerHTML = '<tr><td colspan="7" style="color:#2e7d32">Nenhum desbalanceamento significativo encontrado neste período.</td></tr>'
+    tb.innerHTML = '<tr><td colspan="8" style="color:#2e7d32">Nenhum desbalanceamento significativo encontrado neste período (precisa de 2+ veículos da mesma categoria no grupo, com uso desbalanceado).</td></tr>'
     return
   }
   tb.innerHTML = lista.map(s=>`
     <tr>
       <td>${s.grupo||'-'}</td>
+      <td><span style="background:#F0F8FF;color:#0C447C;padding:2px 8px;border-radius:10px;font-size:12px">${s.familia||'-'}</span></td>
       <td><b>${s.alto.placa||'-'}</b> <span style="color:#666;font-size:12px">${s.alto.modelo||''}</span></td>
       <td style="text-align:right">${distFmtN(s.alto.km)}</td>
       <td style="text-align:right;color:#A32D2D">+${s.alto.desvio}%</td>
@@ -4705,7 +4707,8 @@ function distExportXLSX(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(distCache.alertas), 'Alertas')
   if(distCache.rodizio && distCache.rodizio.length){
     const flat = distCache.rodizio.map(s=>({
-      Grupo:s.grupo, Sobrecarregado:s.alto.placa, ModeloSobre:s.alto.modelo, KmSobre:s.alto.km, DesvioSobre:`+${s.alto.desvio}%`,
+      Grupo:s.grupo, Categoria:s.familia,
+      Sobrecarregado:s.alto.placa, ModeloSobre:s.alto.modelo, KmSobre:s.alto.km, DesvioSobre:`+${s.alto.desvio}%`,
       Sugerido:s.baixo.placa, ModeloSug:s.baixo.modelo, KmSug:s.baixo.km, DesvioSug:`${s.baixo.desvio}%`,
     }))
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(flat), 'Rodizio')
@@ -4840,14 +4843,15 @@ function distExportPDF(){
     doc.text('Recomendações de rodízio', M, y); y += 1
     doc.autoTable({
       startY: y + 2,
-      head: [['Grupo','Sobrecarregado','Km','vs média','Sugerido p/ troca','Km','vs média']],
+      head: [['Grupo','Categoria','Sobrecarregado','Km','vs média','Sugerido p/ troca','Km','vs média']],
       body: distCache.rodizio.map(s => [
-        s.grupo, `${s.alto.placa} (${s.alto.modelo||''})`, distFmtN(s.alto.km), `+${s.alto.desvio}%`,
+        s.grupo, s.familia||'-',
+        `${s.alto.placa} (${s.alto.modelo||''})`, distFmtN(s.alto.km), `+${s.alto.desvio}%`,
         `${s.baixo.placa} (${s.baixo.modelo||''})`, distFmtN(s.baixo.km), `${s.baixo.desvio}%`,
       ]),
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [186,117,23], textColor: 255 },
-      columnStyles: { 2: { halign:'right' }, 3: { halign:'right' }, 5: { halign:'right' }, 6: { halign:'right' } },
+      columnStyles: { 3: { halign:'right' }, 4: { halign:'right' }, 6: { halign:'right' }, 7: { halign:'right' } },
       margin: { left: M, right: M },
     })
   }

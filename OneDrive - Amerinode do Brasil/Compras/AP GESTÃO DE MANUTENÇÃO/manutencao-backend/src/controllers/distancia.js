@@ -357,26 +357,34 @@ async function rodizio(req, res, next) {
       kmPorVeic.set(r.cobli_id, (kmPorVeic.get(r.cobli_id) || 0) + Number(r.km || 0))
     }
 
-    // agrupar por região efetiva
-    const porGrupo = new Map()
+    // Família do modelo = primeiras 2 palavras (ex: "Fiat Fiorino Endurance" → "Fiat Fiorino").
+    // Mantém troca justa: Kwid com Kwid, Fiorino com Fiorino, Leaf elétrico com Leaf etc.
+    const familia = m => {
+      if (!m) return '—'
+      const parts = String(m).trim().split(/\s+/)
+      return parts.slice(0, 2).join(' ')
+    }
+
+    // Agrupar por (regiao + familia) — troca só dentro do mesmo bairro/cidade e mesmo tipo de veículo.
+    const porGrupoFamilia = new Map()
     for (const v of vehicles) {
       const g = v.regiao_efetiva || '—'
-      if (!porGrupo.has(g)) porGrupo.set(g, [])
-      porGrupo.get(g).push({ ...v, km: kmPorVeic.get(v.cobli_id) || 0 })
+      const f = familia(v.modelo)
+      const key = `${g}|${f}`
+      if (!porGrupoFamilia.has(key)) porGrupoFamilia.set(key, { grupo: g, familia: f, lista: [] })
+      porGrupoFamilia.get(key).lista.push({ ...v, km: kmPorVeic.get(v.cobli_id) || 0 })
     }
 
     const KM_MIN_ATIVO = 500 // veículo com menos de 500 km no período é considerado inativo/novo/em manutenção
     const sugestoes = []
-    for (const [grupo, lista] of porGrupo) {
-      // Considera só veículos ATIVOS no período (>= KM_MIN_ATIVO)
+    for (const { grupo, familia: fam, lista } of porGrupoFamilia.values()) {
       const ativos = lista.filter(v => v.km >= KM_MIN_ATIVO)
-      if (ativos.length < 2) continue
+      if (ativos.length < 2) continue // precisa de pelo menos 2 da mesma família no grupo
       const total = ativos.reduce((s, v) => s + v.km, 0)
       const media = total / ativos.length
       if (media <= 0) continue
 
-      const altos = ativos.filter(v => v.km > media * 1.5).sort((a, b) => b.km - a.km)
-      // "Baixos" precisam estar ativos mas significativamente abaixo da média
+      const altos  = ativos.filter(v => v.km > media * 1.5).sort((a, b) => b.km - a.km)
       const baixos = ativos.filter(v => v.km < media * 0.5).sort((a, b) => a.km - b.km)
 
       const pares = Math.min(altos.length, baixos.length)
@@ -384,6 +392,7 @@ async function rodizio(req, res, next) {
         const alto = altos[i], baixo = baixos[i]
         sugestoes.push({
           grupo,
+          familia: fam,
           alto:  { placa: alto.placa,  modelo: alto.modelo,  km: alto.km,  desvio: Math.round(((alto.km - media)  / media) * 100) },
           baixo: { placa: baixo.placa, modelo: baixo.modelo, km: baixo.km, desvio: Math.round(((baixo.km - media) / media) * 100) },
           media_grupo: media,
