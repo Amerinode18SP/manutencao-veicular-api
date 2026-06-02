@@ -325,7 +325,11 @@ tr:hover td{background:#F9F9F9}
   <div class="nav-sep"></div>
   <div class="nav-item" id="nav-usuarios" onclick="showPage('usuarios')">👥 Usuários</div>
   <div class="sidebar-bottom">
-    <button class="logout-btn" id="btn-backup-completo" onclick="gerarBackupCompleto()" style="margin-bottom:6px;display:none;background:#F0F8FF;color:#0C447C;border-color:#B7D4F0">💾 Backup Completo</button>
+    <button class="logout-btn" id="btn-backup-completo" onclick="gerarBackupCompleto()" style="margin-bottom:2px;display:none;background:#F0F8FF;color:#0C447C;border-color:#B7D4F0">💾 Backup Completo</button>
+    <div id="backup-folder-info" style="display:none;font-size:10px;color:#666;text-align:center;margin-bottom:6px;padding:0 4px;line-height:1.3">
+      📁 <span id="backup-folder-name" style="font-weight:500">—</span><br>
+      <a href="#" onclick="trocarPastaBackup();return false" style="color:#185FA5;text-decoration:none">trocar pasta</a>
+    </div>
     <button class="logout-btn" onclick="fazerLogout()">🚪 Sair</button>
   </div>
 </aside>
@@ -1346,6 +1350,8 @@ async function iniciarSessao(user){
   document.getElementById('nav-usuarios').style.display=isAdmin?'flex':'none'
   document.getElementById('btn-nova-ordem').style.display=isAdmin?'inline-block':'none'
   document.getElementById('btn-backup-completo').style.display=isAdmin?'block':'none'
+  // Mostra info da pasta de backup só pra admin e só se já tiver configurada
+  ;(async()=>{ try{ const h=await _loadBackupHandle(); if(h && isAdmin) _atualizarLabelPastaBackup(h.name); else document.getElementById('backup-folder-info').style.display='none' }catch{} })()
   document.querySelectorAll('.man-admin-only').forEach(el=>el.style.display=isAdmin?'inline-block':'none')
 
   // Mostrar app
@@ -2748,8 +2754,45 @@ function exportarAnalisePDF(){
 }
 
 // ── BACKUP COMPLETO ──────────────────────────────────────────
+// ── BACKUP: persistir pasta escolhida via File System Access API ──
+const _BKP_DB='amerinode-config', _BKP_STORE='handles', _BKP_KEY='backupFolder'
+function _openBkpDB(){ return new Promise((res,rej)=>{ const r=indexedDB.open(_BKP_DB,1); r.onupgradeneeded=()=>r.result.createObjectStore(_BKP_STORE); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error) }) }
+async function _saveBackupHandle(h){ const db=await _openBkpDB(); return new Promise((res,rej)=>{ const tx=db.transaction(_BKP_STORE,'readwrite'); tx.objectStore(_BKP_STORE).put(h,_BKP_KEY); tx.oncomplete=res; tx.onerror=()=>rej(tx.error) }) }
+async function _loadBackupHandle(){ try{ const db=await _openBkpDB(); return await new Promise((res,rej)=>{ const tx=db.transaction(_BKP_STORE,'readonly'); const req=tx.objectStore(_BKP_STORE).get(_BKP_KEY); req.onsuccess=()=>res(req.result||null); req.onerror=()=>rej(req.error) }) }catch{ return null } }
+async function _ensureBackupPermission(h){
+  if(!h || typeof h.queryPermission!=='function') return false
+  if(await h.queryPermission({mode:'readwrite'})==='granted') return true
+  if(await h.requestPermission({mode:'readwrite'})==='granted') return true
+  return false
+}
+function _atualizarLabelPastaBackup(name){
+  const info=document.getElementById('backup-folder-info'); const lbl=document.getElementById('backup-folder-name')
+  if(info && lbl){ lbl.textContent=name||'—'; info.style.display=name?'block':'none' }
+}
+async function trocarPastaBackup(){
+  if(!window.showDirectoryPicker){
+    alert('Seu navegador não suporta seleção de pasta automática.\nUse Chrome ou Edge atualizado.\n\nNo seu caso, o backup baixa pra pasta Downloads como antes.')
+    return
+  }
+  try{
+    const handle=await window.showDirectoryPicker({ mode:'readwrite', startIn:'documents' })
+    await _saveBackupHandle(handle)
+    _atualizarLabelPastaBackup(handle.name)
+    alert(`✅ Pasta de backup configurada: ${handle.name}\n\nA partir de agora, todo backup vai direto pra essa pasta — sem perguntar.`)
+  }catch(e){
+    if(e.name!=='AbortError') alert('Erro ao configurar pasta: '+e.message)
+  }
+}
+
 async function gerarBackupCompleto(){
   const btn = document.getElementById('btn-backup-completo')
+  // Se ainda não tem pasta configurada, oferece configurar antes
+  const handleAtual = await _loadBackupHandle()
+  if(!handleAtual && window.showDirectoryPicker){
+    if(confirm('Deseja escolher uma pasta fixa para os backups?\n\n• Sim → você escolhe a pasta uma vez (ex: OneDrive\\Backups) e todos os próximos backups vão direto pra lá.\n• Não → o arquivo será baixado na pasta Downloads padrão (como antes).')){
+      await trocarPastaBackup()
+    }
+  }
   if(!confirm('Gerar backup completo do sistema?\n\nIsso vai baixar um arquivo XLSX com:\n• Todas as ordens de compra\n• Todos os veículos\n• Todos os fornecedores\n\nO download pode levar alguns segundos.')) return
   const txt = btn.textContent
   btn.disabled = true; btn.textContent = '⏳ Gerando backup...'
@@ -2872,8 +2915,22 @@ async function gerarBackupCompleto(){
     wsJson['!cols'] = [{wch:120}]
     XLSX.utils.book_append_sheet(wb, wsJson, 'JSON_RAW')
 
-    XLSX.writeFile(wb, `backup_completo_${dt}.xlsx`)
-    alert(`✅ Backup gerado com sucesso!\n\n• ${ordensAll.length} ordens\n• ${veiculos.length} veículos\n• ${fornecedores.length} fornecedores\n\nGuarde o arquivo num local seguro (OneDrive, Drive, pendrive).`)
+    const fileName = `backup_completo_${dt}.xlsx`
+    // Se houver pasta configurada, salva direto lá; senão, download na pasta Downloads.
+    let salvouNaPasta = false, pastaNome = ''
+    try{
+      const handle = await _loadBackupHandle()
+      if(handle && await _ensureBackupPermission(handle)){
+        const arr = XLSX.write(wb, { type:'array', bookType:'xlsx' })
+        const blob = new Blob([arr], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+        const fileHandle = await handle.getFileHandle(fileName, { create: true })
+        const writable = await fileHandle.createWritable()
+        await writable.write(blob); await writable.close()
+        salvouNaPasta = true; pastaNome = handle.name
+      }
+    }catch(eFS){ console.warn('falha ao salvar na pasta configurada, caindo pra download:', eFS) }
+    if(!salvouNaPasta) XLSX.writeFile(wb, fileName)
+    alert(`✅ Backup gerado com sucesso!\n\n• ${ordensAll.length} ordens\n• ${veiculos.length} veículos\n• ${fornecedores.length} fornecedores\n\n${salvouNaPasta ? `📁 Salvo em: ${pastaNome}/${fileName}` : `📥 Baixado na pasta Downloads (${fileName}).\nDica: clica em "trocar pasta" pra escolher uma pasta fixa.`}`)
   }catch(e){
     alert('❌ Erro ao gerar backup: '+e.message)
   }finally{
