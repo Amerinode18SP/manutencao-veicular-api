@@ -4642,10 +4642,13 @@ function distRenderChart(serie){
   distChartRef = new Chart(document.getElementById('dist-chart'), {
     data:{ labels, datasets:[
       { type:'bar',  label:'Distância (km)', data:km, backgroundColor:'#185FA5', yAxisID:'y',
-        datalabels:{ anchor:'end', align:'top', color:'#0C447C', font:{weight:'bold', size:10},
+        // KM fica DENTRO da barra (no topo), em branco — nao colide com a linha
+        datalabels:{ anchor:'end', align:'start', color:'#fff', font:{weight:'bold', size:11},
                      formatter:fmtCompact } },
       { type:'line', label:'Gasto (R$)',     data:rs, borderColor:'#BA7517', backgroundColor:'#BA7517', yAxisID:'y1', tension:.3,
-        datalabels:{ anchor:'end', align:'top', color:'#BA7517', font:{weight:'bold', size:10},
+        // R$ fica ACIMA da linha com offset maior pra dar respiro
+        datalabels:{ anchor:'end', align:'top', offset:8, color:'#BA7517', font:{weight:'bold', size:11},
+                     backgroundColor:'rgba(255,255,255,0.85)', borderRadius:3, padding:{top:2,bottom:2,left:4,right:4},
                      formatter:v => v ? 'R$ ' + fmtCompact(v) : '' } },
     ]},
     options:{ responsive:true,
