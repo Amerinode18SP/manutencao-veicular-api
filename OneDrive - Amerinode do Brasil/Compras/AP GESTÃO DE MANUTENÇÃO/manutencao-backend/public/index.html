@@ -10,6 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;font-size:14px;color:#222;background:#F0F4F9;min-height:100vh}
@@ -4630,12 +4631,27 @@ function distRenderChart(serie){
   const labels = serie.map(s=>s.mes)
   const km = serie.map(s=>s.km), rs = serie.map(s=>s.rs)
   if(distChartRef) distChartRef.destroy()
+  // Formata valor grande em compacto: 135432 -> "135K", 1234567 -> "1,2M"
+  const fmtCompact = v => {
+    if(!v) return ''
+    const abs = Math.abs(v)
+    if(abs >= 1e6) return (v/1e6).toFixed(1).replace('.', ',') + 'M'
+    if(abs >= 1e3) return Math.round(v/1e3) + 'K'
+    return Math.round(v).toString()
+  }
   distChartRef = new Chart(document.getElementById('dist-chart'), {
     data:{ labels, datasets:[
-      { type:'bar',  label:'Distância (km)', data:km, backgroundColor:'#185FA5', yAxisID:'y' },
-      { type:'line', label:'Gasto (R$)',     data:rs, borderColor:'#BA7517', backgroundColor:'#BA7517', yAxisID:'y1', tension:.3 },
+      { type:'bar',  label:'Distância (km)', data:km, backgroundColor:'#185FA5', yAxisID:'y',
+        datalabels:{ anchor:'end', align:'top', color:'#0C447C', font:{weight:'bold', size:10},
+                     formatter:fmtCompact } },
+      { type:'line', label:'Gasto (R$)',     data:rs, borderColor:'#BA7517', backgroundColor:'#BA7517', yAxisID:'y1', tension:.3,
+        datalabels:{ anchor:'end', align:'top', color:'#BA7517', font:{weight:'bold', size:10},
+                     formatter:v => v ? 'R$ ' + fmtCompact(v) : '' } },
     ]},
-    options:{ responsive:true, scales:{ y:{position:'left'}, y1:{position:'right', grid:{drawOnChartArea:false}} } }
+    options:{ responsive:true,
+      layout:{ padding:{top:24} },                 // espaço pros labels não cortar
+      scales:{ y:{position:'left'}, y1:{position:'right', grid:{drawOnChartArea:false}} } },
+    plugins: typeof ChartDataLabels !== 'undefined' ? [ChartDataLabels] : []
   })
 }
 function distRenderTop(lista){
