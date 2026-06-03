@@ -4946,6 +4946,99 @@ window.distReaplicarPermissoes = function(){
   })
 }
 document.addEventListener('DOMContentLoaded', distInit)
-</script>
+</script><!-- ============================================================= -->
+<!--  TEMA CLARO AMERINODE para o EstoqueOmie                       -->
+<!--  Cole este bloco INTEIRO no FINAL do seu arquivo index.html    -->
+<!--  (logo antes de </body>, ou depois de tudo — tanto faz).       -->
+<!--  Para desfazer, basta APAGAR este bloco. Nada mais muda.       -->
+<!-- ============================================================= -->
+<style id="tema-amerinode-claro">
+/* ---- 1) Paleta principal (recolore quase todo o app) ---------- */
+:root{
+  --bg:#F0F4F9;        /* fundo da área principal      */
+  --bg2:#ffffff;       /* cards, sidebar, modais       */
+  --bg3:#F5F5F5;       /* campos, hover de linha       */
+  --border:#E0E0E0;
+  --border2:#D5DCE6;
+  --text:#222222;      /* texto principal              */
+  --text2:#666666;     /* texto secundário             */
+  --text3:#999999;     /* texto apagado                */
+  --accent:#378ADD;    /* azul Amerinode               */
+  --accent2:#185FA5;   /* azul escuro (hover)          */
+  --green:#2E9E5B;
+  --green2:#1F7F45;
+  --red:#C0392B;
+  --red2:#9E2B22;
+  --yellow:#B7791F;
+  --purple:#5247B8;
+}
+/* deixa o texto padrão escuro mesmo onde herdou claro */
+body{color:var(--text);}
+
+/* ---- 2) Toques de acabamento (tema claro) --------------------- */
+.metric-card,.table-card{box-shadow:0 1px 2px rgba(16,24,40,.05);}
+.nav-item.active{color:#0C447C;border-left:2px solid var(--accent);}
+.logo-text{color:#1E3A5F;}
+
+/* ---- 3) Badges no padrão Amerinode ---------------------------- */
+.badge-green {background:#EAF3DE;color:#27500A;}
+.badge-red   {background:#FCEBEB;color:#791F1F;}
+.badge-blue  {background:#E6F1FB;color:#0C447C;}
+.badge-yellow{background:#FAEEDA;color:#633806;}
+.badge-purple{background:#EEEDFE;color:#3C3489;}
+
+/* =============================================================== */
+/*  Os trechos abaixo usam !important porque sobrescrevem cores    */
+/*  que estão "fixas" dentro de telas montadas por script          */
+/*  (login, menu do usuário, modais de usuários/edição, avisos).   */
+/* =============================================================== */
+
+/* ---- 4) Tela de LOGIN ----------------------------------------- */
+#loginScreen{background:#F0F4F9 !important;background-image:none !important;}
+#loginCard,#recuperarCard{background:#fff !important;border:1px solid #E0E0E0 !important;}
+#loginScreen [style*="color:#fff"]:not(input){color:#1E3A5F !important;}
+#loginScreen input{background:#fff !important;border:1px solid #DDD !important;color:#222 !important;}
+#loginScreen label{color:#555 !important;}
+#btnLogin{background:#378ADD !important;}
+#btnLogin:hover{background:#185FA5 !important;}
+
+/* ---- 5) Menu do usuário (canto superior direito) -------------- */
+#userMenu #umBtn{background:#fff !important;color:#222 !important;border:1px solid #E0E0E0 !important;}
+#userMenu #umBtn span[style*="border-radius:50%"]{background:#378ADD !important;}
+#umMenu{background:#fff !important;border:1px solid #E0E0E0 !important;box-shadow:0 10px 30px rgba(0,0,0,.12) !important;}
+#umCfgSub{background:#F5F8FB !important;}
+#userMenu .um-it{color:#222 !important;}
+#userMenu .um-it:hover{background:#F5F5F5 !important;}
+#umSair{color:#791F1F !important;}
+#umMenu div[style*="height:1px"]{background:#E0E0E0 !important;}
+
+/* ---- 6) Indicadores/avisos flutuantes ------------------------- */
+#syncIndicator,#indSaldos,
+div[style*="z-index:100002"],
+div[style*="z-index:99999"],
+div[style*="z-index:10001"]{
+  background:#fff !important;color:#222 !important;
+  border:1px solid #E0E0E0 !important;
+  box-shadow:0 4px 12px rgba(0,0,0,.12) !important;
+}
+
+/* ---- 7) Tela de USUÁRIOS -------------------------------------- */
+#usrOverlay > div{background:#fff !important;border:1px solid #E0E0E0 !important;color:#222 !important;}
+#usrForm{background:#F5F8FB !important;}
+#usrOverlay input,#usrOverlay select{background:#fff !important;border:1px solid #DDD !important;color:#222 !important;}
+#usrOverlay tr{border-color:#EEE !important;}
+#usrFechar,#fCancelar{background:#F5F5F5 !important;color:#666 !important;border:1px solid #DDD !important;}
+#fSalvar{background:#378ADD !important;}
+
+/* ---- 8) Modal "Editar movimentação" (admin) ------------------- */
+div[style*="z-index:100050"] > div{background:#fff !important;border:1px solid #E0E0E0 !important;color:#222 !important;}
+div[style*="z-index:100050"] input,
+div[style*="z-index:100050"] select,
+div[style*="z-index:100050"] textarea{background:#fff !important;border:1px solid #DDD !important;color:#222 !important;}
+div[style*="z-index:100050"] [style*="#0b1324"]{background:#F5F8FB !important;color:#222 !important;}
+div[style*="z-index:100050"] [style*="#334155"]{border-color:#E0E0E0 !important;}
+#emX,#emCancel{background:#F5F5F5 !important;color:#666 !important;border:1px solid #DDD !important;}
+#emSalvar{background:#378ADD !important;}
+</style>
 </body>
 </html>
