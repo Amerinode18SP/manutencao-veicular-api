@@ -955,7 +955,7 @@ tr:hover td{background:#F9F9F9}
 
       <!-- gráfico -->
       <div class="table-wrap" style="padding:12px;margin-bottom:16px">
-        <canvas id="dist-chart" height="90"></canvas>
+        <div style="position:relative;height:380px"><canvas id="dist-chart"></canvas></div>
       </div>
 
       <!-- top 10 -->
@@ -4651,8 +4651,9 @@ function distRenderChart(serie){
                      backgroundColor:'rgba(255,255,255,0.85)', borderRadius:3, padding:{top:2,bottom:2,left:4,right:4},
                      formatter:v => v ? 'R$ ' + fmtCompact(v) : '' } },
     ]},
-    options:{ responsive:true,
-      layout:{ padding:{top:24} },                 // espaço pros labels não cortar
+    options:{ responsive:true, maintainAspectRatio:false,   // container externo cuida do height — evita loop com datalabels
+      animation:false,                              // sem animation pra estabilidade
+      layout:{ padding:{top:24} },                  // espaço pros labels nao cortar
       scales:{ y:{position:'left'}, y1:{position:'right', grid:{drawOnChartArea:false}} } },
     plugins: typeof ChartDataLabels !== 'undefined' ? [ChartDataLabels] : []
   })
