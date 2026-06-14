@@ -1025,6 +1025,10 @@ tr:hover td{background:#F9F9F9}
             <input id="forne-f-local" oninput="forneCarregar()" placeholder="Ex: SP-Interior" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px">
           </div>
           <div>
+            <label style="font-size:12px;color:#666">Abrange cidade</label>
+            <input id="forne-f-abrange" oninput="forneCarregar()" placeholder="Ex: Bauru" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px">
+          </div>
+          <div>
             <label style="font-size:12px;color:#666">Tipo de serviço</label>
             <select id="forne-f-tipo" onchange="forneCarregar()" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px;background:#fff">
               <option value="">Todos</option>
@@ -1049,9 +1053,9 @@ tr:hover td{background:#F9F9F9}
         <table>
           <thead><tr>
             <th>Razão Social</th><th>CNPJ</th><th>Tipos de serviço</th>
-            <th>Cidade/UF</th><th>Contato</th><th>Homologação</th><th style="width:120px"></th>
+            <th>Cidade/UF</th><th>Contato</th><th>E-mail</th><th>Homologação</th><th style="width:120px"></th>
           </tr></thead>
-          <tbody id="forne-tbody"><tr><td colspan="7" style="color:#666">Carregando...</td></tr></tbody>
+          <tbody id="forne-tbody"><tr><td colspan="8" style="color:#666">Carregando...</td></tr></tbody>
         </table>
       </div>
     </div><!-- /page-fornecedores -->
@@ -1073,11 +1077,12 @@ tr:hover td{background:#F9F9F9}
             <div><label>Nome Fantasia</label><input id="forne-nome_fantasia"></div>
             <div><label>CNPJ *</label><input id="forne-cnpj" required placeholder="00.000.000/0000-00"></div>
             <div><label>Inscrição Estadual</label><input id="forne-inscricao_estadual"></div>
-            <div><label>Contato Principal *</label><input id="forne-contato_principal" required></div>
+            <div><label>Contato Principal</label><input id="forne-contato_principal"></div>
             <div><label>Local que atende</label><input id="forne-local_atende" placeholder="Ex: SP, Capital + Interior"></div>
             <div><label>Telefone</label><input id="forne-telefone" placeholder="(00) 0000-0000"></div>
             <div><label>Celular / WhatsApp</label><input id="forne-whatsapp" placeholder="(00) 00000-0000"></div>
-            <div style="grid-column:1/3"><label>E-mail *</label><input id="forne-email" type="email" required></div>
+            <div style="grid-column:1/3"><label>E-mail</label><input id="forne-email" type="email"></div>
+            <div style="grid-column:1/3"><label>Abrange quais cidades</label><input id="forne-abrange_cidades" placeholder="Ex: Bauru, Marília, Jaú (vírgula-separado)"></div>
           </div>
 
           <!-- Classificação -->
@@ -5111,11 +5116,12 @@ function forneFmtCep(c){
 async function forneCarregar(){
   const q = new URLSearchParams()
   const v = id => document.getElementById(id)?.value?.trim()
-  if(v('forne-f-busca'))      q.set('busca',         v('forne-f-busca'))
-  if(v('forne-f-cidade'))     q.set('cidade',        v('forne-f-cidade'))
-  if(v('forne-f-local'))      q.set('local_atende',  v('forne-f-local'))
-  if(v('forne-f-tipo'))       q.set('tipo_servico',  v('forne-f-tipo'))
-  if(v('forne-f-homologado')) q.set('homologado',    v('forne-f-homologado'))
+  if(v('forne-f-busca'))      q.set('busca',           v('forne-f-busca'))
+  if(v('forne-f-cidade'))     q.set('cidade',          v('forne-f-cidade'))
+  if(v('forne-f-local'))      q.set('local_atende',    v('forne-f-local'))
+  if(v('forne-f-abrange'))    q.set('abrange_cidades', v('forne-f-abrange'))
+  if(v('forne-f-tipo'))       q.set('tipo_servico',    v('forne-f-tipo'))
+  if(v('forne-f-homologado')) q.set('homologado',      v('forne-f-homologado'))
 
   const tb = document.getElementById('forne-tbody')
   if(!tb) return
@@ -5124,13 +5130,14 @@ async function forneCarregar(){
     const lista = await r.json()
     forneCache = lista
     if(!lista.length){
-      tb.innerHTML = '<tr><td colspan="7" style="color:#666;text-align:center;padding:20px">Nenhum fornecedor encontrado com esses filtros.</td></tr>'
+      tb.innerHTML = '<tr><td colspan="8" style="color:#666;text-align:center;padding:20px">Nenhum fornecedor encontrado com esses filtros.</td></tr>'
       return
     }
     tb.innerHTML = lista.map(f => {
       const tipos = (f.tipos_servico || []).join(', ') || '<span style="color:#999">—</span>'
       const cidade = [f.cidade, f.estado].filter(Boolean).join('/') || '—'
       const contato = [f.contato_principal, f.telefone || f.whatsapp].filter(Boolean).join(' · ') || '—'
+      const email = f.email ? `<a href="mailto:${f.email}" style="color:#0C447C;text-decoration:none">${f.email}</a>` : '<span style="color:#999">—</span>'
       const homol = f.homologado
         ? `<span style="background:#E8F5E9;color:#2E7D32;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600">✓ Homologado</span>`
         : `<span style="background:#FFEBEE;color:#C62828;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600">✗ Não homologado</span>`
@@ -5140,6 +5147,7 @@ async function forneCarregar(){
         <td style="font-size:11px;color:#666">${tipos}</td>
         <td>${cidade}</td>
         <td style="font-size:12px">${contato}</td>
+        <td style="font-size:12px">${email}</td>
         <td>${homol}</td>
         <td style="white-space:nowrap">
           <button onclick="forneEditar('${f.id}')" style="border:none;background:#F0F8FF;color:#0C447C;padding:5px 10px;border-radius:5px;cursor:pointer;margin-right:4px" title="Editar">✏️</button>
@@ -5173,6 +5181,7 @@ function forneAbrirModal(forne){
   set('forne-inscricao_estadual',    forne?.inscricao_estadual)
   set('forne-contato_principal',     forne?.contato_principal)
   set('forne-local_atende',          forne?.local_atende)
+  set('forne-abrange_cidades',       forne?.abrange_cidades)
   set('forne-telefone',              forne?.telefone)
   set('forne-whatsapp',              forne?.whatsapp)
   set('forne-email',                 forne?.email)
@@ -5238,6 +5247,7 @@ async function forneSalvar(ev){
     whatsapp:               get('forne-whatsapp'),
     email:                  get('forne-email'),
     local_atende:           get('forne-local_atende'),
+    abrange_cidades:        get('forne-abrange_cidades'),
     tipos_servico:          tipos,
     homologado,
     data_homologacao:       homologado ? get('forne-data_homologacao') : null,

@@ -56,16 +56,17 @@ async function atualizarVeiculo(req, res) {
 
 async function listarFornecedores(req, res) {
   try {
-    const { busca, cidade, tipo_servico, homologado, local_atende } = req.query
+    const { busca, cidade, tipo_servico, homologado, local_atende, abrange_cidades } = req.query
     let q = supabase.from('fornecedores').select('*').order('razao_social')
 
     if (busca) {
       // razao_social, nome_fantasia ou cnpj contem o termo
       q = q.or(`razao_social.ilike.%${busca}%,nome_fantasia.ilike.%${busca}%,cnpj.ilike.%${busca}%`)
     }
-    if (cidade)        q = q.ilike('cidade', `%${cidade}%`)
-    if (local_atende)  q = q.ilike('local_atende', `%${local_atende}%`)
-    if (tipo_servico)  q = q.contains('tipos_servico', [tipo_servico])
+    if (cidade)           q = q.ilike('cidade', `%${cidade}%`)
+    if (local_atende)     q = q.ilike('local_atende', `%${local_atende}%`)
+    if (abrange_cidades)  q = q.ilike('abrange_cidades', `%${abrange_cidades}%`)
+    if (tipo_servico)     q = q.contains('tipos_servico', [tipo_servico])
     if (homologado === 'true')  q = q.eq('homologado', true)
     if (homologado === 'false') q = q.eq('homologado', false)
 
@@ -82,7 +83,8 @@ function sanitizarFornecedor(body) {
   // pega so campos conhecidos pra evitar lixo no insert/update
   const campos = [
     'razao_social', 'nome_fantasia', 'cnpj', 'inscricao_estadual',
-    'contato_principal', 'telefone', 'whatsapp', 'email', 'local_atende',
+    'contato_principal', 'telefone', 'whatsapp', 'email',
+    'local_atende', 'abrange_cidades',
     'tipos_servico', 'homologado', 'data_homologacao', 'responsavel_homologacao',
     'cep', 'rua', 'numero', 'complemento', 'bairro', 'cidade', 'estado',
     'observacao',

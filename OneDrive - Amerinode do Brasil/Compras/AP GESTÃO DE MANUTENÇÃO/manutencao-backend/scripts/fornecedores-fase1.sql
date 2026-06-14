@@ -12,6 +12,7 @@ ALTER TABLE fornecedores ADD COLUMN IF NOT EXISTS telefone               TEXT;
 ALTER TABLE fornecedores ADD COLUMN IF NOT EXISTS whatsapp               TEXT;
 ALTER TABLE fornecedores ADD COLUMN IF NOT EXISTS email                  TEXT;
 ALTER TABLE fornecedores ADD COLUMN IF NOT EXISTS local_atende           TEXT;
+ALTER TABLE fornecedores ADD COLUMN IF NOT EXISTS abrange_cidades        TEXT;
 
 -- Classificação (lista de tipos de serviço)
 ALTER TABLE fornecedores ADD COLUMN IF NOT EXISTS tipos_servico          TEXT[] DEFAULT ARRAY[]::TEXT[];
