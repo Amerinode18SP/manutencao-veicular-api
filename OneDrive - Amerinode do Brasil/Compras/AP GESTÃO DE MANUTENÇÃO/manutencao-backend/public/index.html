@@ -112,6 +112,16 @@ tr:hover td{background:#F9F9F9}
 .filter-bar input{flex:1;min-width:180px}
 .btn-sm{padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #DDD;background:#fff;color:#222;cursor:pointer;white-space:nowrap}
 .btn-sm:hover{background:#F5F5F5}
+.forne-autocomplete{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #D8D6D0;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.10);max-height:280px;overflow-y:auto;z-index:50;margin-top:2px}
+.forne-autocomplete .opt{padding:8px 12px;cursor:pointer;border-bottom:1px solid #F0EEE8;font-size:13px;display:flex;align-items:center;gap:8px}
+.forne-autocomplete .opt:hover,.forne-autocomplete .opt.active{background:#F0F8FF}
+.forne-autocomplete .opt:last-child{border-bottom:none}
+.forne-autocomplete .badge-h{font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;flex-shrink:0}
+.forne-autocomplete .badge-h.ok{background:#E8F5E9;color:#2E7D32}
+.forne-autocomplete .badge-h.no{background:#FFEBEE;color:#C62828}
+.forne-autocomplete .opt-info{flex:1;overflow:hidden}
+.forne-autocomplete .opt-nome{font-weight:500;color:#1A1916;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.forne-autocomplete .opt-meta{font-size:11px;color:#666}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-overlay.open{display:flex}
 .modal{background:#fff;border-radius:12px;padding:24px;width:92%;max-width:860px;max-height:90vh;overflow-y:auto}
@@ -507,7 +517,11 @@ tr:hover td{background:#F9F9F9}
           </div>
           <div class="form-group col-3"><label>Observação da ordem</label><textarea id="f-obs-ordem" placeholder="Notas sobre esta ordem (opcional)"></textarea></div>
           <span class="section-label">Fornecedor</span>
-          <div class="form-group col-2"><label>Fornecedor *</label><input type="text" id="f-fornecedor" placeholder="Razão social"></div>
+          <div class="form-group col-2" style="position:relative">
+            <label>Fornecedor * <span id="f-fornecedor-badge" style="font-size:11px;font-weight:500"></span></label>
+            <input type="text" id="f-fornecedor" placeholder="Comece a digitar para ver sugestões" autocomplete="off">
+            <div id="f-fornecedor-dropdown" class="forne-autocomplete" style="display:none"></div>
+          </div>
           <div class="form-group"><label>CNPJ *</label><input type="text" id="f-cnpj" placeholder="00.000.000/0000-00" maxlength="18" oninput="maskCNPJ(this)"></div>
           <div class="form-group col-3"><label>Observação do fornecedor</label><textarea id="f-obs-fornecedor" placeholder="Notas sobre o fornecedor (opcional)"></textarea></div>
           <span class="section-label">Status</span>
@@ -1009,6 +1023,20 @@ tr:hover td{background:#F9F9F9}
         <button class="btn-primary" onclick="forneAbrirModal()">+ Novo Fornecedor</button>
       </div>
 
+      <!-- Toggle de regra global (Fase 2) -->
+      <div style="background:#FFF7E0;border:1px solid #F0D080;border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <strong style="font-size:13px;color:#6B4500">🔒 Bloquear seleção de fornecedores não homologados em Ordens de Compra</strong>
+          <div style="font-size:11px;color:#7A5900;margin-top:2px">Quando ativo, o sistema impede cadastrar OC com fornecedor não cadastrado ou não homologado.</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:46px;height:24px;cursor:pointer;flex-shrink:0">
+          <input type="checkbox" id="cfg-bloquear" onchange="forneSalvarConfig()" style="opacity:0;width:0;height:0">
+          <span id="cfg-bloquear-track" style="position:absolute;top:0;left:0;right:0;bottom:0;background:#C8C6C0;border-radius:24px;transition:.2s">
+            <span id="cfg-bloquear-thumb" style="position:absolute;height:18px;width:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s"></span>
+          </span>
+        </label>
+      </div>
+
       <!-- Filtros -->
       <div class="table-wrap" style="padding:14px;margin-bottom:14px">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
@@ -1208,7 +1236,11 @@ tr:hover td{background:#F9F9F9}
     <p style="font-size:13px;color:#666;margin-bottom:16px">Informe os dados da ordem de compra. Você pode adicionar vários itens — uma linha por item será gerada com o mesmo Nº de OC, NF e fornecedor.</p>
     <input type="hidden" id="conv-man-id">
     <div class="form-grid">
-      <div class="form-group"><label>Fornecedor *</label><input id="conv-fornecedor" placeholder="Razão social"></div>
+      <div class="form-group" style="position:relative">
+        <label>Fornecedor * <span id="conv-fornecedor-badge" style="font-size:11px;font-weight:500"></span></label>
+        <input id="conv-fornecedor" placeholder="Comece a digitar para ver sugestões" autocomplete="off">
+        <div id="conv-fornecedor-dropdown" class="forne-autocomplete" style="display:none"></div>
+      </div>
       <div class="form-group"><label>CNPJ *</label><input id="conv-cnpj" placeholder="00.000.000/0000-00"></div>
       <div class="form-group"><label>Nota Fiscal *</label><input id="conv-nota-fiscal" placeholder="Nº da nota fiscal"></div>
       <div class="form-group"><label>Data da Ordem</label><input type="date" id="conv-data-ordem"></div>
@@ -5302,7 +5334,136 @@ async function forneDeletar(id, nome){
   if(typeof orig === 'function'){
     window.showPage = function(p){
       orig.apply(this, arguments)
-      if(p === 'fornecedores') forneCarregar()
+      if(p === 'fornecedores'){ forneCarregar(); forneCarregarConfig() }
+    }
+  }
+})()
+
+// ════════════════════════════════════════════════════════════
+// FASE 2 — Config global + autocompletar fornecedor em OC
+// ════════════════════════════════════════════════════════════
+let forneConfig = { bloquear_fornecedor_nao_homologado: false }
+let forneTodos = []   // cache global de fornecedores cadastrados
+
+async function forneCarregarConfig(){
+  try {
+    const r = await fetch(`${API}/api/config`)
+    const d = await r.json()
+    forneConfig = d || forneConfig
+    const cb = document.getElementById('cfg-bloquear')
+    if(cb){
+      cb.checked = !!forneConfig.bloquear_fornecedor_nao_homologado
+      forneAtualizarSwitch()
+    }
+  } catch {}
+}
+function forneAtualizarSwitch(){
+  const on = document.getElementById('cfg-bloquear')?.checked
+  const tr = document.getElementById('cfg-bloquear-track')
+  const th = document.getElementById('cfg-bloquear-thumb')
+  if(tr) tr.style.background = on ? '#BA7517' : '#C8C6C0'
+  if(th) th.style.left = on ? '25px' : '3px'
+}
+async function forneSalvarConfig(){
+  const on = document.getElementById('cfg-bloquear').checked
+  forneAtualizarSwitch()
+  try {
+    await fetch(`${API}/api/config`, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ bloquear_fornecedor_nao_homologado: on }),
+    })
+    forneConfig.bloquear_fornecedor_nao_homologado = on
+  } catch { alert('Erro ao salvar configuração') }
+}
+
+// Carrega todos os fornecedores em cache (uma vez no boot e a cada save de fornecedor)
+async function forneCarregarCache(){
+  try {
+    const r = await fetch(`${API}/api/fornecedores`)
+    forneTodos = await r.json()
+  } catch {}
+}
+
+// Atualiza o badge ao lado do label "Fornecedor *"
+function forneAtualizarBadge(inputId, badgeId){
+  const input = document.getElementById(inputId)
+  const badge = document.getElementById(badgeId)
+  if(!input || !badge) return
+  const txt = input.value.trim().toLowerCase()
+  if(!txt){ badge.innerHTML = ''; return }
+  const match = forneTodos.find(f => (f.razao_social||'').toLowerCase() === txt)
+  if(!match){
+    badge.innerHTML = '<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:10px">⊕ Novo</span>'
+  } else if(match.homologado){
+    badge.innerHTML = '<span style="background:#E8F5E9;color:#2E7D32;padding:2px 8px;border-radius:10px">✓ Homologado</span>'
+  } else {
+    badge.innerHTML = '<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:10px">✗ Não homologado</span>'
+  }
+}
+
+// Liga o autocompletar num par (input fornecedor + input cnpj)
+function forneSetupAutocomplete(inputId, dropdownId, cnpjId, badgeId){
+  const input = document.getElementById(inputId)
+  const drop  = document.getElementById(dropdownId)
+  const cnpj  = document.getElementById(cnpjId)
+  if(!input || !drop) return
+
+  function fechar(){ drop.style.display = 'none' }
+  function abrir(termo){
+    const t = (termo || '').toLowerCase().trim()
+    const lista = forneTodos
+      .filter(f => !t || (f.razao_social||'').toLowerCase().includes(t) || (f.cnpj||'').includes(t))
+      .slice(0, 8)
+    if(!lista.length){ fechar(); return }
+    drop.innerHTML = lista.map(f => {
+      const badge = f.homologado
+        ? '<span class="badge-h ok">✓</span>'
+        : '<span class="badge-h no">✗</span>'
+      const cidade = [f.cidade, f.estado].filter(Boolean).join('/')
+      const cnpjFmt = forneFmtCnpj(f.cnpj)
+      return `<div class="opt" data-id="${f.id}">
+        ${badge}
+        <div class="opt-info">
+          <div class="opt-nome">${f.razao_social || '-'}</div>
+          <div class="opt-meta">${cnpjFmt}${cidade ? ' · ' + cidade : ''}</div>
+        </div>
+      </div>`
+    }).join('')
+    drop.style.display = 'block'
+    drop.querySelectorAll('.opt').forEach(el => {
+      el.onclick = () => {
+        const f = forneTodos.find(x => x.id === el.dataset.id)
+        if(!f) return
+        input.value = f.razao_social || ''
+        if(cnpj) cnpj.value = forneFmtCnpj(f.cnpj)
+        if(badgeId) forneAtualizarBadge(inputId, badgeId)
+        fechar()
+      }
+    })
+  }
+
+  input.addEventListener('input', () => { abrir(input.value); if(badgeId) forneAtualizarBadge(inputId, badgeId) })
+  input.addEventListener('focus', () => abrir(input.value))
+  input.addEventListener('blur',  () => setTimeout(fechar, 200))  // delay pra capturar click
+}
+
+// Inicializa autocompletar quando o DOM tá pronto
+document.addEventListener('DOMContentLoaded', () => {
+  forneCarregarCache()
+  forneCarregarConfig()
+  forneSetupAutocomplete('f-fornecedor',     'f-fornecedor-dropdown',     'f-cnpj',     'f-fornecedor-badge')
+  forneSetupAutocomplete('conv-fornecedor',  'conv-fornecedor-dropdown',  'conv-cnpj',  'conv-fornecedor-badge')
+})
+
+// Recarrega cache sempre que salvar/deletar um fornecedor
+;(function patchForneRefresh(){
+  const origSalvar = window.forneSalvar
+  if(typeof origSalvar === 'function'){
+    window.forneSalvar = async function(...args){
+      const r = await origSalvar.apply(this, args)
+      forneCarregarCache()
+      return r
     }
   }
 })()

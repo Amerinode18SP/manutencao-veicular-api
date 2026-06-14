@@ -90,8 +90,27 @@ async function criar(req, res) {
     )
     if (veiculoErr) throw veiculoErr
 
-    // 2. Upsert fornecedor
-    const fornecedorPayload = { razao_social: fornecedor, cnpj: cnpj.replace(/\D/g, '') }
+    // 2. Upsert fornecedor — Fase 2: respeita config bloquear_fornecedor_nao_homologado.
+    //    Se a flag tiver ligada, qualquer OC com fornecedor inexistente OU nao homologado
+    //    e rejeitada com 409 (precisa cadastrar/homologar antes).
+    const cnpjLimpo = (cnpj || '').replace(/\D/g, '')
+    const { data: cfg } = await supabase
+      .from('config_sistema').select('bloquear_fornecedor_nao_homologado').eq('id', 1).single()
+    if (cfg?.bloquear_fornecedor_nao_homologado) {
+      const { data: existente } = await supabase
+        .from('fornecedores').select('id, homologado').eq('cnpj', cnpjLimpo).maybeSingle()
+      if (!existente) {
+        return res.status(409).json({
+          error: 'Fornecedor não cadastrado. Cadastre e homologue antes de criar a OC (regra ativa em Configurações).',
+        })
+      }
+      if (!existente.homologado) {
+        return res.status(409).json({
+          error: 'Fornecedor não está homologado. Homologue antes de criar a OC (regra ativa em Configurações).',
+        })
+      }
+    }
+    const fornecedorPayload = { razao_social: fornecedor, cnpj: cnpjLimpo }
     if (observacao_fornecedor !== undefined) fornecedorPayload.observacao = observacao_fornecedor
     const { data: fornecedorData, error: fornecedorErr } = await tentarSemColunaFaltante(
       fornecedorPayload,

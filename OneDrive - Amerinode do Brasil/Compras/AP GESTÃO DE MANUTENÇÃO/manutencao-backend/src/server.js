@@ -11,6 +11,7 @@ const dashboardRoutes   = require('./routes/dashboard')
 const manutencaoRoutes  = require('./routes/manutencao')
 const vidaUtilRoutes    = require('./routes/vidaUtil')
 const distanciaRoutes   = require('./routes/distancia')
+const configRoutes      = require('./routes/config')
 const { runMigrations } = require('./migrate')
 
 const app  = express()
@@ -38,6 +39,7 @@ app.use('/api/dashboard',    dashboardRoutes)
 app.use('/api/manutencao',   manutencaoRoutes)
 app.use('/api/vida-util',    vidaUtilRoutes)
 app.use('/api/distancia',    distanciaRoutes)
+app.use('/api/config',       configRoutes)
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
