@@ -56,12 +56,107 @@ async function atualizarVeiculo(req, res) {
 
 async function listarFornecedores(req, res) {
   try {
-    const { data, error } = await supabase
-      .from('fornecedores')
-      .select('*')
-      .order('razao_social')
+    const { busca, cidade, tipo_servico, homologado, local_atende } = req.query
+    let q = supabase.from('fornecedores').select('*').order('razao_social')
+
+    if (busca) {
+      // razao_social, nome_fantasia ou cnpj contem o termo
+      q = q.or(`razao_social.ilike.%${busca}%,nome_fantasia.ilike.%${busca}%,cnpj.ilike.%${busca}%`)
+    }
+    if (cidade)        q = q.ilike('cidade', `%${cidade}%`)
+    if (local_atende)  q = q.ilike('local_atende', `%${local_atende}%`)
+    if (tipo_servico)  q = q.contains('tipos_servico', [tipo_servico])
+    if (homologado === 'true')  q = q.eq('homologado', true)
+    if (homologado === 'false') q = q.eq('homologado', false)
+
+    const { data, error } = await q
     if (error) throw error
     res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}
+
+// ── CRUD completo (Fase 1) ────────────────────────────────
+function sanitizarFornecedor(body) {
+  // pega so campos conhecidos pra evitar lixo no insert/update
+  const campos = [
+    'razao_social', 'nome_fantasia', 'cnpj', 'inscricao_estadual',
+    'contato_principal', 'telefone', 'whatsapp', 'email', 'local_atende',
+    'tipos_servico', 'homologado', 'data_homologacao', 'responsavel_homologacao',
+    'cep', 'rua', 'numero', 'complemento', 'bairro', 'cidade', 'estado',
+    'observacao',
+  ]
+  const out = {}
+  for (const k of campos) if (k in body) out[k] = body[k]
+  // normaliza CNPJ (so digitos)
+  if (out.cnpj) out.cnpj = String(out.cnpj).replace(/\D/g, '')
+  if (out.cep)  out.cep  = String(out.cep).replace(/\D/g, '')
+  // tipos_servico: aceita array ou string CSV
+  if (typeof out.tipos_servico === 'string') {
+    out.tipos_servico = out.tipos_servico.split(',').map(s => s.trim()).filter(Boolean)
+  }
+  // se desmarcar homologado, limpa data e responsavel
+  if (out.homologado === false) {
+    out.data_homologacao = null
+    out.responsavel_homologacao = null
+  }
+  return out
+}
+
+async function criarFornecedor(req, res) {
+  try {
+    const payload = sanitizarFornecedor(req.body)
+    if (!payload.razao_social) return res.status(400).json({ error: 'Razão social é obrigatória' })
+    if (!payload.cnpj)         return res.status(400).json({ error: 'CNPJ é obrigatório' })
+
+    const { data, error } = await supabase
+      .from('fornecedores')
+      .insert(payload)
+      .select()
+      .single()
+    if (error) throw error
+    res.status(201).json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}
+
+async function atualizarFornecedor(req, res) {
+  try {
+    const payload = sanitizarFornecedor(req.body)
+    payload.updated_at = new Date().toISOString()
+    const { data, error } = await supabase
+      .from('fornecedores')
+      .update(payload)
+      .eq('id', req.params.id)
+      .select()
+      .single()
+    if (error) throw error
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}
+
+async function deletarFornecedor(req, res) {
+  try {
+    // Bloqueia delete se fornecedor estiver vinculado a ordens
+    const { count } = await supabase
+      .from('ordens')
+      .select('*', { count: 'exact', head: true })
+      .eq('fornecedor_id', req.params.id)
+    if ((count || 0) > 0) {
+      return res.status(409).json({
+        error: `Este fornecedor tem ${count} ordem(ns) vinculada(s). Exclua ou troque o fornecedor das ordens antes.`
+      })
+    }
+    const { error } = await supabase
+      .from('fornecedores')
+      .delete()
+      .eq('id', req.params.id)
+    if (error) throw error
+    res.json({ ok: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -331,6 +426,6 @@ async function serie(req, res) {
 
 module.exports = {
   listarVeiculos, revisoesPendentes, atualizarVeiculo,
-  listarFornecedores,
+  listarFornecedores, criarFornecedor, atualizarFornecedor, deletarFornecedor,
   resumo, rankings, serie
 }

@@ -323,6 +323,7 @@ tr:hover td{background:#F9F9F9}
   <div class="nav-item" onclick="showPage('analise')">💰 Análise de Gastos</div>
   <div class="nav-item" onclick="showPage('manutencao')">🔧 Em Manutenção</div>
   <div class="nav-item" id="nav-distancia" onclick="showPage('distancia')" style="display:none">🚗 Distância &amp; Combustível</div>
+  <div class="nav-item" onclick="showPage('fornecedores')">🏢 Fornecedores</div>
   <div class="nav-sep"></div>
   <div class="nav-item" id="nav-usuarios" onclick="showPage('usuarios')">👥 Usuários</div>
   <div class="sidebar-bottom">
@@ -1000,6 +1001,129 @@ tr:hover td{background:#F9F9F9}
           <tbody id="dist-regioes"></tbody></table>
       </div>
     </div><!-- /page-distancia -->
+
+    <!-- FORNECEDORES (Fase 1: cadastro completo + homologação) -->
+    <div class="page" id="page-fornecedores">
+      <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h2>🏢 Fornecedores</h2>
+        <button class="btn-primary" onclick="forneAbrirModal()">+ Novo Fornecedor</button>
+      </div>
+
+      <!-- Filtros -->
+      <div class="table-wrap" style="padding:14px;margin-bottom:14px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+          <div>
+            <label style="font-size:12px;color:#666">Busca (razão / fantasia / CNPJ)</label>
+            <input id="forne-f-busca" oninput="forneCarregar()" placeholder="Digite pra filtrar" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#666">Cidade</label>
+            <input id="forne-f-cidade" oninput="forneCarregar()" placeholder="Ex: Bauru" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#666">Local que atende</label>
+            <input id="forne-f-local" oninput="forneCarregar()" placeholder="Ex: SP-Interior" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#666">Tipo de serviço</label>
+            <select id="forne-f-tipo" onchange="forneCarregar()" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px;background:#fff">
+              <option value="">Todos</option>
+              <option>Mecânica</option><option>Funilaria</option><option>Borracharia</option>
+              <option>Auto Peças</option><option>Serviços de Pneus</option><option>Elétrica</option>
+              <option>Guincho</option><option>Lava Rápido</option><option>Outros</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#666">Homologação</label>
+            <select id="forne-f-homologado" onchange="forneCarregar()" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px;background:#fff">
+              <option value="">Todos</option>
+              <option value="true">Só homologados</option>
+              <option value="false">Só não-homologados</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabela -->
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Razão Social</th><th>CNPJ</th><th>Tipos de serviço</th>
+            <th>Cidade/UF</th><th>Contato</th><th>Homologação</th><th style="width:120px"></th>
+          </tr></thead>
+          <tbody id="forne-tbody"><tr><td colspan="7" style="color:#666">Carregando...</td></tr></tbody>
+        </table>
+      </div>
+    </div><!-- /page-fornecedores -->
+
+    <!-- MODAL CADASTRO/EDIÇÃO DE FORNECEDOR -->
+    <div class="modal-overlay" id="forne-modal" style="display:none">
+      <div class="modal" style="max-width:880px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <h3 id="forne-modal-titulo">Novo Fornecedor</h3>
+          <button onclick="forneFecharModal()" style="background:none;border:none;font-size:22px;color:#888;cursor:pointer">×</button>
+        </div>
+        <form id="forne-form" onsubmit="forneSalvar(event)">
+          <input type="hidden" id="forne-id">
+
+          <!-- Dados básicos -->
+          <h4 style="font-size:13px;color:#0C447C;margin:8px 0 8px;border-bottom:1px solid #E8E6E0;padding-bottom:4px">📄 Dados básicos</h4>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div><label>Razão Social *</label><input id="forne-razao_social" required></div>
+            <div><label>Nome Fantasia</label><input id="forne-nome_fantasia"></div>
+            <div><label>CNPJ *</label><input id="forne-cnpj" required placeholder="00.000.000/0000-00"></div>
+            <div><label>Inscrição Estadual</label><input id="forne-inscricao_estadual"></div>
+            <div><label>Contato Principal *</label><input id="forne-contato_principal" required></div>
+            <div><label>Local que atende</label><input id="forne-local_atende" placeholder="Ex: SP, Capital + Interior"></div>
+            <div><label>Telefone</label><input id="forne-telefone" placeholder="(00) 0000-0000"></div>
+            <div><label>Celular / WhatsApp</label><input id="forne-whatsapp" placeholder="(00) 00000-0000"></div>
+            <div style="grid-column:1/3"><label>E-mail *</label><input id="forne-email" type="email" required></div>
+          </div>
+
+          <!-- Classificação -->
+          <h4 style="font-size:13px;color:#0C447C;margin:16px 0 8px;border-bottom:1px solid #E8E6E0;padding-bottom:4px">🏷️ Tipos de serviço (selecione todos que se aplicam)</h4>
+          <div id="forne-tipos-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+            <!-- checkboxes preenchidos via JS -->
+          </div>
+
+          <!-- Homologação -->
+          <h4 style="font-size:13px;color:#0C447C;margin:16px 0 8px;border-bottom:1px solid #E8E6E0;padding-bottom:4px">✅ Homologação</h4>
+          <div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:10px;align-items:end">
+            <label style="display:flex;align-items:center;gap:6px;padding:8px 12px;background:#F0F8FF;border-radius:6px">
+              <input type="checkbox" id="forne-homologado" onchange="forneToggleHomologado()">
+              <strong style="color:#2E7D32">Homologado</strong>
+            </label>
+            <div><label>Data da homologação</label><input id="forne-data_homologacao" type="date" disabled></div>
+            <div><label>Responsável</label><input id="forne-responsavel_homologacao" disabled></div>
+          </div>
+
+          <!-- Endereço -->
+          <h4 style="font-size:13px;color:#0C447C;margin:16px 0 8px;border-bottom:1px solid #E8E6E0;padding-bottom:4px">📍 Endereço</h4>
+          <div style="display:grid;grid-template-columns:120px 1fr 100px 1fr;gap:10px">
+            <div><label>CEP</label><input id="forne-cep" placeholder="00000-000" onblur="forneViaCEP()" maxlength="9"></div>
+            <div><label>Rua</label><input id="forne-rua"></div>
+            <div><label>Número</label><input id="forne-numero"></div>
+            <div><label>Complemento</label><input id="forne-complemento"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 80px;gap:10px;margin-top:8px">
+            <div><label>Bairro</label><input id="forne-bairro"></div>
+            <div><label>Cidade</label><input id="forne-cidade"></div>
+            <div><label>UF</label><input id="forne-estado" maxlength="2" style="text-transform:uppercase"></div>
+          </div>
+
+          <!-- Observações -->
+          <h4 style="font-size:13px;color:#0C447C;margin:16px 0 8px;border-bottom:1px solid #E8E6E0;padding-bottom:4px">📝 Observações</h4>
+          <textarea id="forne-observacao" rows="3" style="width:100%;resize:vertical"></textarea>
+
+          <!-- Erro / Botões -->
+          <div id="forne-erro" style="color:#A32D2D;font-size:13px;margin-top:10px;display:none"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
+            <button type="button" onclick="forneFecharModal()" style="padding:10px 18px;border-radius:8px;border:1px solid #D8D6D0;background:#fff;cursor:pointer">Cancelar</button>
+            <button type="submit" id="forne-btn-salvar" class="btn-primary">Salvar</button>
+          </div>
+        </form>
+      </div>
+    </div><!-- /forne-modal -->
 
   </div>
 </div>
@@ -4966,6 +5090,217 @@ window.distReaplicarPermissoes = function(){
   })
 }
 document.addEventListener('DOMContentLoaded', distInit)
+
+// ════════════════════════════════════════════════════════════
+// FORNECEDORES — Fase 1: CRUD + filtros + homologação + ViaCEP
+// ════════════════════════════════════════════════════════════
+const FORNE_TIPOS = ['Mecânica','Funilaria','Borracharia','Auto Peças','Serviços de Pneus','Elétrica','Guincho','Lava Rápido','Outros']
+let forneCache = []
+
+function forneFmtCnpj(c){
+  if(!c) return ''
+  const d = String(c).replace(/\D/g,'').padStart(14,'0').slice(-14)
+  return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12,14)}`
+}
+function forneFmtCep(c){
+  if(!c) return ''
+  const d = String(c).replace(/\D/g,'').slice(0,8)
+  return d.length === 8 ? `${d.slice(0,5)}-${d.slice(5)}` : d
+}
+
+async function forneCarregar(){
+  const q = new URLSearchParams()
+  const v = id => document.getElementById(id)?.value?.trim()
+  if(v('forne-f-busca'))      q.set('busca',         v('forne-f-busca'))
+  if(v('forne-f-cidade'))     q.set('cidade',        v('forne-f-cidade'))
+  if(v('forne-f-local'))      q.set('local_atende',  v('forne-f-local'))
+  if(v('forne-f-tipo'))       q.set('tipo_servico',  v('forne-f-tipo'))
+  if(v('forne-f-homologado')) q.set('homologado',    v('forne-f-homologado'))
+
+  const tb = document.getElementById('forne-tbody')
+  if(!tb) return
+  try {
+    const r = await fetch(`${API}/api/fornecedores?${q}`)
+    const lista = await r.json()
+    forneCache = lista
+    if(!lista.length){
+      tb.innerHTML = '<tr><td colspan="7" style="color:#666;text-align:center;padding:20px">Nenhum fornecedor encontrado com esses filtros.</td></tr>'
+      return
+    }
+    tb.innerHTML = lista.map(f => {
+      const tipos = (f.tipos_servico || []).join(', ') || '<span style="color:#999">—</span>'
+      const cidade = [f.cidade, f.estado].filter(Boolean).join('/') || '—'
+      const contato = [f.contato_principal, f.telefone || f.whatsapp].filter(Boolean).join(' · ') || '—'
+      const homol = f.homologado
+        ? `<span style="background:#E8F5E9;color:#2E7D32;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600">✓ Homologado</span>`
+        : `<span style="background:#FFEBEE;color:#C62828;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600">✗ Não homologado</span>`
+      return `<tr>
+        <td><strong>${f.razao_social || '-'}</strong>${f.nome_fantasia ? `<br><span style="color:#666;font-size:11px">${f.nome_fantasia}</span>` : ''}</td>
+        <td>${forneFmtCnpj(f.cnpj)}</td>
+        <td style="font-size:11px;color:#666">${tipos}</td>
+        <td>${cidade}</td>
+        <td style="font-size:12px">${contato}</td>
+        <td>${homol}</td>
+        <td style="white-space:nowrap">
+          <button onclick="forneEditar('${f.id}')" style="border:none;background:#F0F8FF;color:#0C447C;padding:5px 10px;border-radius:5px;cursor:pointer;margin-right:4px" title="Editar">✏️</button>
+          <button onclick="forneDeletar('${f.id}','${(f.razao_social||'').replace(/'/g,"\\'")}')" style="border:none;background:#FFEBEE;color:#C62828;padding:5px 10px;border-radius:5px;cursor:pointer" title="Excluir">🗑️</button>
+        </td>
+      </tr>`
+    }).join('')
+  } catch(e) {
+    tb.innerHTML = '<tr><td colspan="7" style="color:#A32D2D">Erro ao carregar fornecedores.</td></tr>'
+  }
+}
+
+function forneAbrirModal(forne){
+  document.getElementById('forne-modal').style.display = 'flex'
+  document.getElementById('forne-erro').style.display = 'none'
+  document.getElementById('forne-modal-titulo').textContent = forne ? `Editar: ${forne.razao_social}` : 'Novo Fornecedor'
+  // monta checkboxes de tipos
+  const tipos = forne?.tipos_servico || []
+  document.getElementById('forne-tipos-grid').innerHTML = FORNE_TIPOS.map(t =>
+    `<label style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:#FAFAF8;border:1px solid #E8E6E0;border-radius:6px;cursor:pointer;font-size:12px">
+       <input type="checkbox" value="${t}" ${tipos.includes(t) ? 'checked' : ''} class="forne-tipo-cb"> ${t}
+     </label>`
+  ).join('')
+
+  // preenche campos
+  const set = (id, v) => { const el = document.getElementById(id); if(el) el.value = v ?? '' }
+  set('forne-id',                    forne?.id)
+  set('forne-razao_social',          forne?.razao_social)
+  set('forne-nome_fantasia',         forne?.nome_fantasia)
+  set('forne-cnpj',                  forneFmtCnpj(forne?.cnpj))
+  set('forne-inscricao_estadual',    forne?.inscricao_estadual)
+  set('forne-contato_principal',     forne?.contato_principal)
+  set('forne-local_atende',          forne?.local_atende)
+  set('forne-telefone',              forne?.telefone)
+  set('forne-whatsapp',              forne?.whatsapp)
+  set('forne-email',                 forne?.email)
+  set('forne-cep',                   forneFmtCep(forne?.cep))
+  set('forne-rua',                   forne?.rua)
+  set('forne-numero',                forne?.numero)
+  set('forne-complemento',           forne?.complemento)
+  set('forne-bairro',                forne?.bairro)
+  set('forne-cidade',                forne?.cidade)
+  set('forne-estado',                forne?.estado)
+  set('forne-observacao',            forne?.observacao)
+  set('forne-data_homologacao',      forne?.data_homologacao)
+  set('forne-responsavel_homologacao', forne?.responsavel_homologacao)
+  document.getElementById('forne-homologado').checked = !!forne?.homologado
+  forneToggleHomologado()
+}
+function forneFecharModal(){ document.getElementById('forne-modal').style.display = 'none' }
+
+function forneToggleHomologado(){
+  const ativo = document.getElementById('forne-homologado').checked
+  document.getElementById('forne-data_homologacao').disabled = !ativo
+  document.getElementById('forne-responsavel_homologacao').disabled = !ativo
+  if(!ativo){
+    document.getElementById('forne-data_homologacao').value = ''
+    document.getElementById('forne-responsavel_homologacao').value = ''
+  }
+}
+
+// Autocompletar endereço via ViaCEP
+async function forneViaCEP(){
+  const cep = document.getElementById('forne-cep').value.replace(/\D/g,'')
+  if(cep.length !== 8) return
+  try {
+    const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`)
+    const d = await r.json()
+    if(d.erro) return
+    document.getElementById('forne-cep').value = forneFmtCep(cep)
+    if(d.logradouro && !document.getElementById('forne-rua').value)     document.getElementById('forne-rua').value = d.logradouro
+    if(d.bairro     && !document.getElementById('forne-bairro').value)  document.getElementById('forne-bairro').value = d.bairro
+    if(d.localidade && !document.getElementById('forne-cidade').value)  document.getElementById('forne-cidade').value = d.localidade
+    if(d.uf         && !document.getElementById('forne-estado').value)  document.getElementById('forne-estado').value = d.uf
+  } catch {}
+}
+
+async function forneSalvar(ev){
+  ev.preventDefault()
+  const erro = document.getElementById('forne-erro')
+  const btn  = document.getElementById('forne-btn-salvar')
+  erro.style.display = 'none'
+  btn.disabled = true; btn.textContent = 'Salvando...'
+
+  const tipos = [...document.querySelectorAll('.forne-tipo-cb:checked')].map(cb => cb.value)
+  const get = id => document.getElementById(id)?.value?.trim() || null
+  const homologado = document.getElementById('forne-homologado').checked
+
+  const payload = {
+    razao_social:           get('forne-razao_social'),
+    nome_fantasia:          get('forne-nome_fantasia'),
+    cnpj:                   get('forne-cnpj'),
+    inscricao_estadual:     get('forne-inscricao_estadual'),
+    contato_principal:      get('forne-contato_principal'),
+    telefone:               get('forne-telefone'),
+    whatsapp:               get('forne-whatsapp'),
+    email:                  get('forne-email'),
+    local_atende:           get('forne-local_atende'),
+    tipos_servico:          tipos,
+    homologado,
+    data_homologacao:       homologado ? get('forne-data_homologacao') : null,
+    responsavel_homologacao:homologado ? get('forne-responsavel_homologacao') : null,
+    cep:                    get('forne-cep'),
+    rua:                    get('forne-rua'),
+    numero:                 get('forne-numero'),
+    complemento:            get('forne-complemento'),
+    bairro:                 get('forne-bairro'),
+    cidade:                 get('forne-cidade'),
+    estado:                 get('forne-estado'),
+    observacao:             get('forne-observacao'),
+  }
+
+  const id = get('forne-id')
+  const url    = id ? `${API}/api/fornecedores/${id}` : `${API}/api/fornecedores`
+  const method = id ? 'PUT' : 'POST'
+  try {
+    const r = await fetch(url, {
+      method,
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    })
+    const d = await r.json()
+    if(!r.ok){
+      erro.textContent = d.error || 'Erro ao salvar'
+      erro.style.display = 'block'
+    } else {
+      forneFecharModal()
+      forneCarregar()
+    }
+  } catch {
+    erro.textContent = 'Erro de conexão'
+    erro.style.display = 'block'
+  }
+  btn.disabled = false; btn.textContent = 'Salvar'
+}
+
+function forneEditar(id){
+  const f = forneCache.find(x => x.id === id)
+  if(f) forneAbrirModal(f)
+}
+
+async function forneDeletar(id, nome){
+  if(!confirm(`Excluir o fornecedor "${nome}"?\n\nEsta ação não pode ser desfeita.`)) return
+  try {
+    const r = await fetch(`${API}/api/fornecedores/${id}`, { method:'DELETE' })
+    const d = await r.json()
+    if(!r.ok){ alert(d.error || 'Erro ao excluir'); return }
+    forneCarregar()
+  } catch { alert('Erro de conexão') }
+}
+
+// Inicia ao abrir a página
+;(function forneHookShowPage(){
+  const orig = window.showPage
+  if(typeof orig === 'function'){
+    window.showPage = function(p){
+      orig.apply(this, arguments)
+      if(p === 'fornecedores') forneCarregar()
+    }
+  }
+})()
 </script>
 </body>
 </html>
