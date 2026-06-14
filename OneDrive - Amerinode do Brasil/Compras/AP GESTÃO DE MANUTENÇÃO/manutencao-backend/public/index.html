@@ -1021,10 +1021,6 @@ tr:hover td{background:#F9F9F9}
             <input id="forne-f-cidade" oninput="forneCarregar()" placeholder="Ex: Bauru" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px">
           </div>
           <div>
-            <label style="font-size:12px;color:#666">Local que atende</label>
-            <input id="forne-f-local" oninput="forneCarregar()" placeholder="Ex: SP-Interior" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px">
-          </div>
-          <div>
             <label style="font-size:12px;color:#666">Abrange cidade</label>
             <input id="forne-f-abrange" oninput="forneCarregar()" placeholder="Ex: Bauru" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px">
           </div>
@@ -5118,7 +5114,6 @@ async function forneCarregar(){
   const v = id => document.getElementById(id)?.value?.trim()
   if(v('forne-f-busca'))      q.set('busca',           v('forne-f-busca'))
   if(v('forne-f-cidade'))     q.set('cidade',          v('forne-f-cidade'))
-  if(v('forne-f-local'))      q.set('local_atende',    v('forne-f-local'))
   if(v('forne-f-abrange'))    q.set('abrange_cidades', v('forne-f-abrange'))
   if(v('forne-f-tipo'))       q.set('tipo_servico',    v('forne-f-tipo'))
   if(v('forne-f-homologado')) q.set('homologado',      v('forne-f-homologado'))
