@@ -845,6 +845,8 @@ tr:hover td{background:#F9F9F9}
                 <option value="km_asc">Km (menor→maior)</option>
                 <option value="velha">Mais desatualizada</option>
               </select>
+              <button class="btn man-admin-only" onclick="document.getElementById('km-import-input-an').click()">🔢 Importar Km (TicketLog)</button>
+              <input type="file" id="km-import-input-an" accept=".xls,.html,.htm" style="display:none" onchange="importarKmTicketlog(this)">
               <button class="btn" onclick="carregarKmVeiculos()">🔄 Atualizar</button>
               <button class="btn" onclick="exportarKmVeiculosXLSX()">⬇ XLSX</button>
             </div>
@@ -856,7 +858,7 @@ tr:hover td{background:#F9F9F9}
             <tbody id="km-vei-table"><tr><td colspan="5" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
           </table></div>
           <div style="font-size:11px;color:#888;margin-top:10px;padding:8px 12px;background:#FAFCFE;border:1px dashed #DCE6F1;border-radius:8px">
-            Mostra as placas do <strong>último relatório TicketLog importado</strong> (aba Próximas Revisões). "Lida em" é a data da leitura no posto. Placas <strong>não cadastradas</strong> como veículo aparecem marcadas em vermelho — cadastre-as em Veículos para vinculá-las.
+            Mostra as placas do <strong>último relatório TicketLog importado</strong>. Use o botão <strong>🔢 Importar Km (TicketLog)</strong> acima para atualizar. "Lida em" é a data da leitura no posto. Placas <strong>não cadastradas</strong> como veículo aparecem marcadas em vermelho — cadastre-as em Veículos para vinculá-las.
           </div>
         </div>
       </div>
@@ -3616,6 +3618,8 @@ async function confirmarImportKm(){
     closeModal('modal-km-import')
     kmVeiculosDados=[] // invalida cache da subaba Quilometragem p/ recarregar do relatório novo
     carregarRevisoes()
+    const kmSub=document.getElementById('subcontent-km')
+    if(kmSub && kmSub.style.display!=='none') carregarKmVeiculos() // se importou pela subaba, recarrega já
   }catch(e){alert('Erro ao atualizar: '+e.message)}
   finally{btn.disabled=false;btn.textContent='Atualizar selecionados'}
 }
