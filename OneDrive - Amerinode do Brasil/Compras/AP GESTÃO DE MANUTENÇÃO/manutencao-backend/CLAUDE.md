@@ -230,14 +230,18 @@ Se a sessão expirou (401), abre `modal-km-sessao` com passo-a-passo → `salvar
 - **AÇÃO MANUAL UMA VEZ:** rodar `scripts/km-sync.sql` (ALTERs em `config_sistema`).
 - **AÇÃO MANUAL:** conectar a sessão pela 1ª vez — botão online → modal → colar o cURL
   (Copy as cURL da requisição `FuelRelUltimasKmLista.cfm`, logada no portal).
-- **Risco em aberto:** longevidade do cookie (sessão CF pode expirar antes dos 90 dias). O sync
-  detecta e a UI pede reautenticação. Confirmar operacionalmente.
+- **Risco em aberto:** longevidade do cookie. O login SSO dura ~90 dias (renovado jul/2026 →
+  vale até ~out/2026, sem MFA nesse período), MAS o cookie legado (`JSESSIONID`/`CFID`) pode
+  expirar antes. O sync detecta (`km_sync_ultimo_status='expirado'`) e a UI pede reautenticação.
+  Ainda **não medido** quanto dura na prática.
+- **PEGADINHA:** o relatório volta VAZIO se o intervalo passar de ~1 mês → `baixarRelatorioKm`
+  trava a janela em `min(dias,30)`. Sync com `atualizados:0` + sessão válida = período largo demais.
 
-**Agendamento (Railway Cron):** criar um Cron Service no Railway que chama
-`curl -X POST https://manutencao-veicular-api-production.up.railway.app/api/km/sync`
-(ex.: `0 9 * * *` = 06h BRT). O endpoint é idempotente (histórico por `UNIQUE`), então re-rodar é
-inócuo. Hoje `/api/km/sync` é aberto como os demais endpoints /api/km (sem auth server-side);
-se quiser travar, dá pra exigir header secreto depois.
+**Agendamento (FEITO):** usuária configurou **cron-job.org** (não Railway) chamando
+`POST https://manutencao-veicular-api-production.up.railway.app/api/km/sync` 1x/dia. Endpoint
+idempotente (histórico por `UNIQUE`). Hoje `/api/km/sync` é aberto como os demais /api/km.
+**Como reconectar quando expirar:** ver `COMO-RECONECTAR-TICKETLOG.md` (guia do usuário) ou o
+próprio modal `modal-km-sessao` (botão 🔄 Atualizar (online) na subaba Quilometragem).
 
 ## 🚨 Recorrência de Manutenção / Veículos Críticos (subaba de Análise de Gastos)
 
@@ -263,8 +267,41 @@ decisão de renovação da frota (TCO).
 - **Limitação honesta:** "km na 1ª manutenção" não é exato (ordens não guardam km) — usa o 1º
   registro do histórico de km como proxy; custo/km só aparece com ≥2 leituras de km no período.
 
+## 🔧 Manutenção & operação — REGRAS PRÁTICAS (ler antes de mexer)
+
+**Caminho real do projeto (pegadinha do OneDrive):** o repo tem uma cópia OneDrive **aninhada**.
+A raiz de trabalho é
+`...\manutencao-veicular-api\OneDrive - Amerinode do Brasil\Compras\AP GESTÃO DE MANUTENÇÃO\manutencao-backend\`.
+Glob/paths relativos falham; use o caminho absoluto completo. Git roda da raiz `manutencao-veicular-api`.
+
+**Deploy:** editar → `git add`/`commit`/`push origin main` → Railway auto-deploy (~1-2 min).
+node_modules NÃO existe localmente (deps só no Railway) — `require('express')` falha ao testar
+local; valide backend com `node --check <arquivo>` e o front extraindo o `<script>` + `new Function`.
+
+**Supabase (PostgREST) — cache de schema:** ao adicionar coluna via SQL, a API pode não enxergar
+na hora ("Could not find the 'X' column ... in the schema cache"). Rodar `NOTIFY pgrst, 'reload schema';`
+no SQL Editor; se persistir, **Settings → General → Restart project**. O SQL em si funciona antes disso.
+
+**Ações manuais no Supabase (rodar 1x cada, SQL Editor, projeto `pjasyczbgghatkbgnovs`):**
+- `scripts/km-ticketlog.sql` (snapshot subaba Quilometragem) — FEITO
+- `scripts/km-historico.sql` (histórico de km) — verificar se rodou
+- `scripts/km-sync.sql` (cria `config_sistema` se faltar + colunas do sync) — FEITO jul/2026
+- `ALTER TABLE veiculos ADD COLUMN IF NOT EXISTS km_atualizado_em DATE;` — verificar
+- `config_sistema` **não existia** neste projeto até jul/2026 (o toggle de bloqueio de fornecedor
+  também dependia dela). `km-sync.sql` agora cria a tabela se faltar.
+
+**Km via TicketLog:** sync diário por cron-job.org → `/api/km/sync`. Quando o status virar
+"⚠️ sessão expirada", reconectar pelo modal (guia em `COMO-RECONECTAR-TICKETLOG.md`). Janela ≤30 dias.
+
+**Dados:** ordens = 1 linha por ITEM (várias por `num_ordem`). "Entradas na oficina" da recorrência
+= dias distintos com ordem. Placas com typo geram cadastros duplicados (ex.: `QNZ0H31`/`QN0ZH31`) —
+o painel de recorrência os revela; vale unificar em Veículos.
+
 ## 🐛 Bugs históricos conhecidos (resolvidos)
 
+- **Dashboard vazio no 1º dia do mês:** período padrão era `mes` (mês atual); na virada do mês
+  (ex.: 01/07 sem ordens em julho) tudo zerava. Padrão mudado para `ano` (Ano atual). `currentPeriod`
+  em index.html + botão `.active`. Endpoints resumo/rankings/serie usam `?periodo=${currentPeriod}`.
 - **Ordens 3000+ não apareciam:** `limit=200` removido, agora pagina tudo
 - **Edição de fornecedor afetava outras ordens:** corrigido com lógica de upsert por CNPJ
 - **Cadastro fechava do nada:** `onAuthStateChange` agora ignora TOKEN_REFRESHED
