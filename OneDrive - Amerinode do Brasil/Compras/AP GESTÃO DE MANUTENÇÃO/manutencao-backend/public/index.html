@@ -667,6 +667,30 @@ tr:hover td{background:#F9F9F9}
       </div>
     </div>
 
+    <!-- Modal: Sessão TicketLog (reautenticação do sync online) -->
+    <div class="modal-overlay" id="modal-km-sessao">
+      <div class="modal" style="width:640px;max-width:95vw">
+        <h3 style="font-size:15px;color:#1E3A5F;margin-bottom:6px">🔐 Conectar sessão do TicketLog</h3>
+        <div style="font-size:12px;color:#666;margin-bottom:12px">
+          O "Atualizar (online)" baixa o relatório direto do portal usando a <strong>sua sessão</strong>.
+          Ela expira de tempos em tempos — quando isso acontece, cole aqui uma sessão nova. Passo a passo:
+        </div>
+        <ol style="font-size:12px;color:#555;line-height:1.7;margin:0 0 12px 18px;padding:0">
+          <li>Abra o portal <strong>logada</strong> e vá no relatório <strong>"Últimas Quilometragens/Horas"</strong>.</li>
+          <li>Aperte <strong>F12</strong> → aba <strong>Network</strong>. Gere o relatório em <strong>Excel</strong>.</li>
+          <li>Ache a linha <strong>FuelRelUltimasKmLista.cfm</strong> → botão direito → <strong>Copy → Copy as cURL (bash)</strong>.</li>
+          <li>Cole o conteúdo aqui embaixo e clique em <strong>Salvar e testar</strong>.</li>
+        </ol>
+        <textarea id="km-sessao-input" placeholder="Cole aqui o comando cURL (Copy as cURL) — ou só a string de cookies" style="width:100%;height:120px;padding:8px 10px;border:1px solid #DDD;border-radius:6px;font-size:11px;font-family:monospace;resize:vertical"></textarea>
+        <div style="font-size:11px;color:#999;margin-top:6px">🔒 O cookie fica guardado no servidor e nunca é exibido de volta. Serve só para o sync automático.</div>
+        <div id="km-sessao-msg" style="font-size:12px;margin-top:10px"></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+          <button class="btn" onclick="closeModal('modal-km-sessao')">Cancelar</button>
+          <button class="btn btn-primary" id="km-sessao-btn" onclick="salvarSessaoTicketlog()">Salvar e testar</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal Vida Útil: novo item -->
     <div class="modal-overlay" id="modal-vu-novo">
       <div class="modal" style="width:500px">
@@ -835,6 +859,7 @@ tr:hover td{background:#F9F9F9}
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span class="card-title">🔢 Quilometragem dos veículos</span>
               <span style="font-size:11px;color:#888;font-weight:400" id="km-vei-count">—</span>
+              <span style="font-size:11px;font-weight:400" id="km-sync-status"></span>
             </div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
               <input id="km-vei-busca" placeholder="🔎 Placa..." oninput="renderKmVeiculos()" style="padding:7px 12px;border:1px solid #DDD;border-radius:8px;font-size:13px;width:120px;text-transform:uppercase">
@@ -845,9 +870,10 @@ tr:hover td{background:#F9F9F9}
                 <option value="km_asc">Km (menor→maior)</option>
                 <option value="velha">Mais desatualizada</option>
               </select>
-              <button class="btn man-admin-only" onclick="document.getElementById('km-import-input-an').click()">🔢 Importar Km (TicketLog)</button>
+              <button class="btn btn-primary man-admin-only" id="km-online-btn" onclick="atualizarKmOnline()" title="Baixa o relatório direto do portal TicketLog, sem precisar de arquivo">🔄 Atualizar (online)</button>
+              <button class="btn man-admin-only" onclick="document.getElementById('km-import-input-an').click()">🔢 Importar de arquivo</button>
               <input type="file" id="km-import-input-an" accept=".xls,.html,.htm" style="display:none" onchange="importarKmTicketlog(this)">
-              <button class="btn" onclick="carregarKmVeiculos()">🔄 Atualizar</button>
+              <button class="btn" onclick="carregarKmVeiculos()">🔄 Atualizar tela</button>
               <button class="btn" onclick="exportarKmVeiculosXLSX()">⬇ XLSX</button>
             </div>
           </div>
@@ -3407,8 +3433,74 @@ async function carregarKmVeiculos(){
     sel.innerHTML='<option value="">Todas localidades</option>'+locs.map(l=>`<option value="${l}">${l}</option>`).join('')
     sel.value=atual
     renderKmVeiculos()
+    carregarStatusSync()
   }catch(e){
     tb.innerHTML=`<tr><td colspan="5" class="empty">Erro: ${e.message}</td></tr>`
+  }
+}
+
+// ── Sync online (Parte B) ─────────────────────────────────────────────────────
+// Mostra na subaba quando foi a última sincronização online e o status.
+async function carregarStatusSync(){
+  const el=document.getElementById('km-sync-status'); if(!el) return
+  try{
+    const cfg=await apiCall('/api/config')
+    if(!cfg||!cfg.km_sync_ultima_execucao){el.textContent='';return}
+    const st=cfg.km_sync_ultimo_status||''
+    const cor=st==='ok'?'#27500A':(st==='erro'?'#791F1F':'#8A5A00')
+    const rot={ok:'✅ ok',expirado:'⚠️ sessão expirada',sem_sessao:'⚠️ sem sessão',erro:'❌ erro'}[st]||st
+    const dt=new Date(cfg.km_sync_ultima_execucao)
+    const quando=isNaN(dt)?cfg.km_sync_ultima_execucao:dt.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})
+    el.innerHTML=`· 🔄 online: ${quando} <span style="color:${cor}">(${rot})</span>`
+  }catch(e){ el.textContent='' }
+}
+
+// Botão "Atualizar (online)": baixa o relatório direto do portal (server-side).
+async function atualizarKmOnline(){
+  const btn=document.getElementById('km-online-btn')
+  if(btn){btn.disabled=true;btn.textContent='Sincronizando...'}
+  try{
+    const res=await apiCall('/api/km/sync','POST',{})
+    alert(`✅ Sincronizado com o TicketLog!\n${res.atualizados} veículo(s) com km atualizada (de ${res.total} no relatório).`)
+    kmVeiculosDados=[]
+    carregarKmVeiculos()
+  }catch(e){
+    if(/sessao_expirada|sessao_ausente/.test(e.message)){
+      abrirModalSessaoTicketlog()
+    } else {
+      alert('Erro ao sincronizar: '+e.message)
+    }
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='🔄 Atualizar (online)'}
+  }
+}
+
+function abrirModalSessaoTicketlog(){
+  const inp=document.getElementById('km-sessao-input'); if(inp) inp.value=''
+  const msg=document.getElementById('km-sessao-msg'); if(msg) msg.innerHTML=''
+  showModal('modal-km-sessao')
+}
+
+async function salvarSessaoTicketlog(){
+  const valor=(document.getElementById('km-sessao-input').value||'').trim()
+  const msg=document.getElementById('km-sessao-msg')
+  if(!valor){msg.innerHTML='<span style="color:#791F1F">Cole o cURL ou a string de cookies.</span>';return}
+  const btn=document.getElementById('km-sessao-btn')
+  btn.disabled=true;btn.textContent='Salvando...'
+  msg.innerHTML='<span style="color:#666">Salvando e testando a sessão...</span>'
+  try{
+    const res=await apiCall('/api/km/sessao','POST',{valor})
+    if(res.testada){
+      msg.innerHTML='<span style="color:#27500A">✅ Sessão válida e salva! Pode fechar e clicar em "Atualizar (online)".</span>'
+      setTimeout(()=>{closeModal('modal-km-sessao');atualizarKmOnline()},900)
+    } else {
+      const motivo=res.testeErro==='sessao_invalida'?'a sessão parece inválida/expirada (o portal não devolveu o relatório)':('erro no teste: '+(res.testeErro||'desconhecido'))
+      msg.innerHTML=`<span style="color:#8A5A00">⚠️ Salvei, mas ${motivo}. Confira se copiou a requisição certa (FuelRelUltimasKmLista.cfm) já logada.</span>`
+    }
+  }catch(e){
+    msg.innerHTML='<span style="color:#791F1F">Erro ao salvar: '+e.message+'</span>'
+  }finally{
+    btn.disabled=false;btn.textContent='Salvar e testar'
   }
 }
 

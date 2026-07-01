@@ -199,13 +199,45 @@ Próximas Revisões → escolhe o arquivo → preview (placa, km atual, km nova,
   Resiliente: se a tabela não existir, o update de `veiculos` não quebra (só loga).
   - **AÇÃO MANUAL UMA VEZ:** rodar `scripts/km-historico.sql` no Supabase SQL Editor.
 
-### 🔜 Pendente (Parte B — sync online agendado)
-Plano aprovado para atualização semi-automática via portal TicketLog (sem headless browser):
-`POST /api/km/sync` que baixa o relatório server-side (fetch nativo, reusa `parseRelatorio`),
-sessão guardada em `config_sistema` (renovada pelo admin a cada ~90 dias, quando o MFA dispara),
-agendado via Railway Cron. **Depende de um passo de descoberta:** capturar via DevTools a
-requisição interna que o portal usa pra gerar o relatório (URL/método/auth). Detalhes no plano
-`~/.claude/plans/ficou-bom-na-revisao-structured-knuth.md`.
+### Parte B — sync online (IMPLEMENTADO jul/2026)
+Atualiza a km **sem upload de arquivo**, baixando o relatório direto do portal server-side.
+
+**Descoberta B0 (a requisição interna):**
+`POST https://legacy-soulog.ticketlog.com.br/GoodManagerSSL/Fuel/FuelRelUltimasKmLista.cfm?RequestTimeOut=360`
+(sistema **legado ColdFusion**, NÃO `plataforma.*`), `content-type: x-www-form-urlencoded`.
+Corpo: `dt_ini`/`dt_fim` (dd/mm/yyyy), `consideraPeriodo=S`, `cd_tipo_frota=182386` (AMERINODE,
+estático), `cd_situacao=A`, `visual=E` (Excel-HTML). Auth = **só cookie de sessão** (sem Bearer,
+sem CSRF, passo único). **Testado: NÃO é IP-bound** → roda do Railway. Resposta = o mesmo
+`.xls`-HTML que `parseRelatorio` já lê.
+
+**Arquivos:** `src/services/ticketlog.js` (`baixarRelatorioKm({inicio,fim,dias,cookie})` +
+`extrairCookie` que aceita cURL colado ou string de cookies; detecta sessão morta → `err.status=401`).
+Em `importarKm.js`: `montarItens`/`resumoItens` (extraídos do preview, usados por preview e sync),
+`sync`, `salvarSessao`, `getSessaoCookie`, `marcarSync`.
+
+**Rotas:** `POST /api/km/sync` (baixa+grava; usado pelo botão e pelo Cron),
+`POST /api/km/sessao` (admin cola o cURL/cookie; grava em `config_sistema.ticketlog_sessao` e testa).
+`cd_tipo_frota`/`cd_situacao` sobrescrevíveis por env `TICKETLOG_CD_TIPO_FROTA`/`TICKETLOG_CD_SITUACAO`.
+
+**Segredo (90 dias):** cookie em `config_sistema.ticketlog_sessao`. **GET /api/config NÃO devolve**
+o cookie (só `ticketlog_sessao_configurada: true/false`). Status da sync (`km_sync_ultima_execucao`,
+`km_sync_ultimo_status`) vem no GET /api/config e aparece na subaba.
+
+**UI:** botão **🔄 Atualizar (online)** (admin) na subaba Quilometragem → `atualizarKmOnline()`.
+Se a sessão expirou (401), abre `modal-km-sessao` com passo-a-passo → `salvarSessaoTicketlog()`.
+`carregarStatusSync()` mostra "🔄 online: {data} ({status})".
+
+- **AÇÃO MANUAL UMA VEZ:** rodar `scripts/km-sync.sql` (ALTERs em `config_sistema`).
+- **AÇÃO MANUAL:** conectar a sessão pela 1ª vez — botão online → modal → colar o cURL
+  (Copy as cURL da requisição `FuelRelUltimasKmLista.cfm`, logada no portal).
+- **Risco em aberto:** longevidade do cookie (sessão CF pode expirar antes dos 90 dias). O sync
+  detecta e a UI pede reautenticação. Confirmar operacionalmente.
+
+**Agendamento (Railway Cron):** criar um Cron Service no Railway que chama
+`curl -X POST https://manutencao-veicular-api-production.up.railway.app/api/km/sync`
+(ex.: `0 9 * * *` = 06h BRT). O endpoint é idempotente (histórico por `UNIQUE`), então re-rodar é
+inócuo. Hoje `/api/km/sync` é aberto como os demais endpoints /api/km (sem auth server-side);
+se quiser travar, dá pra exigir header secreto depois.
 
 ## 🐛 Bugs históricos conhecidos (resolvidos)
 
