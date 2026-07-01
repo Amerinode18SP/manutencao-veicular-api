@@ -239,6 +239,30 @@ Se a sessão expirou (401), abre `modal-km-sessao` com passo-a-passo → `salvar
 inócuo. Hoje `/api/km/sync` é aberto como os demais endpoints /api/km (sem auth server-side);
 se quiser travar, dá pra exigir header secreto depois.
 
+## 🚨 Recorrência de Manutenção / Veículos Críticos (subaba de Análise de Gastos)
+
+3ª subaba de `page-analise` (`subtab-recorrencia`/`subcontent-recorrencia`). Identifica
+veículos que **voltam muito à oficina** (não só os de maior gasto pontual) para apoiar
+decisão de renovação da frota (TCO).
+
+- **Backend:** `src/controllers/recorrencia.js` → `GET /api/dashboard/recorrencia?km_limite=&custo_limite=`
+  (rota adicionada em `routes/dashboard.js`, sem tocar server.js). Agrega, com paginação estável
+  (`fetchAll` + `order('id')`, contorna teto de 1000 do PostgREST):
+  - **ordens** (exceto Canceladas): custo 12m/24m/total e nº de **entradas na oficina** = OS distintas
+    (`num_ordem`; itens sem num_ordem agrupam por data). Janelas 3/6/12m + 90/180 dias (alertas).
+  - **manutencoes** (casadas por placa normalizada): **dias em oficina** (12m) e % indisponibilidade.
+  - **veiculo_km_historico**: km rodado 12m → **custo por km**; + km do 1º registro (evolução).
+- **Score 0-100** = 30% recorrência(manut 12m) + 30% custo(12m) + 20% km_atual + 20% dias oficina,
+  cada dimensão normalizada pelo **pior caso da frota**. Faixas: <40 baixo, 40-69 atenção, 70+ substituição.
+- **Alertas:** automáticos (>3 manut/90d, >6 manut/180d) + por limite configurável na UI
+  (km acima de X, custo 12m acima de R$ Y). Passados como query params.
+- **Frontend:** `carregarRecorrencia`/`renderRecorrencia`/`renderRecorrenciaKpis`/`recFaixa`/
+  `abrirDetalheRec`/`exportarRecorrenciaXLSX`. KPIs, ranking clicável (badge de score por faixa),
+  filtros (placa/localidade/faixa), export XLSX, modal `modal-rec-detalhe` com TCO por veículo.
+  Reusa `.badge badge-red|amber|green`. Sem SQL manual novo (usa tabelas existentes).
+- **Limitação honesta:** "km na 1ª manutenção" não é exato (ordens não guardam km) — usa o 1º
+  registro do histórico de km como proxy; custo/km só aparece com ≥2 leituras de km no período.
+
 ## 🐛 Bugs históricos conhecidos (resolvidos)
 
 - **Ordens 3000+ não apareciam:** `limit=200` removido, agora pagina tudo
