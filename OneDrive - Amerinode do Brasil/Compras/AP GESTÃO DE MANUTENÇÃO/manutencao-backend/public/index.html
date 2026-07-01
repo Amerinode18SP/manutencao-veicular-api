@@ -361,12 +361,12 @@ tr:hover td{background:#F9F9F9}
     <div id="page-dashboard" class="page active">
       <div class="period-bar">
         <span style="font-size:12px;color:#666;font-weight:500">Período:</span>
-        <button class="period-btn active" onclick="setPeriod('mes',this)">Mês atual</button>
+        <button class="period-btn" onclick="setPeriod('mes',this)">Mês atual</button>
         <button class="period-btn" onclick="setPeriod('mes_ant',this)">Mês anterior</button>
         <button class="period-btn" onclick="setPeriod('3m',this)">Últimos 3 meses</button>
         <button class="period-btn" onclick="setPeriod('6m',this)">Últimos 6 meses</button>
         <button class="period-btn" onclick="setPeriod('trim',this)">Trimestre</button>
-        <button class="period-btn" onclick="setPeriod('ano',this)">Ano atual</button>
+        <button class="period-btn active" onclick="setPeriod('ano',this)">Ano atual</button>
         <button class="period-btn" onclick="setPeriod('todos',this)">Todos</button>
         <div style="flex:1"></div>
         <span style="font-size:12px;color:#666;font-weight:500">Placa:</span>
@@ -1509,7 +1509,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON)
 
 let currentUser = null
 let currentPerfil = null
-let ordens = [], currentPeriod = 'mes', editId = null, importBuffer = []
+let ordens = [], currentPeriod = 'ano', editId = null, importBuffer = []
 
 // Utilitário global de escape HTML
 const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
