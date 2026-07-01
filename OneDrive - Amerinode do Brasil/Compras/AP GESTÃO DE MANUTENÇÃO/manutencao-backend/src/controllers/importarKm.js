@@ -154,17 +154,84 @@ async function gravarKm(atualizacoes, origem = 'import') {
   return { atualizados, erros }
 }
 
+// Salva o snapshot completo do relatório (TODAS as placas, mesmo as não cadastradas)
+// na tabela km_ticketlog — é o que alimenta a subaba Quilometragem.
+// Resiliente: se a tabela ainda não existir, só loga (não quebra o import).
+async function salvarSnapshotRelatorio(relatorio) {
+  const lista = Array.isArray(relatorio) ? relatorio : []
+  if (!lista.length) return
+  const nowIso = new Date().toISOString()
+  const rows = lista.filter(it => it && it.placa).map(it => {
+    const kmRaw = it.km_novo != null ? it.km_novo : it.km
+    return {
+      placa:        String(it.placa).toUpperCase().trim(),
+      km:           kmRaw != null ? parseInt(kmRaw, 10) : null,
+      data_leitura: it.data_leitura || null,
+      hora:         it.hora || null,
+      status:       it.status || null,
+      veiculo_id:   it.veiculo_id || null,
+      importado_em: nowIso
+    }
+  })
+  try {
+    const { error } = await supabase.from('km_ticketlog').upsert(rows, { onConflict: 'placa' })
+    if (error) console.warn('[km_ticketlog] ignorado:', error.message)
+  } catch (e) {
+    console.warn('[km_ticketlog] falhou:', e.message)
+  }
+}
+
 // POST /api/km/aplicar — grava a km dos veículos selecionados (import manual)
+// e persiste o snapshot do relatório inteiro (body.relatorio) para a subaba.
 async function aplicar(req, res) {
   try {
-    const lista = Array.isArray(req.body && req.body.atualizacoes) ? req.body.atualizacoes : []
-    if (!lista.length) return res.status(400).json({ error: 'Nada para atualizar.' })
+    const lista     = Array.isArray(req.body && req.body.atualizacoes) ? req.body.atualizacoes : []
+    const relatorio = req.body && req.body.relatorio
+    const temRelatorio = Array.isArray(relatorio) && relatorio.length > 0
+    if (!lista.length && !temRelatorio) return res.status(400).json({ error: 'Nada para atualizar.' })
 
     const { atualizados, erros } = await gravarKm(lista, 'manual')
+    await salvarSnapshotRelatorio(relatorio)
     res.json({ atualizados, erros_count: erros.length, erros })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 }
 
-module.exports = { preview, aplicar, gravarKm, parseRelatorio }
+// GET /api/km/ticketlog — placas do último relatório importado, com localidade e flag de cadastro
+async function listarTicketlog(req, res) {
+  try {
+    const { data: rows, error } = await supabase.from('km_ticketlog').select('*').order('placa')
+    if (error) {
+      // tabela ainda não criada → devolve vazio (subaba mostra "nenhum relatório importado")
+      if (/km_ticketlog/i.test(error.message) || error.code === '42P01') return res.json([])
+      throw error
+    }
+
+    const { data: veiculos } = await supabase.from('veiculos').select('id, placa, localidade')
+    const locById = {}, veiPorPlaca = {}
+    for (const v of (veiculos || [])) {
+      locById[v.id] = v.localidade
+      veiPorPlaca[normPlaca(v.placa)] = v
+    }
+
+    const out = (rows || []).map(r => {
+      const v = r.veiculo_id ? { localidade: locById[r.veiculo_id] } : veiPorPlaca[normPlaca(r.placa)]
+      return {
+        placa:        r.placa,
+        km:           r.km,
+        data_leitura: r.data_leitura,
+        hora:         r.hora,
+        status:       r.status,
+        importado_em: r.importado_em,
+        cadastrada:   !!(r.veiculo_id || v),
+        localidade:   v ? v.localidade : null
+      }
+    })
+    res.json(out)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}
+
+module.exports = { preview, aplicar, gravarKm, listarTicketlog, parseRelatorio }

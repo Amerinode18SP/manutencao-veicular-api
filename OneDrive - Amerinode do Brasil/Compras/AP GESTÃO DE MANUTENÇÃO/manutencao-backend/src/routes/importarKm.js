@@ -1,7 +1,7 @@
 const express = require('express')
 const multer  = require('multer')
 const router  = express.Router()
-const { preview, aplicar } = require('../controllers/importarKm')
+const { preview, aplicar, listarTicketlog } = require('../controllers/importarKm')
 
 // O relatório do portal TicketLog vem como .xls, mas é HTML por dentro.
 const upload = multer({
@@ -17,5 +17,6 @@ const upload = multer({
 
 router.post('/preview', upload.single('arquivo'), preview)
 router.post('/aplicar', aplicar)
+router.get('/ticketlog', listarTicketlog)
 
 module.exports = router

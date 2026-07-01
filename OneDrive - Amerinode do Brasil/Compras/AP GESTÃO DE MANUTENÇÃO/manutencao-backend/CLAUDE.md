@@ -182,12 +182,17 @@ Próximas Revisões → escolhe o arquivo → preview (placa, km atual, km nova,
   (guarda a data da leitura. O endpoint é resiliente e já funciona sem a coluna, só não grava a data.)
 
 ### Subaba "Quilometragem" (Análise de Gastos) + histórico
-- **Subaba 🔢 Quilometragem** dentro de Análise de Gastos: tabela com TODOS os veículos
-  (placa, localidade, km atual, "atualizado em", situação). Filtro por localidade + busca por
-  placa + ordenação; km com leitura >30 dias aparece em vermelho. Export XLSX.
-  - Padrão de subabas: `page-analise` agora tem `.subtabs` (`subtab-gastos`/`subtab-km`) e
-    `subcontent-gastos`/`subcontent-km`. Função `abrirSubabaAnalise(qual)` (espelho de
-    `abrirSubabaRevisoes`), `carregarKmVeiculos`/`renderKmVeiculos` leem `GET /api/veiculos`.
+- **Subaba 🔢 Quilometragem** dentro de Análise de Gastos: mostra as placas do **último
+  relatório TicketLog importado** (não a lista de veículos cadastrados) — assim nenhuma placa do
+  relatório se perde, inclusive as **não cadastradas** (marcadas em vermelho "sem cadastro").
+  Colunas: placa, localidade, km, "lida em", situação. Filtro por localidade + busca + ordenação.
+  - Padrão de subabas: `page-analise` tem `.subtabs` (`subtab-gastos`/`subtab-km`) e
+    `subcontent-gastos`/`subcontent-km`. `abrirSubabaAnalise(qual)`, `carregarKmVeiculos`/
+    `renderKmVeiculos` leem **`GET /api/km/ticketlog`**.
+  - **Snapshot do relatório:** tabela `km_ticketlog` (uma linha por placa do relatório, PK placa),
+    populada no `POST /api/km/aplicar` a partir do `body.relatorio` (todas as placas do preview,
+    não só as selecionadas). `salvarSnapshotRelatorio()` + `listarTicketlog()` em `importarKm.js`.
+    Resiliente se a tabela não existir. **AÇÃO MANUAL UMA VEZ:** rodar `scripts/km-ticketlog.sql`.
 - **Histórico de km** — tabela `veiculo_km_historico` (append-only, idempotente por
   `UNIQUE(veiculo_id, data_leitura, km)`). Alimentada pela função `gravarKm(atualizacoes, origem)`
   em `importarKm.js` (extraída de `aplicar`) — usada pelo import manual e (futuro) pelo sync.

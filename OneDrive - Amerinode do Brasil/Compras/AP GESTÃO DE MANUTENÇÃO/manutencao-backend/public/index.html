@@ -851,12 +851,12 @@ tr:hover td{background:#F9F9F9}
           </div>
           <div class="table-wrap"><table>
             <thead><tr>
-              <th>Placa</th><th>Localidade</th><th style="text-align:right">KM atual</th><th>Atualizado em</th><th>Situação</th>
+              <th>Placa</th><th>Localidade</th><th style="text-align:right">KM</th><th>Lida em</th><th>Situação</th>
             </tr></thead>
             <tbody id="km-vei-table"><tr><td colspan="5" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
           </table></div>
           <div style="font-size:11px;color:#888;margin-top:10px;padding:8px 12px;background:#FAFCFE;border:1px dashed #DCE6F1;border-radius:8px">
-            A km vem do relatório TicketLog importado na aba <strong>Próximas Revisões</strong>. "Atualizado em" é a data da última leitura no posto — veículos com leitura antiga (&gt;30 dias) aparecem em vermelho.
+            Mostra as placas do <strong>último relatório TicketLog importado</strong> (aba Próximas Revisões). "Lida em" é a data da leitura no posto. Placas <strong>não cadastradas</strong> como veículo aparecem marcadas em vermelho — cadastre-as em Veículos para vinculá-las.
           </div>
         </div>
       </div>
@@ -3396,7 +3396,7 @@ async function carregarKmVeiculos(){
   const tb=document.getElementById('km-vei-table')
   tb.innerHTML='<tr><td colspan="5" class="loading"><span class="spinner"></span>Carregando...</td></tr>'
   try{
-    const r=await fetch(`${API}/api/veiculos`)
+    const r=await fetch(`${API}/api/km/ticketlog`)
     if(!r.ok) throw new Error(await r.text())
     kmVeiculosDados=(await r.json())||[]
     const sel=document.getElementById('km-vei-localidade')
@@ -3419,11 +3419,13 @@ function kmDiasDesde(dateStr){
 }
 
 function kmSituacao(v){
-  const dias=kmDiasDesde(v.km_atualizado_em)
-  if(v.km_atual==null) return {txt:'Sem km', cls:'badge-gray', ord:99999}
-  if(dias==null)       return {txt:'Sem data de leitura', cls:'badge-gray', ord:9999}
-  if(dias>30)          return {txt:`Desatualizada há ${dias} dias`, cls:'badge-red', ord:dias}
-  if(dias>7)           return {txt:`${dias} dias`, cls:'badge-amber', ord:dias}
+  if(!v.cadastrada) return {txt:'⚠️ Não cadastrada', cls:'badge-red', ord:100000}
+  if(v.status==='invalido'||(v.km!=null&&v.km>=999999)) return {txt:'⛔ Leitura inválida', cls:'badge-red', ord:99998}
+  const dias=kmDiasDesde(v.data_leitura)
+  if(v.km==null)  return {txt:'Sem km', cls:'badge-gray', ord:99997}
+  if(dias==null)  return {txt:'Sem data', cls:'badge-gray', ord:9999}
+  if(dias>30)     return {txt:`Leitura há ${dias} dias`, cls:'badge-red', ord:dias}
+  if(dias>7)      return {txt:`${dias} dias`, cls:'badge-amber', ord:dias}
   return {txt: dias===0?'Hoje':`${dias} dia(s)`, cls:'badge-green', ord:dias}
 }
 
@@ -3435,38 +3437,42 @@ function renderKmVeiculos(){
   if(busca) lista=lista.filter(v=>(v.placa||'').toUpperCase().includes(busca))
   if(loc)   lista=lista.filter(v=>v.localidade===loc)
   lista.sort((a,b)=>{
-    if(ord==='km_desc') return (b.km_atual||0)-(a.km_atual||0)
-    if(ord==='km_asc')  return (a.km_atual||0)-(b.km_atual||0)
+    if(ord==='km_desc') return (b.km||0)-(a.km||0)
+    if(ord==='km_asc')  return (a.km||0)-(b.km||0)
     if(ord==='velha')   return kmSituacao(b).ord-kmSituacao(a).ord
     return (a.placa||'').localeCompare(b.placa||'')
   })
-  const velhas=kmVeiculosDados.filter(v=>{const d=kmDiasDesde(v.km_atualizado_em);return v.km_atual==null||d==null||d>30}).length
-  document.getElementById('km-vei-count').textContent=`${kmVeiculosDados.length} veículos · ${velhas} com km desatualizada`
+  const naoCad=kmVeiculosDados.filter(v=>!v.cadastrada).length
+  document.getElementById('km-vei-count').textContent=
+    `${kmVeiculosDados.length} placas do relatório`+(naoCad?` · ${naoCad} não cadastrada(s)`:'')
   const tb=document.getElementById('km-vei-table')
-  if(!lista.length){tb.innerHTML='<tr><td colspan="5" class="empty">Nenhum veículo.</td></tr>';return}
+  if(!kmVeiculosDados.length){tb.innerHTML='<tr><td colspan="5" class="empty">Nenhum relatório TicketLog importado ainda. Importe pela aba <strong>Próximas Revisões</strong>.</td></tr>';return}
+  if(!lista.length){tb.innerHTML='<tr><td colspan="5" class="empty">Nenhuma placa com esse filtro.</td></tr>';return}
   tb.innerHTML=lista.map(v=>{
     const s=kmSituacao(v)
+    const loc=v.localidade||(v.cadastrada?'-':'<span style="color:#B22">— sem cadastro —</span>')
     return `<tr>
       <td><strong>${v.placa||'-'}</strong></td>
-      <td>${v.localidade||'-'}</td>
-      <td style="text-align:right">${v.km_atual!=null?Number(v.km_atual).toLocaleString('pt-BR')+' km':'-'}</td>
-      <td>${v.km_atualizado_em?fmtData(v.km_atualizado_em):'-'}</td>
+      <td>${loc}</td>
+      <td style="text-align:right">${v.km!=null?Number(v.km).toLocaleString('pt-BR')+' km':'-'}</td>
+      <td>${v.data_leitura?fmtData(v.data_leitura):'-'}${v.hora?' '+v.hora:''}</td>
       <td><span class="badge ${s.cls}">${s.txt}</span></td>
     </tr>`
   }).join('')
 }
 
 function exportarKmVeiculosXLSX(){
-  if(!kmVeiculosDados.length){alert('Nada para exportar.');return}
+  if(!kmVeiculosDados.length){alert('Nada para exportar. Importe um relatório TicketLog primeiro (aba Próximas Revisões).');return}
   const rows=kmVeiculosDados.slice().sort((a,b)=>(a.placa||'').localeCompare(b.placa||'')).map(v=>({
-    'Placa':v.placa||'', 'Localidade':v.localidade||'',
-    'KM atual':v.km_atual!=null?v.km_atual:'',
-    'Atualizado em':v.km_atualizado_em?fmtData(v.km_atualizado_em):'',
+    'Placa':v.placa||'',
+    'Localidade':v.localidade||(v.cadastrada?'':'NÃO CADASTRADA'),
+    'KM':v.km!=null?v.km:'',
+    'Lida em':v.data_leitura?fmtData(v.data_leitura):'',
     'Situação':kmSituacao(v).txt
   }))
   const wb=XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Quilometragem')
-  XLSX.writeFile(wb, 'quilometragem_veiculos.xlsx')
+  XLSX.writeFile(wb, 'quilometragem_ticketlog.xlsx')
 }
 
 // ── REVISÕES ──────────────────────────────────────────────────
@@ -3604,9 +3610,11 @@ async function confirmarImportKm(){
   btn.disabled=true;btn.textContent='Atualizando...'
   try{
     const atualizacoes=sel.map(it=>({veiculo_id:it.veiculo_id,km:it.km_novo,data_leitura:it.data_leitura,placa:it.placa}))
-    const res=await apiCall('/api/km/aplicar','POST',{atualizacoes})
+    // Envia TAMBÉM o relatório inteiro (todas as placas) p/ alimentar a subaba Quilometragem
+    const res=await apiCall('/api/km/aplicar','POST',{atualizacoes,relatorio:kmImportItens})
     alert(`✅ ${res.atualizados} veículo(s) com km atualizada!`+(res.erros_count?`\n⚠️ ${res.erros_count} com erro.`:''))
     closeModal('modal-km-import')
+    kmVeiculosDados=[] // invalida cache da subaba Quilometragem p/ recarregar do relatório novo
     carregarRevisoes()
   }catch(e){alert('Erro ao atualizar: '+e.message)}
   finally{btn.disabled=false;btn.textContent='Atualizar selecionados'}
