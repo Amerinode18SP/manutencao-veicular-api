@@ -698,6 +698,18 @@ tr:hover td{background:#F9F9F9}
       </div>
     </div>
 
+    <!-- Modal: Detalhe de Recorrência (TCO do veículo) -->
+    <div class="modal-overlay" id="modal-rec-detalhe">
+      <div class="modal" style="width:640px;max-width:95vw">
+        <h3 id="rec-det-titulo" style="font-size:16px;color:#1E3A5F;margin-bottom:2px">Veículo</h3>
+        <div id="rec-det-sub" style="font-size:12px;color:#888;margin-bottom:12px"></div>
+        <div id="rec-det-body"></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+          <button class="btn" onclick="closeModal('modal-rec-detalhe')">Fechar</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal Vida Útil: novo item -->
     <div class="modal-overlay" id="modal-vu-novo">
       <div class="modal" style="width:500px">
@@ -775,6 +787,7 @@ tr:hover td{background:#F9F9F9}
       <div class="subtabs">
         <div class="subtab active" id="subtab-gastos" onclick="abrirSubabaAnalise('gastos')">💰 Gastos</div>
         <div class="subtab" id="subtab-km" onclick="abrirSubabaAnalise('km')">🔢 Quilometragem</div>
+        <div class="subtab" id="subtab-recorrencia" onclick="abrirSubabaAnalise('recorrencia')">🚨 Recorrência de Manutenção</div>
       </div>
 
       <div id="subcontent-gastos">
@@ -892,6 +905,59 @@ tr:hover td{background:#F9F9F9}
           </table></div>
           <div style="font-size:11px;color:#888;margin-top:10px;padding:8px 12px;background:#FAFCFE;border:1px dashed #DCE6F1;border-radius:8px">
             Mostra as placas do <strong>último relatório TicketLog importado</strong>. Use o botão <strong>🔢 Importar Km (TicketLog)</strong> acima para atualizar. "Lida em" é a data da leitura no posto. Placas <strong>não cadastradas</strong> como veículo aparecem marcadas em vermelho — cadastre-as em Veículos para vinculá-las.
+          </div>
+        </div>
+      </div>
+
+      <!-- Subaba: Recorrência de Manutenção (Veículos Críticos) -->
+      <div id="subcontent-recorrencia" style="display:none">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px" id="rec-kpis"></div>
+        <div class="card">
+          <div class="card-header">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span class="card-title">🚨 Ranking de criticidade / substituição</span>
+              <span style="font-size:11px;color:#888;font-weight:400" id="rec-count">—</span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input id="rec-busca" placeholder="🔎 Placa..." oninput="renderRecorrencia()" style="padding:7px 12px;border:1px solid #DDD;border-radius:8px;font-size:13px;width:110px;text-transform:uppercase">
+              <select id="rec-localidade" onchange="renderRecorrencia()" style="padding:7px 10px;border:1px solid #DDD;border-radius:8px;font-size:13px"><option value="">Todas localidades</option></select>
+              <select id="rec-faixa" onchange="renderRecorrencia()" style="padding:7px 10px;border:1px solid #DDD;border-radius:8px;font-size:13px">
+                <option value="">Todas as faixas</option>
+                <option value="substituicao">🔴 Substituição</option>
+                <option value="atencao">🟡 Atenção</option>
+                <option value="baixo">🟢 Baixo risco</option>
+              </select>
+              <button class="btn" onclick="carregarRecorrencia()">🔄 Atualizar</button>
+              <button class="btn" onclick="exportarRecorrenciaXLSX()">⬇ XLSX</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;color:#555;padding:0 4px 12px">
+            <span>⚙️ Alertas por limite:</span>
+            <label style="display:flex;align-items:center;gap:5px">Km acima de
+              <input id="rec-km-limite" type="number" min="0" placeholder="250000" style="width:100px;padding:5px 8px;border:1px solid #DDD;border-radius:6px;font-size:12px"> km</label>
+            <label style="display:flex;align-items:center;gap:5px">Custo 12m acima de R$
+              <input id="rec-custo-limite" type="number" min="0" placeholder="20000" style="width:100px;padding:5px 8px;border:1px solid #DDD;border-radius:6px;font-size:12px"></label>
+            <button class="btn" onclick="carregarRecorrencia()" style="padding:5px 12px;font-size:12px">Aplicar</button>
+            <span style="color:#999">· automáticos: &gt;3 manut/90d, &gt;6 manut/180d</span>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr>
+              <th style="width:34px">#</th><th>Placa</th><th>Local</th>
+              <th style="text-align:center" title="Score de criticidade 0-100">Score</th>
+              <th style="text-align:right">Km atual</th>
+              <th style="text-align:center" title="Entradas na oficina em 3 / 6 / 12 meses">3M/6M/12M</th>
+              <th style="text-align:right" title="Manutenções ÷ 12 meses">Índice</th>
+              <th style="text-align:right">Custo 12M</th>
+              <th style="text-align:right" title="Custo 12m ÷ km rodado 12m">Custo/km</th>
+              <th style="text-align:right" title="Dias em oficina e % de indisponibilidade (12m)">Oficina</th>
+              <th>Alertas</th>
+            </tr></thead>
+            <tbody id="rec-table"><tr><td colspan="11" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
+          </table></div>
+          <div style="font-size:11px;color:#888;margin-top:10px;padding:8px 12px;background:#FAFCFE;border:1px dashed #DCE6F1;border-radius:8px">
+            <strong>Score</strong> = 30% recorrência + 30% custo (12m) + 20% km + 20% indisponibilidade, relativo ao pior caso da frota.
+            Faixas: <span class="badge badge-green">0–39 baixo</span> <span class="badge badge-amber">40–69 atenção</span> <span class="badge badge-red">70–100 substituição</span>.
+            Clique numa linha para ver o detalhe completo (TCO) do veículo.
           </div>
         </div>
       </div>
@@ -3417,14 +3483,16 @@ function importarVidaUtilXLSX(input){
 
 // ── QUILOMETRAGEM (subaba de Análise de Gastos) ───────────────
 let kmVeiculosDados=[]
+let recorrenciaDados=null
 
 function abrirSubabaAnalise(qual){
-  const aGastos = qual==='gastos'
-  document.getElementById('subtab-gastos').classList.toggle('active', aGastos)
-  document.getElementById('subtab-km').classList.toggle('active', !aGastos)
-  document.getElementById('subcontent-gastos').style.display = aGastos ? 'block' : 'none'
-  document.getElementById('subcontent-km').style.display     = aGastos ? 'none'  : 'block'
-  if(!aGastos && !kmVeiculosDados.length) carregarKmVeiculos()
+  const abas=['gastos','km','recorrencia']
+  abas.forEach(a=>{
+    document.getElementById('subtab-'+a).classList.toggle('active', a===qual)
+    document.getElementById('subcontent-'+a).style.display = a===qual ? 'block' : 'none'
+  })
+  if(qual==='km' && !kmVeiculosDados.length) carregarKmVeiculos()
+  if(qual==='recorrencia' && !recorrenciaDados) carregarRecorrencia()
 }
 
 async function carregarKmVeiculos(){
@@ -3574,6 +3642,141 @@ function exportarKmVeiculosXLSX(){
   const wb=XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Quilometragem')
   XLSX.writeFile(wb, 'quilometragem_ticketlog.xlsx')
+}
+
+// ── RECORRÊNCIA DE MANUTENÇÃO (Veículos Críticos) ─────────────
+async function carregarRecorrencia(){
+  const tb=document.getElementById('rec-table')
+  tb.innerHTML='<tr><td colspan="11" class="loading"><span class="spinner"></span>Calculando criticidade da frota...</td></tr>'
+  const kmLim=parseInt(document.getElementById('rec-km-limite').value,10)||0
+  const custoLim=parseFloat(document.getElementById('rec-custo-limite').value)||0
+  try{
+    recorrenciaDados=await apiCall(`/api/dashboard/recorrencia?km_limite=${kmLim}&custo_limite=${custoLim}`)
+    const sel=document.getElementById('rec-localidade')
+    const atual=sel.value
+    const locs=[...new Set((recorrenciaDados.veiculos||[]).map(v=>v.localidade).filter(Boolean))].sort()
+    sel.innerHTML='<option value="">Todas localidades</option>'+locs.map(l=>`<option value="${l}">${l}</option>`).join('')
+    sel.value=atual
+    renderRecorrenciaKpis()
+    renderRecorrencia()
+  }catch(e){
+    tb.innerHTML=`<tr><td colspan="11" class="empty">Erro: ${e.message}</td></tr>`
+  }
+}
+
+function recFaixa(f){
+  if(f==='substituicao') return {cls:'badge-red',   txt:'Substituição'}
+  if(f==='atencao')      return {cls:'badge-amber', txt:'Atenção'}
+  return {cls:'badge-green', txt:'Baixo risco'}
+}
+
+function renderRecorrenciaKpis(){
+  const t=recorrenciaDados&&recorrenciaDados.totais; if(!t) return
+  const card=(cor,val,rot)=>`<div style="flex:1;min-width:150px;background:#fff;border:1px solid #E7EEF6;border-left:4px solid ${cor};border-radius:10px;padding:12px 14px">
+    <div style="font-size:22px;font-weight:700;color:#1E3A5F">${val}</div>
+    <div style="font-size:11px;color:#666;margin-top:2px">${rot}</div></div>`
+  document.getElementById('rec-kpis').innerHTML=
+    card('#185FA5', t.veiculos, 'Veículos analisados')+
+    card('#B22', t.substituicao, '🔴 Candidatos à substituição')+
+    card('#C88A00', t.atencao, '🟡 Em atenção')+
+    card('#B22', t.com_alerta, '⚠️ Com alerta ativo')+
+    card('#185FA5', 'R$ '+Number(t.custo_12m_frota).toLocaleString('pt-BR',{maximumFractionDigits:0}), 'Custo de manutenção (12m)')
+}
+
+function renderRecorrencia(){
+  if(!recorrenciaDados) return
+  const busca=(document.getElementById('rec-busca').value||'').toUpperCase().trim()
+  const loc=document.getElementById('rec-localidade').value
+  const faixa=document.getElementById('rec-faixa').value
+  let lista=(recorrenciaDados.veiculos||[]).slice()
+  if(busca) lista=lista.filter(v=>(v.placa||'').toUpperCase().includes(busca))
+  if(loc)   lista=lista.filter(v=>v.localidade===loc)
+  if(faixa) lista=lista.filter(v=>v.faixa===faixa)
+  document.getElementById('rec-count').textContent=`${lista.length} veículo(s)`
+  const tb=document.getElementById('rec-table')
+  if(!lista.length){tb.innerHTML='<tr><td colspan="11" class="empty">Nenhum veículo com esse filtro.</td></tr>';return}
+  tb.innerHTML=lista.map((v,i)=>{
+    const f=recFaixa(v.faixa)
+    const km=v.km_atual!=null?Number(v.km_atual).toLocaleString('pt-BR'):'-'
+    const custo=v.custo_12m?'R$ '+Number(v.custo_12m).toLocaleString('pt-BR',{maximumFractionDigits:0}):'-'
+    const ckm=v.custo_km!=null?'R$ '+Number(v.custo_km).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—'
+    const ofi=v.dias_oficina_12m?`${v.dias_oficina_12m}d · ${v.pct_indisp_12m}%`:'—'
+    const alertas=v.alertas&&v.alertas.length?`<span title="${v.alertas.join(' | ').replace(/"/g,'&quot;')}" style="color:#B22;font-weight:600">⚠️ ${v.alertas.length}</span>`:'<span style="color:#BBB">—</span>'
+    return `<tr style="cursor:pointer" onclick="abrirDetalheRec('${v.veiculo_id}')">
+      <td style="text-align:center;color:#999">${i+1}</td>
+      <td><strong>${v.placa||'-'}</strong></td>
+      <td style="font-size:12px">${v.localidade||'-'}</td>
+      <td style="text-align:center"><span class="badge ${f.cls}" title="${f.txt}">${v.score}</span></td>
+      <td style="text-align:right">${km}</td>
+      <td style="text-align:center;font-size:12px">${v.manut_3m} / ${v.manut_6m} / <strong>${v.manut_12m}</strong></td>
+      <td style="text-align:right">${Number(v.recorrencia_12m).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td style="text-align:right">${custo}</td>
+      <td style="text-align:right;font-size:12px">${ckm}</td>
+      <td style="text-align:right;font-size:12px">${ofi}</td>
+      <td>${alertas}</td>
+    </tr>`
+  }).join('')
+}
+
+function abrirDetalheRec(id){
+  const v=((recorrenciaDados&&recorrenciaDados.veiculos)||[]).find(x=>x.veiculo_id===id)
+  if(!v) return
+  const f=recFaixa(v.faixa)
+  document.getElementById('rec-det-titulo').innerHTML=`${v.placa} <span class="badge ${f.cls}" style="font-size:12px;vertical-align:middle">Score ${v.score} · ${f.txt}</span>`
+  document.getElementById('rec-det-sub').textContent=`${v.localidade||'sem localidade'} · Km atual: ${v.km_atual!=null?Number(v.km_atual).toLocaleString('pt-BR')+' km':'—'}`
+  const linha=(rot,val)=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #F0F0F0"><span style="color:#666;font-size:13px">${rot}</span><span style="font-weight:600;font-size:13px">${val}</span></div>`
+  const money=n=>'R$ '+Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
+  let kmEvol='—'
+  if(v.km_ini&&v.km_atual!=null){
+    const delta=v.km_atual-v.km_ini.km
+    kmEvol=`${Number(v.km_ini.km).toLocaleString('pt-BR')} km (${fmtData(v.km_ini.data)}) → ${Number(v.km_atual).toLocaleString('pt-BR')} km <span style="color:#27500A">(+${Number(delta).toLocaleString('pt-BR')})</span>`
+  }
+  const alertasHtml=v.alertas&&v.alertas.length
+    ? '<div style="margin-top:12px;padding:10px 12px;background:#FFF4F4;border:1px solid #F3D0D0;border-radius:8px"><strong style="color:#B22;font-size:12px">⚠️ Alertas</strong><ul style="margin:6px 0 0 16px;font-size:12px;color:#792020;line-height:1.6">'+v.alertas.map(a=>`<li>${a}</li>`).join('')+'</ul></div>'
+    : '<div style="margin-top:12px;font-size:12px;color:#27500A">✅ Sem alertas ativos.</div>'
+  document.getElementById('rec-det-body').innerHTML=
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px">'+
+      '<div>'+
+        linha('Entradas 3 meses', v.manut_3m)+
+        linha('Entradas 6 meses', v.manut_6m)+
+        linha('Entradas 12 meses', `<strong>${v.manut_12m}</strong>`)+
+        linha('Total histórico', v.manut_total)+
+        linha('Índice recorrência', Number(v.recorrencia_12m).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+' /mês')+
+      '</div>'+
+      '<div>'+
+        linha('Custo 12 meses', money(v.custo_12m))+
+        linha('Custo 24 meses', money(v.custo_24m))+
+        linha('Custo total (TCO)', money(v.custo_total))+
+        linha('Custo por km (12m)', v.custo_km!=null?money(v.custo_km)+'/km':'—')+
+        linha('Km rodado 12m', v.km_rodado_12m!=null?Number(v.km_rodado_12m).toLocaleString('pt-BR')+' km':'—')+
+      '</div>'+
+    '</div>'+
+    '<div style="margin-top:10px">'+
+      linha('Dias em oficina (12m)', v.dias_oficina_12m+' dia(s)')+
+      linha('Indisponibilidade (12m)', v.pct_indisp_12m+'%')+
+      linha('Evolução de km', kmEvol)+
+    '</div>'+
+    alertasHtml
+  showModal('modal-rec-detalhe')
+}
+
+function exportarRecorrenciaXLSX(){
+  if(!recorrenciaDados||!(recorrenciaDados.veiculos||[]).length){alert('Nada para exportar. Clique em Atualizar primeiro.');return}
+  const rows=recorrenciaDados.veiculos.map((v,i)=>({
+    'Ranking':i+1, 'Placa':v.placa||'', 'Localidade':v.localidade||'',
+    'Score':v.score, 'Faixa':recFaixa(v.faixa).txt,
+    'Km atual':v.km_atual!=null?v.km_atual:'',
+    'Manut 3M':v.manut_3m, 'Manut 6M':v.manut_6m, 'Manut 12M':v.manut_12m, 'Total':v.manut_total,
+    'Indice recorrencia':v.recorrencia_12m,
+    'Custo 12M':v.custo_12m, 'Custo 24M':v.custo_24m, 'Custo total (TCO)':v.custo_total,
+    'Km rodado 12M':v.km_rodado_12m!=null?v.km_rodado_12m:'',
+    'Custo por km':v.custo_km!=null?v.custo_km:'',
+    'Dias oficina 12M':v.dias_oficina_12m, 'Indisponibilidade %':v.pct_indisp_12m,
+    'Alertas':(v.alertas||[]).join(' | ')
+  }))
+  const wb=XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Recorrencia')
+  XLSX.writeFile(wb, 'recorrencia_manutencao.xlsx')
 }
 
 // ── REVISÕES ──────────────────────────────────────────────────
