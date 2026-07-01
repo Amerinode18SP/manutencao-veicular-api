@@ -248,8 +248,8 @@ decisão de renovação da frota (TCO).
 - **Backend:** `src/controllers/recorrencia.js` → `GET /api/dashboard/recorrencia?km_limite=&custo_limite=`
   (rota adicionada em `routes/dashboard.js`, sem tocar server.js). Agrega, com paginação estável
   (`fetchAll` + `order('id')`, contorna teto de 1000 do PostgREST):
-  - **ordens** (exceto Canceladas): custo 12m/24m/total e nº de **entradas na oficina** = OS distintas
-    (`num_ordem`; itens sem num_ordem agrupam por data). Janelas 3/6/12m + 90/180 dias (alertas).
+  - **ordens** (exceto Canceladas): custo 12m/24m/total e nº de **entradas na oficina** = **dias
+    distintos** com ordem (várias OCs/itens no mesmo dia = 1 entrada). Janelas 3/6/12m + 90/180 dias (alertas).
   - **manutencoes** (casadas por placa normalizada): **dias em oficina** (12m) e % indisponibilidade.
   - **veiculo_km_historico**: km rodado 12m → **custo por km**; + km do 1º registro (evolução).
 - **Score 0-100** = 30% recorrência(manut 12m) + 30% custo(12m) + 20% km_atual + 20% dias oficina,

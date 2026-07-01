@@ -74,7 +74,7 @@ async function recorrencia(req, res) {
       acc.set(v.id, {
         veiculo_id: v.id, placa: v.placa, localidade: v.localidade || '',
         km_atual: v.km_atual != null ? Number(v.km_atual) : null,
-        visitas: new Map(),                 // visitKey -> data (min) — "entradas na oficina"
+        visitas: new Map(),                 // data -> data (dias distintos) — "entradas na oficina"
         custo_total: 0, custo_12m: 0, custo_24m: 0,
         dias_oficina_12m: 0,
         km_ini: null                        // {km, data} 1º registro de km
@@ -82,9 +82,9 @@ async function recorrencia(req, res) {
     }
 
     // ── 2) Ordens (paginado) — custo e nº de entradas ─────────────────────────
-    // Uma "entrada na oficina" = uma OS distinta (num_ordem); itens sem num_ordem
-    // agrupam por data. Ordens canceladas não contam.
-    const ordens = await fetchAll('ordens', 'veiculo_id, num_ordem, data_ordem, valor_total, status',
+    // Uma "entrada na oficina" = um DIA distinto com ordem para o veículo (várias
+    // OCs / itens no mesmo dia = 1 entrada). Ordens canceladas não contam.
+    const ordens = await fetchAll('ordens', 'veiculo_id, data_ordem, valor_total, status',
       q => q.neq('status', 'Cancelado'))
     for (const o of ordens) {
       if (!o.veiculo_id) continue
@@ -95,9 +95,7 @@ async function recorrencia(req, res) {
       a.custo_total += val
       if (data && data >= c12m) a.custo_12m += val
       if (data && data >= c24m) a.custo_24m += val
-      const vk = (o.num_ordem && String(o.num_ordem).trim()) ? 'N:' + String(o.num_ordem).trim() : 'D:' + (data || '?')
-      const prev = a.visitas.get(vk)
-      if (!prev || (data && data < prev)) a.visitas.set(vk, data)
+      if (data) a.visitas.set(data, data) // agrupa por dia
     }
 
     // ── 3) Manutenções (por placa) — dias de indisponibilidade nos últimos 12m ─
