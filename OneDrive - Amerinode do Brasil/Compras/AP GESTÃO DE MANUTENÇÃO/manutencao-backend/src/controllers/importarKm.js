@@ -109,35 +109,62 @@ async function preview(req, res) {
   }
 }
 
-// POST /api/km/aplicar — grava a km dos veículos selecionados
+// Grava a km dos veículos e registra no histórico.
+// Reutilizada pelo import manual (aplicar) e pelo futuro sync online.
+// `atualizacoes`: [{ veiculo_id, km, data_leitura, placa? }]
+async function gravarKm(atualizacoes, origem = 'import') {
+  const lista = Array.isArray(atualizacoes) ? atualizacoes : []
+  let atualizados = 0
+  const erros = []
+
+  for (const it of lista) {
+    if (!it.veiculo_id || it.km == null) continue
+    const km = parseInt(it.km, 10)
+    const dataLeitura = it.data_leitura || null
+
+    const payload = {
+      km_atual:         km,
+      km_atualizado_em: dataLeitura,
+      updated_at:       new Date().toISOString()
+    }
+    // Resiliente: se a coluna km_atualizado_em ainda não existir no schema, refaz sem ela.
+    let { error } = await supabase.from('veiculos').update(payload).eq('id', it.veiculo_id)
+    if (error && /km_atualizado_em/.test(error.message)) {
+      delete payload.km_atualizado_em
+      ;({ error } = await supabase.from('veiculos').update(payload).eq('id', it.veiculo_id))
+    }
+    if (error) { erros.push({ veiculo_id: it.veiculo_id, erro: error.message }); continue }
+    atualizados++
+
+    // Histórico (append-only, idempotente). Não deve derrubar o update se a tabela
+    // ainda não existir — só loga. UNIQUE(veiculo_id, data_leitura, km) evita duplicar.
+    try {
+      const { error: eh } = await supabase
+        .from('veiculo_km_historico')
+        .upsert(
+          { veiculo_id: it.veiculo_id, placa: it.placa || null, km, data_leitura: dataLeitura, origem },
+          { onConflict: 'veiculo_id,data_leitura,km', ignoreDuplicates: true }
+        )
+      if (eh) console.warn('[km-historico] ignorado:', eh.message)
+    } catch (e) {
+      console.warn('[km-historico] falhou:', e.message)
+    }
+  }
+
+  return { atualizados, erros }
+}
+
+// POST /api/km/aplicar — grava a km dos veículos selecionados (import manual)
 async function aplicar(req, res) {
   try {
     const lista = Array.isArray(req.body && req.body.atualizacoes) ? req.body.atualizacoes : []
     if (!lista.length) return res.status(400).json({ error: 'Nada para atualizar.' })
 
-    let atualizados = 0
-    const erros = []
-    for (const it of lista) {
-      if (!it.veiculo_id || it.km == null) continue
-      const payload = {
-        km_atual:         parseInt(it.km, 10),
-        km_atualizado_em: it.data_leitura || null,
-        updated_at:       new Date().toISOString()
-      }
-      // Resiliente: se a coluna km_atualizado_em ainda não existir no schema, refaz sem ela.
-      let { error } = await supabase.from('veiculos').update(payload).eq('id', it.veiculo_id)
-      if (error && /km_atualizado_em/.test(error.message)) {
-        delete payload.km_atualizado_em
-        ;({ error } = await supabase.from('veiculos').update(payload).eq('id', it.veiculo_id))
-      }
-      if (error) erros.push({ veiculo_id: it.veiculo_id, erro: error.message })
-      else atualizados++
-    }
-
+    const { atualizados, erros } = await gravarKm(lista, 'manual')
     res.json({ atualizados, erros_count: erros.length, erros })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 }
 
-module.exports = { preview, aplicar, parseRelatorio }
+module.exports = { preview, aplicar, gravarKm, parseRelatorio }

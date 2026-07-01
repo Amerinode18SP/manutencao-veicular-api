@@ -181,6 +181,27 @@ Próximas Revisões → escolhe o arquivo → preview (placa, km atual, km nova,
   `ALTER TABLE veiculos ADD COLUMN IF NOT EXISTS km_atualizado_em DATE;`
   (guarda a data da leitura. O endpoint é resiliente e já funciona sem a coluna, só não grava a data.)
 
+### Subaba "Quilometragem" (Análise de Gastos) + histórico
+- **Subaba 🔢 Quilometragem** dentro de Análise de Gastos: tabela com TODOS os veículos
+  (placa, localidade, km atual, "atualizado em", situação). Filtro por localidade + busca por
+  placa + ordenação; km com leitura >30 dias aparece em vermelho. Export XLSX.
+  - Padrão de subabas: `page-analise` agora tem `.subtabs` (`subtab-gastos`/`subtab-km`) e
+    `subcontent-gastos`/`subcontent-km`. Função `abrirSubabaAnalise(qual)` (espelho de
+    `abrirSubabaRevisoes`), `carregarKmVeiculos`/`renderKmVeiculos` leem `GET /api/veiculos`.
+- **Histórico de km** — tabela `veiculo_km_historico` (append-only, idempotente por
+  `UNIQUE(veiculo_id, data_leitura, km)`). Alimentada pela função `gravarKm(atualizacoes, origem)`
+  em `importarKm.js` (extraída de `aplicar`) — usada pelo import manual e (futuro) pelo sync.
+  Resiliente: se a tabela não existir, o update de `veiculos` não quebra (só loga).
+  - **AÇÃO MANUAL UMA VEZ:** rodar `scripts/km-historico.sql` no Supabase SQL Editor.
+
+### 🔜 Pendente (Parte B — sync online agendado)
+Plano aprovado para atualização semi-automática via portal TicketLog (sem headless browser):
+`POST /api/km/sync` que baixa o relatório server-side (fetch nativo, reusa `parseRelatorio`),
+sessão guardada em `config_sistema` (renovada pelo admin a cada ~90 dias, quando o MFA dispara),
+agendado via Railway Cron. **Depende de um passo de descoberta:** capturar via DevTools a
+requisição interna que o portal usa pra gerar o relatório (URL/método/auth). Detalhes no plano
+`~/.claude/plans/ficou-bom-na-revisao-structured-knuth.md`.
+
 ## 🐛 Bugs históricos conhecidos (resolvidos)
 
 - **Ordens 3000+ não apareciam:** `limit=200` removido, agora pagina tudo
