@@ -673,14 +673,21 @@ tr:hover td{background:#F9F9F9}
         <h3 style="font-size:15px;color:#1E3A5F;margin-bottom:6px">🔐 Conectar sessão do TicketLog</h3>
         <div style="font-size:12px;color:#666;margin-bottom:12px">
           O "Atualizar (online)" baixa o relatório direto do portal usando a <strong>sua sessão</strong>.
-          Ela expira de tempos em tempos — quando isso acontece, cole aqui uma sessão nova. Passo a passo:
+          Ela expira de tempos em tempos — quando isso acontece, cole aqui uma sessão nova.
+          Não precisa refazer o SMS/MFA (o login do portal dura ~90 dias). Passo a passo:
         </div>
-        <ol style="font-size:12px;color:#555;line-height:1.7;margin:0 0 12px 18px;padding:0">
-          <li>Abra o portal <strong>logada</strong> e vá no relatório <strong>"Últimas Quilometragens/Horas"</strong>.</li>
-          <li>Aperte <strong>F12</strong> → aba <strong>Network</strong>. Gere o relatório em <strong>Excel</strong>.</li>
-          <li>Ache a linha <strong>FuelRelUltimasKmLista.cfm</strong> → botão direito → <strong>Copy → Copy as cURL (bash)</strong>.</li>
-          <li>Cole o conteúdo aqui embaixo e clique em <strong>Salvar e testar</strong>.</li>
+        <ol style="font-size:12px;color:#555;line-height:1.75;margin:0 0 12px 18px;padding:0">
+          <li>No portal TicketLog (<strong>já logada</strong>), abra o relatório <strong>"Últimas Quilometragens/Horas"</strong>.</li>
+          <li>Aperte <strong>F12</strong> → clique na aba <strong>Network</strong> (Rede) do painel que abrir.</li>
+          <li>Na linha de filtros do Network, clique em <strong>"All"</strong> (para não filtrar só JS) e marque <strong>"Preserve log"</strong>.</li>
+          <li>No formulário, deixe <strong>Visualização = EXCEL</strong> e clique no botão que <strong>gera o relatório</strong>.</li>
+          <li>Na lista, ache a linha <strong>FuelRelUltimasKmLista.cfm</strong> (tipo <em>document</em>).</li>
+          <li>Clique nela com o <strong>botão direito</strong> → <strong>Copy</strong> → <strong>Copy as cURL (bash)</strong>.</li>
+          <li>Cole aqui embaixo (Ctrl+V) e clique em <strong>Salvar e testar</strong>.</li>
         </ol>
+        <div style="font-size:11px;color:#8A5A00;background:#FFF8EC;border:1px solid #F0E0C0;border-radius:6px;padding:6px 10px;margin-bottom:10px">
+          💡 Se a lista não mostrar a linha, clique no ícone <strong>🚫</strong> (limpar) e gere o relatório de novo — ela aparece logo após clicar em gerar.
+        </div>
         <textarea id="km-sessao-input" placeholder="Cole aqui o comando cURL (Copy as cURL) — ou só a string de cookies" style="width:100%;height:120px;padding:8px 10px;border:1px solid #DDD;border-radius:6px;font-size:11px;font-family:monospace;resize:vertical"></textarea>
         <div style="font-size:11px;color:#999;margin-top:6px">🔒 O cookie fica guardado no servidor e nunca é exibido de volta. Serve só para o sync automático.</div>
         <div id="km-sessao-msg" style="font-size:12px;margin-top:10px"></div>
