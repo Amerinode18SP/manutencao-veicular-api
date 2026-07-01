@@ -3587,6 +3587,7 @@ function renderKmImport(res){
     const inf=kmStatusInfo(it.status)
     const diff=it.diff==null?'-':(it.diff>0?'+':'')+Number(it.diff).toLocaleString('pt-BR')
     const diffCor=it.diff==null?'#999':(it.diff<0?'#791F1F':'#27500A')
+    const corr=it.invalido_ignorado?' <span style="color:#8A5A00" title="A última leitura era 999.999 (erro do posto); usando a leitura válida anterior">↩︎ corrigido de 999.999</span>':''
     return `<tr>
       <td style="text-align:center"><input type="checkbox" class="km-chk" data-i="${i}" ${inf.check?'checked':''} ${inf.lock?'disabled':''}></td>
       <td><strong>${it.placa}</strong></td>
@@ -3594,7 +3595,7 @@ function renderKmImport(res){
       <td style="text-align:right"><strong>${Number(it.km_novo).toLocaleString('pt-BR')}</strong></td>
       <td style="text-align:right;color:${diffCor}">${diff}</td>
       <td>${it.data_leitura?fmtData(it.data_leitura):'-'}${it.hora?' '+it.hora:''}</td>
-      <td style="color:${inf.cor};font-size:12px">${inf.txt}</td>
+      <td style="color:${inf.cor};font-size:12px">${inf.txt}${corr}</td>
     </tr>`
   }).join('')
   document.getElementById('km-check-all').checked=false

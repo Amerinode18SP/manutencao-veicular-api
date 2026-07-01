@@ -26,13 +26,18 @@ function chaveOrdem(iso, hora) {
   return (iso || '').replace(/-/g, '') + String(hora || '').replace(/\D/g, '').padEnd(4, '0')
 }
 
+const KM_INVALIDO = 999999 // placeholder digitado errado no posto/bomba
+
 // Parseia o relatório "Últimas Quilometragens/Horas" (HTML disfarçado de .xls)
-// e retorna a leitura de km MAIS RECENTE por placa.
+// e retorna a leitura de km MAIS RECENTE por placa. Quando a leitura mais recente
+// é o placeholder 999.999 (erro digitado no posto), cai para a leitura VÁLIDA
+// anterior mais recente da mesma placa ("penúltima com valor real"), se existir.
 function parseRelatorio(buffer) {
   const text = buffer.toString('latin1')
   const rowRe  = /<tr class="Linha(?:Impar|Par)">([\s\S]*?)<\/tr>/g
   const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/g
-  const latest = {}
+  const latest   = {} // leitura mais recente (qualquer valor)
+  const latestOk = {} // leitura mais recente com km VÁLIDO (< 999.999)
   let m
   while ((m = rowRe.exec(text))) {
     const cells = []
@@ -49,14 +54,18 @@ function parseRelatorio(buffer) {
     const hora = cells[3].trim()
     const key  = chaveOrdem(iso, hora)
     const norm = normPlaca(placa)
-    if (!latest[norm] || key > latest[norm].key) {
-      latest[norm] = { placa, norm, km, data_leitura: iso, hora, key }
-    }
+    const rec  = { placa, norm, km, data_leitura: iso, hora, key }
+    if (!latest[norm]   || key > latest[norm].key)                     latest[norm]   = rec
+    if (km < KM_INVALIDO && (!latestOk[norm] || key > latestOk[norm].key)) latestOk[norm] = rec
   }
-  return Object.values(latest)
+  return Object.keys(latest).map(norm => {
+    const top = latest[norm]
+    const ok  = latestOk[norm]
+    // topo inválido mas existe leitura válida anterior → usa a válida
+    if (top.km >= KM_INVALIDO && ok) return { ...ok, invalido_ignorado: true }
+    return top
+  })
 }
-
-const KM_INVALIDO = 999999 // placeholder digitado errado no posto/bomba
 
 // POST /api/km/preview — lê o arquivo, compara com o banco e devolve o preview (não grava)
 async function preview(req, res) {
@@ -92,7 +101,8 @@ async function preview(req, res) {
         diff:         (v && v.km_atual != null) ? l.km - v.km_atual : null,
         data_leitura: l.data_leitura,
         hora:         l.hora,
-        status
+        status,
+        invalido_ignorado: l.invalido_ignorado || false // caiu p/ leitura válida anterior (topo era 999.999)
       }
     }).sort((a, b) => a.placa.localeCompare(b.placa))
 
