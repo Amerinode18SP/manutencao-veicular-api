@@ -56,8 +56,11 @@ async function baixarRelatorioKm(opts = {}) {
   const cookie = extrairCookie(opts.cookie)
   if (!cookie) { const e = new Error('sessao_ausente'); e.status = 401; throw e }
 
-  const fim    = opts.fim    || new Date()
-  const inicio = opts.inicio || new Date(fim.getTime() - (opts.dias || 45) * 86400000)
+  // O portal devolve o relatório VAZIO quando o intervalo passa de ~1 mês.
+  // Travamos a janela em 30 dias — suficiente pra pegar as leituras recentes.
+  const fim    = opts.fim || new Date()
+  const janela = Math.min(opts.dias || 30, 30)
+  const inicio = opts.inicio || new Date(fim.getTime() - janela * 86400000)
 
   const body = new URLSearchParams({
     fl_cartao_veic:     'true',
