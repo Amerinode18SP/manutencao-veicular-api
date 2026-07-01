@@ -578,7 +578,14 @@ tr:hover td{background:#F9F9F9}
       <div id="subcontent-proximas">
         <div id="rev-alert-box" style="display:none" class="alert-banner alert-warn"></div>
         <div class="card">
-          <div class="card-header"><span class="card-title">Próximas revisões</span><button class="btn" onclick="carregarRevisoes()">🔄 Atualizar</button></div>
+          <div class="card-header">
+            <span class="card-title">Próximas revisões</span>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button class="btn man-admin-only" onclick="document.getElementById('km-import-input').click()">🔢 Importar Km (TicketLog)</button>
+              <input type="file" id="km-import-input" accept=".xls,.html,.htm" style="display:none" onchange="importarKmTicketlog(this)">
+              <button class="btn" onclick="carregarRevisoes()">🔄 Atualizar</button>
+            </div>
+          </div>
           <div class="table-wrap"><table>
             <thead><tr><th>Placa</th><th>Localidade</th><th>KM atual</th><th>Próxima revisão</th><th>Situação</th><th>Dias restantes</th><th>Ações</th></tr></thead>
             <tbody id="revisoes-table"><tr><td colspan="7" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
@@ -629,6 +636,33 @@ tr:hover td{background:#F9F9F9}
             <span><span class="badge badge-amber">Segurança</span> item crítico</span>
             <span><span class="badge badge-purple">Mista</span> preventiva + corretiva</span>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Importar Km (TicketLog) -->
+    <div class="modal-overlay" id="modal-km-import">
+      <div class="modal" style="width:840px;max-width:95vw">
+        <h3 style="font-size:15px;color:#1E3A5F;margin-bottom:6px">🔢 Importar Km do relatório TicketLog</h3>
+        <div id="km-import-resumo" style="font-size:12px;color:#666;margin-bottom:10px"></div>
+        <div class="table-wrap" style="max-height:54vh;overflow:auto;border:1px solid #E0E0E0;border-radius:8px"><table>
+          <thead><tr>
+            <th style="width:34px;text-align:center"><input type="checkbox" id="km-check-all" onchange="kmToggleAll(this)" title="Marcar/desmarcar todos"></th>
+            <th>Placa</th>
+            <th style="text-align:right">Km atual</th>
+            <th style="text-align:right">Km relatório</th>
+            <th style="text-align:right">Δ</th>
+            <th>Leitura</th>
+            <th>Situação</th>
+          </tr></thead>
+          <tbody id="km-import-table"></tbody>
+        </table></div>
+        <div style="font-size:11px;color:#888;margin-top:10px;padding:8px 12px;background:#FAFCFE;border:1px dashed #DCE6F1;border-radius:8px">
+          Só os veículos marcados serão atualizados. Leituras com <strong>km menor que a atual</strong> vêm desmarcadas (possível erro de digitação no posto) — marque manualmente se quiser forçar. Placas não cadastradas e valores 999.999 são ignorados.
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+          <button class="btn" onclick="closeModal('modal-km-import')">Cancelar</button>
+          <button class="btn btn-primary" id="km-btn-confirmar" onclick="confirmarImportKm()">Atualizar selecionados</button>
         </div>
       </div>
     </div>
@@ -3375,6 +3409,78 @@ async function concluirRevisao(veiculoId, placa){
   }catch(e){
     alert('Erro: '+e.message)
   }
+}
+
+// ── IMPORTAR KM (TicketLog) ───────────────────────────────────
+let kmImportItens=[]
+
+async function importarKmTicketlog(input){
+  const f=input.files[0]
+  if(!f) return
+  try{
+    const fd=new FormData()
+    fd.append('arquivo', f)
+    const r=await fetch(`${API}/api/km/preview`,{method:'POST',body:fd})
+    if(!r.ok){const e=await r.json().catch(()=>({error:r.statusText}));throw new Error(e.error||'falha ao ler')}
+    const res=await r.json()
+    kmImportItens=res.itens||[]
+    renderKmImport(res)
+    showModal('modal-km-import')
+  }catch(e){alert('Erro ao ler relatório: '+e.message)}
+  finally{input.value=''}
+}
+
+function kmStatusInfo(s){
+  if(s==='ok')             return {txt:'✅ Atualizar',              cor:'#27500A', check:true,  lock:false}
+  if(s==='regressao')      return {txt:'⚠️ Km menor que a atual',   cor:'#8A5A00', check:false, lock:false}
+  if(s==='invalido')       return {txt:'⛔ Valor inválido (999.999)', cor:'#791F1F', check:false, lock:true}
+  if(s==='nao_encontrado') return {txt:'❓ Placa não cadastrada',   cor:'#791F1F', check:false, lock:true}
+  return {txt:s, cor:'#666', check:false, lock:true}
+}
+
+function renderKmImport(res){
+  document.getElementById('km-import-resumo').innerHTML=
+    `${res.total} veículo(s) no relatório — <strong style="color:#27500A">${res.ok} para atualizar</strong>`+
+    (res.regressao?`, <span style="color:#8A5A00">${res.regressao} com km menor</span>`:'')+
+    (res.invalido?`, <span style="color:#791F1F">${res.invalido} inválido(s)</span>`:'')+
+    (res.nao_encontrado?`, <span style="color:#791F1F">${res.nao_encontrado} não cadastrada(s)</span>`:'')
+  const tb=document.getElementById('km-import-table')
+  if(!kmImportItens.length){tb.innerHTML='<tr><td colspan="7" class="empty">Nada encontrado no arquivo.</td></tr>';return}
+  tb.innerHTML=kmImportItens.map((it,i)=>{
+    const inf=kmStatusInfo(it.status)
+    const diff=it.diff==null?'-':(it.diff>0?'+':'')+Number(it.diff).toLocaleString('pt-BR')
+    const diffCor=it.diff==null?'#999':(it.diff<0?'#791F1F':'#27500A')
+    return `<tr>
+      <td style="text-align:center"><input type="checkbox" class="km-chk" data-i="${i}" ${inf.check?'checked':''} ${inf.lock?'disabled':''}></td>
+      <td><strong>${it.placa}</strong></td>
+      <td style="text-align:right">${it.km_sistema==null?'-':Number(it.km_sistema).toLocaleString('pt-BR')}</td>
+      <td style="text-align:right"><strong>${Number(it.km_novo).toLocaleString('pt-BR')}</strong></td>
+      <td style="text-align:right;color:${diffCor}">${diff}</td>
+      <td>${it.data_leitura?fmtData(it.data_leitura):'-'}${it.hora?' '+it.hora:''}</td>
+      <td style="color:${inf.cor};font-size:12px">${inf.txt}</td>
+    </tr>`
+  }).join('')
+  document.getElementById('km-check-all').checked=false
+}
+
+function kmToggleAll(cb){
+  document.querySelectorAll('.km-chk:not(:disabled)').forEach(c=>c.checked=cb.checked)
+}
+
+async function confirmarImportKm(){
+  const sel=[...document.querySelectorAll('.km-chk:checked')]
+    .map(c=>kmImportItens[+c.dataset.i]).filter(it=>it&&it.veiculo_id)
+  if(!sel.length){alert('Nenhum veículo selecionado para atualizar.');return}
+  const btn=document.getElementById('km-btn-confirmar')
+  btn.disabled=true;btn.textContent='Atualizando...'
+  try{
+    const atualizacoes=sel.map(it=>({veiculo_id:it.veiculo_id,km:it.km_novo,data_leitura:it.data_leitura}))
+    const res=await apiCall('/api/km/aplicar','POST',{atualizacoes})
+    alert(`✅ ${res.atualizados} veículo(s) com km atualizada!`+(res.erros_count?`\n⚠️ ${res.erros_count} com erro.`:''))
+    closeModal('modal-km-import')
+    carregarRevisoes()
+  }catch(e){alert('Erro ao atualizar: '+e.message)}
+  finally{btn.disabled=false;btn.textContent='Atualizar selecionados'}
 }
 
 // ── USUÁRIOS (admin only) ─────────────────────────────────────

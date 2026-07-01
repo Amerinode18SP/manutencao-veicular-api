@@ -53,7 +53,7 @@ manutencao-backend/
 
 ## 🗄️ Modelo de dados (Supabase)
 
-- **veiculos** — placa (UNIQUE), localidade, km_atual, proxima_revisao, observacao
+- **veiculos** — placa (UNIQUE), localidade, km_atual, km_atualizado_em (data da leitura, via import TicketLog), proxima_revisao, observacao
 - **fornecedores** — razao_social, cnpj (UNIQUE), observacao
 - **ordens** — veiculo_id, fornecedor_id, supervisor, num_ordem, link_ordem, nota_fiscal,
   data_ordem, categoria (Serviço/Produto), item, valor_item, quantidade, valor_total,
@@ -156,6 +156,30 @@ Aguardando resposta do suporte Cotabox sobre:
 ### Backup melhorado (futuro)
 - Hoje só botão manual no sidebar (admin baixa XLSX)
 - Sugestão: cron diário Railway → envia por e-mail para o admin
+
+## 🔢 Importar Km (TicketLog) — atualiza `veiculos.km_atual`
+
+Preenche a km atual dos veículos a partir do relatório **"Últimas Quilometragens/Horas"**
+do portal TicketLog/Edenred (`plataforma.ticketlog.com.br`).
+
+**Descoberta importante:** a API pública "Recolha Autônoma" (RAU) da TicketLog **NÃO serve**
+para isso — ela é pra postos enviarem NF-e de abastecimento. A km vem do **relatório do portal**,
+que é baixado como `.xls` mas na verdade é **HTML** (tabela). Não usamos RPA/navegador
+(portal tem SSO Edenred + MFA); o fluxo é **exportar + importar**, à prova de quebra.
+
+**Fluxo:** admin baixa o relatório no portal → botão "🔢 Importar Km (TicketLog)" na aba
+Próximas Revisões → escolhe o arquivo → preview (placa, km atual, km nova, Δ, situação) → confirma.
+
+- Parser dedicado (regex nas `<tr class="LinhaImpar|Par">`), pega a **leitura mais recente por placa**.
+- Casa por placa normalizada (maiúscula, sem hífen). Km PT-BR (`208.232` → `208232`).
+- Flags: `ok` (marcado), `regressao` (km menor que a atual — desmarcado, forçável),
+  `invalido` (999.999 = placeholder do posto — bloqueado), `nao_encontrado` (placa não cadastrada).
+- **Arquivos:** `src/controllers/importarKm.js`, `src/routes/importarKm.js` (montado em `/api/km`),
+  funções JS `importarKmTicketlog`/`renderKmImport`/`confirmarImportKm` no `index.html`.
+- **Rotas:** `POST /api/km/preview` (upload, retorna preview), `POST /api/km/aplicar` (grava selecionados).
+- **AÇÃO MANUAL UMA VEZ:** rodar no Supabase SQL Editor:
+  `ALTER TABLE veiculos ADD COLUMN IF NOT EXISTS km_atualizado_em DATE;`
+  (guarda a data da leitura. O endpoint é resiliente e já funciona sem a coluna, só não grava a data.)
 
 ## 🐛 Bugs históricos conhecidos (resolvidos)
 
