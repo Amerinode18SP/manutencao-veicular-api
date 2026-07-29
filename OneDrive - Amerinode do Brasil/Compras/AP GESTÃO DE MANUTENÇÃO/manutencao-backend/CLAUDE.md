@@ -359,6 +359,13 @@ Glob/paths relativos falham; use o caminho absoluto completo. Git roda da raiz `
 node_modules NÃO existe localmente (deps só no Railway) — `require('express')` falha ao testar
 local; valide backend com `node --check <arquivo>` e o front extraindo o `<script>` + `new Function`.
 
+**Entregar SQL para a usuária rodar — NÃO colar no chat.** A cópia do texto do terminal corrompe:
+sumiram ~28 caracteres no meio de linhas longas (`FROM veiculos WHERE proxima_revi` → `FROsao`),
+vírgulas se perderam e até os números dos passos entraram no SQL — 4 erros `42601` seguidos.
+**O que funciona:** escrever o `.sql` em arquivo e abrir com `Start-Process notepad.exe <caminho>`;
+ela copia dali (Ctrl+A/Ctrl+C) e cola no SQL Editor. Nos scripts, evitar comentário `--` no fim de
+linha **dentro** de comandos: se uma quebra de linha se perder, o `--` comenta o resto do comando.
+
 **Supabase (PostgREST) — cache de schema:** ao adicionar coluna via SQL, a API pode não enxergar
 na hora ("Could not find the 'X' column ... in the schema cache"). Rodar `NOTIFY pgrst, 'reload schema';`
 no SQL Editor; se persistir, **Settings → General → Restart project**. O SQL em si funciona antes disso.
@@ -368,7 +375,7 @@ no SQL Editor; se persistir, **Settings → General → Restart project**. O SQL
 - `scripts/km-historico.sql` (histórico de km) — verificar se rodou
 - `scripts/km-sync.sql` (cria `config_sistema` se faltar + colunas do sync) — FEITO jul/2026
 - `scripts/alertas-revisao.sql` (config do alerta de revisão por e-mail + log de envios) — FEITO jul/2026
-- `scripts/revisoes-programadas.sql` (agenda com tipo/serviço + migra proxima_revisao) — PENDENTE
+- `scripts/revisoes-programadas.sql` (agenda com tipo/serviço + migra proxima_revisao) — FEITO jul/2026 (migrou 4 datas)
 - `ALTER TABLE veiculos ADD COLUMN IF NOT EXISTS km_atualizado_em DATE;` — verificar
 - `config_sistema` **não existia** neste projeto até jul/2026 (o toggle de bloqueio de fornecedor
   também dependia dela). `km-sync.sql` agora cria a tabela se faltar.
