@@ -281,6 +281,47 @@ async function marcarSync(status) {
   }
 }
 
+// Anota o resultado do último keep-alive. Resiliente: se as colunas novas
+// (km-sync.sql atualizado) ainda não existirem, cai pro campo de status que já
+// existe só pra não perder o alerta de expiração.
+async function marcarKeepalive(status) {
+  const nowIso = new Date().toISOString()
+  try {
+    const { error } = await supabase.from('config_sistema')
+      .update({ km_keepalive_em: nowIso, km_keepalive_status: status }).eq('id', 1)
+    if (error && /km_keepalive/.test(error.message) && status === 'expirado') {
+      await supabase.from('config_sistema')
+        .update({ km_sync_ultimo_status: 'expirado' }).eq('id', 1)
+    }
+  } catch (e) {
+    console.warn('[km-keepalive] status ignorado:', e.message)
+  }
+}
+
+// Keep-alive: "toca" a sessão do portal periodicamente pra ela não morrer por
+// inatividade. Chamado por um timer no server.js. Nunca lança — só loga.
+// Falha de rede NÃO marca expirado (evita alarme falso); só um portal que
+// devolve login/redirect conta como sessão morta.
+async function manterSessaoViva() {
+  const cookie = await getSessaoCookie()
+  if (!cookie) return { skip: 'sem_sessao' }
+  try {
+    const { estado } = await ticketlog.pingSessao({ cookie })
+    if (estado === 'viva')     { await marcarKeepalive('ok');       return { alive: true } }
+    if (estado === 'expirada') {
+      await marcarKeepalive('expirado')
+      console.warn('[km-keepalive] sessão TicketLog expirada — reconectar pelo modal')
+      return { alive: false }
+    }
+    // 'erro' = portal instável; NÃO marca expirado pra não dar falso alarme
+    console.warn('[km-keepalive] portal instável (não conta como expiração)')
+    return { erro: 'portal' }
+  } catch (e) {
+    console.warn('[km-keepalive] ping falhou (não conta como expiração):', e.message)
+    return { erro: e.message }
+  }
+}
+
 // POST /api/km/sync — baixa o relatório do portal (server-side, cookie guardado),
 // atualiza a km dos veículos com leitura 'ok' e regrava o snapshot da subaba.
 // Chamado pelo botão "Atualizar (online)" e pelo Railway Cron.
@@ -346,10 +387,17 @@ async function salvarSessao(req, res) {
     } catch (e) {
       testeErro = e.status === 401 ? 'sessao_invalida' : e.message
     }
+    // Reconectou com sucesso → limpa os flags de expiração pra o aviso global sumir na hora.
+    if (testada) {
+      await marcarKeepalive('ok')
+      try {
+        await supabase.from('config_sistema').update({ km_sync_ultimo_status: 'ok' }).eq('id', 1)
+      } catch (e) { /* resiliente */ }
+    }
     res.json({ ok: true, testada, testeErro })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 }
 
-module.exports = { preview, aplicar, gravarKm, listarTicketlog, sync, salvarSessao, parseRelatorio }
+module.exports = { preview, aplicar, gravarKm, listarTicketlog, sync, salvarSessao, manterSessaoViva, parseRelatorio }

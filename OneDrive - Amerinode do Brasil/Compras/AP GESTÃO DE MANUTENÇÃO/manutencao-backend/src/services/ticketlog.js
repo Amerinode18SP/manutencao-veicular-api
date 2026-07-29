@@ -49,6 +49,46 @@ function pareceRelatorio(text) {
          /class=["']gm_rel["']/i.test(text)
 }
 
+// "Toca" a sessão do portal sem baixar o relatório inteiro — o keep-alive chama
+// isto de tempos em tempos pra impedir que o sistema legado derrube a sessão por
+// INATIVIDADE (o navegador sobrevive ~90 dias porque é usado; o sync sozinho só
+// repetia o cookie 1x/dia e a sessão caducava). Faz um GET leve no formulário e
+// classifica pelo status (o portal responde 302 pro SSO quando a sessão morreu):
+//   2xx         → { estado: 'viva' }
+//   3xx/401/403 → { estado: 'expirada' }   (sinal claro de sessão morta)
+//   demais/5xx  → { estado: 'erro' }        (erro transitório do portal, NÃO expiração)
+// Só 'expirada' deve disparar o alerta — assim um 500 do portal não vira falso alarme.
+// Lança Error .status=401 se não há cookie; .status=502 em falha de rede.
+async function pingSessao(opts = {}) {
+  const cookie = extrairCookie(opts.cookie)
+  if (!cookie) { const e = new Error('sessao_ausente'); e.status = 401; throw e }
+
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 30000) // não deixa o ping pendurar
+  let resp
+  try {
+    resp = await fetch(URL_FORM, {
+      method:   'GET',
+      redirect: 'manual', // sessão morta → 302 pro SSO; não seguir, tratar como morta
+      signal:   ctrl.signal,
+      headers: {
+        'user-agent': UA,
+        'referer':    URL_FORM,
+        'cookie':     cookie
+      }
+    })
+  } catch (e) {
+    const err = new Error('falha_rede: ' + e.message); err.status = 502; throw err
+  } finally {
+    clearTimeout(timer)
+  }
+
+  let estado = 'erro'
+  if (resp.status === 401 || resp.status === 403 || (resp.status >= 300 && resp.status < 400)) estado = 'expirada'
+  else if (resp.ok) estado = 'viva'
+  return { estado, status: resp.status }
+}
+
 // Baixa o relatório e devolve um Buffer (latin1) pronto pro parseRelatorio.
 // opts: { inicio?: Date, fim?: Date, dias?: number, cookie: string }
 // Lança Error com .status=401 quando a sessão está ausente/expirada.
@@ -114,4 +154,4 @@ async function baixarRelatorioKm(opts = {}) {
   return buf
 }
 
-module.exports = { baixarRelatorioKm, extrairCookie, ddmmyyyy }
+module.exports = { baixarRelatorioKm, pingSessao, extrairCookie, ddmmyyyy }

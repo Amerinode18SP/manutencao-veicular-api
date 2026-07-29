@@ -20,3 +20,9 @@ ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS ticketlog_sessao           T
 ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS ticketlog_sessao_expira_em TIMESTAMPTZ; -- estimativa/anotação de validade (informativo)
 ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS km_sync_ultima_execucao    TIMESTAMPTZ; -- quando o /api/km/sync rodou por último
 ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS km_sync_ultimo_status      TEXT;        -- ok | expirado | erro | sem_sessao
+
+-- Keep-alive: o servidor "toca" a sessão do portal a cada N min pra ela não
+-- morrer por inatividade (o código é resiliente e já funciona sem estas colunas,
+-- só não registra o histórico do keep-alive):
+ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS km_keepalive_em     TIMESTAMPTZ; -- último "toque" do keep-alive na sessão do portal
+ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS km_keepalive_status TEXT;        -- ok | expirado (resultado do último ping de keep-alive)
