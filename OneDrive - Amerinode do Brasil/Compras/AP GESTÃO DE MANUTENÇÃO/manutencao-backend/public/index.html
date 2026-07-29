@@ -355,6 +355,14 @@ tr:hover td{background:#F9F9F9}
     </div>
   </div>
 
+  <!-- Aviso global (admin): sessão do TicketLog expirada → atualização automática de KM parada -->
+  <div id="km-alert-banner" style="display:none;align-items:center;gap:12px;background:#FDECEA;border-bottom:1px solid #F5C6CB;color:#791F1F;padding:10px 24px;font-size:13px">
+    <span style="font-size:16px">⚠️</span>
+    <span style="flex:1">A atualização automática de KM (TicketLog) <b>parou: sessão expirada</b>. Reconecte para o sistema voltar a atualizar sozinho (leva ~1 min, sem código por SMS).</span>
+    <button onclick="abrirModalSessaoTicketlog()" style="background:#791F1F;color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap">🔄 Reconectar</button>
+    <button onclick="document.getElementById('km-alert-banner').style.display='none'" title="Dispensar" style="background:none;border:none;color:#791F1F;cursor:pointer;font-size:16px;line-height:1">✕</button>
+  </div>
+
   <div class="content">
 
     <!-- DASHBOARD -->
@@ -572,6 +580,7 @@ tr:hover td{background:#F9F9F9}
       <div class="subtabs">
         <div class="subtab active" id="subtab-revisoes" onclick="abrirSubabaRevisoes('proximas')">🛡️ Próximas Revisões</div>
         <div class="subtab" id="subtab-vidautil" onclick="abrirSubabaRevisoes('vidautil')">📋 Tabela de Vida Útil</div>
+        <div class="subtab" id="subtab-alertas" onclick="abrirSubabaRevisoes('alertas')">🔔 Alertas por e-mail</div>
       </div>
 
       <!-- Subaba: Próximas Revisões -->
@@ -636,6 +645,99 @@ tr:hover td{background:#F9F9F9}
             <span><span class="badge badge-amber">Segurança</span> item crítico</span>
             <span><span class="badge badge-purple">Mista</span> preventiva + corretiva</span>
           </div>
+        </div>
+      </div>
+
+      <!-- Subaba: Alertas por e-mail (tudo configurável pelo operador) -->
+      <div id="subcontent-alertas" style="display:none">
+        <div id="al-email-aviso" style="display:none" class="alert-banner" ></div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="card-title">🔔 Aviso automático de revisão se aproximando</span>
+              <span style="font-size:11px;color:#888;font-weight:400;margin-left:6px" id="al-status">— carregando...</span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button class="btn man-admin-only" onclick="alertasVerPrevia()">👁️ Ver prévia</button>
+              <button class="btn man-admin-only" onclick="alertasEnviarTeste()">✉️ Enviar teste</button>
+              <button class="btn man-admin-only" onclick="alertasEnviarAgora()" id="al-btn-agora" title="Dispara agora o aviso dos veículos que ainda não foram avisados">📨 Enviar agora</button>
+              <button class="btn btn-primary man-admin-only" onclick="alertasSalvar()" id="al-btn-salvar">💾 Salvar configuração</button>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;padding:4px 2px 2px">
+
+            <!-- Coluna 1: destinatários -->
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#1E3A5F;display:block;margin-bottom:6px">📧 Quem recebe o alerta</label>
+              <div style="display:flex;gap:6px">
+                <input id="al-email-input" type="email" placeholder="nome@amerinode.com.br"
+                       onkeydown="if(event.key==='Enter'){event.preventDefault();alertasAddEmail()}"
+                       style="flex:1;padding:8px 12px;border:1px solid #DDD;border-radius:8px;font-size:13px">
+                <button class="btn" onclick="alertasAddEmail()">+ Adicionar</button>
+              </div>
+              <div id="al-emails" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;min-height:30px"></div>
+              <div style="font-size:11px;color:#888;margin-top:6px">Pode colar vários de uma vez, separados por vírgula ou ponto e vírgula.</div>
+            </div>
+
+            <!-- Coluna 2: antecedências -->
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#1E3A5F;display:block;margin-bottom:6px">⏱️ Disparar quantos dias antes</label>
+              <div style="display:flex;gap:6px">
+                <input id="al-dia-input" type="number" min="0" max="365" placeholder="ex: 10"
+                       onkeydown="if(event.key==='Enter'){event.preventDefault();alertasAddDia()}"
+                       style="width:110px;padding:8px 12px;border:1px solid #DDD;border-radius:8px;font-size:13px">
+                <button class="btn" onclick="alertasAddDia()">+ Adicionar</button>
+                <div style="display:flex;gap:4px;align-items:center">
+                  <button class="btn-sm" onclick="alertasAddDia(30)">30</button>
+                  <button class="btn-sm" onclick="alertasAddDia(15)">15</button>
+                  <button class="btn-sm" onclick="alertasAddDia(10)">10</button>
+                  <button class="btn-sm" onclick="alertasAddDia(7)">7</button>
+                  <button class="btn-sm" onclick="alertasAddDia(3)">3</button>
+                </div>
+              </div>
+              <div id="al-dias" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;min-height:30px"></div>
+              <div style="font-size:11px;color:#888;margin-top:6px">Cada veículo é avisado <strong>uma vez por marco</strong> (ex.: 10 e 7 dias antes = 2 e-mails no máximo).</div>
+            </div>
+
+            <!-- Coluna 3: quando / o quê -->
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#1E3A5F;display:block;margin-bottom:6px">🕗 Quando enviar</label>
+              <div style="display:flex;align-items:center;gap:8px;font-size:13px">
+                <span>Todo dia às</span>
+                <select id="al-hora" style="padding:8px 10px;border:1px solid #DDD;border-radius:8px;font-size:13px"></select>
+                <span style="color:#888;font-size:11px">(horário de Brasília)</span>
+              </div>
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:12px;cursor:pointer">
+                <input type="checkbox" id="al-vencidas"> Incluir também as revisões <strong>já vencidas</strong>
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:10px;cursor:pointer">
+                <input type="checkbox" id="al-ativo"> <strong>Ativar</strong> o envio automático
+              </label>
+              <div style="margin-top:12px">
+                <label style="font-size:11px;color:#666;display:block;margin-bottom:4px">Assunto do e-mail (opcional)</label>
+                <input id="al-assunto" placeholder="🛡️ Manutenção: {n} veículo(s) com revisão se aproximando"
+                       style="width:100%;padding:8px 12px;border:1px solid #DDD;border-radius:8px;font-size:12px">
+                <div style="font-size:11px;color:#888;margin-top:4px">Use <code>{n}</code> = nº de veículos, <code>{vencidas}</code>, <code>{data}</code>.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Prévia -->
+        <div class="card" id="al-previa-card" style="display:none">
+          <div class="card-header">
+            <div>
+              <span class="card-title">👁️ Prévia — quem entraria no alerta hoje</span>
+              <span style="font-size:11px;color:#888;font-weight:400;margin-left:6px" id="al-previa-resumo"></span>
+            </div>
+            <button class="btn" onclick="document.getElementById('al-previa-card').style.display='none'">Fechar</button>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Placa</th><th>Localidade</th><th>KM atual</th><th>Próxima revisão</th><th>Prazo</th><th>Marco</th><th>Situação do aviso</th></tr></thead>
+            <tbody id="al-previa-table"></tbody>
+          </table></div>
         </div>
       </div>
     </div>
@@ -1694,6 +1796,7 @@ async function iniciarSessao(user){
   await checkApi()
   popularPlacasDashboard()
   carregarDashboard()
+  verificarAlertaSessaoKm() // aviso global se a sessão do TicketLog expirou (admin)
 }
 
 // Verificar sessão ao carregar
@@ -3275,12 +3378,14 @@ async function gerarBackupCompleto(){
 let vidaUtilDados=[], vidaUtilFiltroTipo='', vuEditingId=null, vuEditBackup=null
 
 function abrirSubabaRevisoes(qual){
-  const aProximas = qual==='proximas'
-  document.getElementById('subtab-revisoes').classList.toggle('active', aProximas)
-  document.getElementById('subtab-vidautil').classList.toggle('active', !aProximas)
-  document.getElementById('subcontent-proximas').style.display = aProximas ? 'block' : 'none'
-  document.getElementById('subcontent-vidautil').style.display = aProximas ? 'none'  : 'block'
-  if(!aProximas && vidaUtilDados.length===0) carregarVidaUtil()
+  const abas={proximas:['subtab-revisoes','subcontent-proximas'],vidautil:['subtab-vidautil','subcontent-vidautil'],alertas:['subtab-alertas','subcontent-alertas']}
+  if(!abas[qual]) qual='proximas'
+  for(const [k,[tab,cont]] of Object.entries(abas)){
+    document.getElementById(tab).classList.toggle('active', k===qual)
+    document.getElementById(cont).style.display = k===qual ? 'block' : 'none'
+  }
+  if(qual==='vidautil' && vidaUtilDados.length===0) carregarVidaUtil()
+  if(qual==='alertas') carregarConfigAlertas()
 }
 
 async function carregarVidaUtil(){
@@ -3521,13 +3626,28 @@ async function carregarStatusSync(){
   try{
     const cfg=await apiCall('/api/config')
     if(!cfg||!cfg.km_sync_ultima_execucao){el.textContent='';return}
-    const st=cfg.km_sync_ultimo_status||''
+    // O keep-alive pode detectar expiração ANTES do próximo sync diário; nesse
+    // caso ele manda no status exibido (a sessão já está morta agora).
+    let st=cfg.km_sync_ultimo_status||''
+    if(cfg.km_keepalive_status==='expirado') st='expirado'
     const cor=st==='ok'?'#27500A':(st==='erro'?'#791F1F':'#8A5A00')
     const rot={ok:'✅ ok',expirado:'⚠️ sessão expirada',sem_sessao:'⚠️ sem sessão',erro:'❌ erro'}[st]||st
     const dt=new Date(cfg.km_sync_ultima_execucao)
     const quando=isNaN(dt)?cfg.km_sync_ultima_execucao:dt.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})
     el.innerHTML=`· 🔄 online: ${quando} <span style="color:${cor}">(${rot})</span>`
   }catch(e){ el.textContent='' }
+}
+
+// Aviso global (só admin): faixa no topo quando a sessão do TicketLog expirou,
+// pra a pessoa reconectar sem depender de abrir a subaba Quilometragem.
+async function verificarAlertaSessaoKm(){
+  const banner=document.getElementById('km-alert-banner'); if(!banner) return
+  if(typeof currentPerfil==='undefined'||currentPerfil!=='administrador'){banner.style.display='none';return}
+  try{
+    const cfg=await apiCall('/api/config')
+    const expirou=!!cfg&&(cfg.km_sync_ultimo_status==='expirado'||cfg.km_sync_ultimo_status==='sem_sessao'||cfg.km_keepalive_status==='expirado')
+    banner.style.display=expirou?'flex':'none'
+  }catch(e){ /* silencioso: não atrapalha o carregamento */ }
 }
 
 // Botão "Atualizar (online)": baixa o relatório direto do portal (server-side).
@@ -3567,6 +3687,7 @@ async function salvarSessaoTicketlog(){
     const res=await apiCall('/api/km/sessao','POST',{valor})
     if(res.testada){
       msg.innerHTML='<span style="color:#27500A">✅ Sessão válida e salva! Pode fechar e clicar em "Atualizar (online)".</span>'
+      const b=document.getElementById('km-alert-banner'); if(b) b.style.display='none' // reconectou → some o aviso
       setTimeout(()=>{closeModal('modal-km-sessao');atualizarKmOnline()},900)
     } else {
       const motivo=res.testeErro==='sessao_invalida'?'a sessão parece inválida/expirada (o portal não devolveu o relatório)':('erro no teste: '+(res.testeErro||'desconhecido'))
@@ -3848,6 +3969,167 @@ async function concluirRevisao(veiculoId, placa){
   }catch(e){
     alert('Erro: '+e.message)
   }
+}
+
+// ── ALERTAS DE REVISÃO POR E-MAIL ─────────────────────────────
+// Nada é fixo no código: destinatários, dias de antecedência, horário e
+// "incluir vencidas" são editados aqui e gravados em config_sistema.
+let alertasCfg={ativo:false,emails:[],dias:[],incluir_vencidas:true,hora:8,assunto:'',email:{configurado:false}}
+
+async function carregarConfigAlertas(){
+  const sel=document.getElementById('al-hora')
+  if(sel && !sel.options.length){
+    sel.innerHTML=Array.from({length:24},(_,h)=>`<option value="${h}">${String(h).padStart(2,'0')}:00</option>`).join('')
+  }
+  try{
+    const cfg=await apiCall('/api/alertas/revisao/config')
+    alertasCfg=cfg
+    document.getElementById('al-ativo').checked=!!cfg.ativo
+    document.getElementById('al-vencidas').checked=cfg.incluir_vencidas!==false
+    document.getElementById('al-assunto').value=cfg.assunto||''
+    sel.value=String(cfg.hora)
+    alertasRenderEmails(); alertasRenderDias(); alertasRenderStatus()
+  }catch(e){
+    document.getElementById('al-status').textContent='— erro ao carregar: '+e.message
+  }
+  // visualizador não edita
+  const isAdmin=currentPerfil==='administrador'
+  ;['al-email-input','al-dia-input','al-hora','al-vencidas','al-ativo','al-assunto']
+    .forEach(id=>{const el=document.getElementById(id); if(el) el.disabled=!isAdmin})
+}
+
+function alertasRenderStatus(){
+  const el=document.getElementById('al-status'); if(!el) return
+  const c=alertasCfg
+  const rot={ok:'✅ enviado',sem_pendencias:'nada a enviar',sem_destinatarios:'⚠️ sem destinatários',desativado:'desativado',erro:'❌ erro'}[c.ultimo_status]||c.ultimo_status||''
+  const quando=c.ultima_execucao?new Date(c.ultima_execucao).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'nunca'
+  el.innerHTML=`— ${c.ativo?'<span style="color:#27500A;font-weight:600">ativo</span>':'<span style="color:#8A5A00;font-weight:600">desativado</span>'} · último disparo: ${quando}${rot?' ('+rot+')':''}`
+
+  // Aviso quando o provedor de e-mail ainda não está configurado no Railway.
+  const box=document.getElementById('al-email-aviso'); if(!box) return
+  if(c.email&&c.email.configurado){
+    box.style.display='flex'; box.className='alert-banner alert-info'
+    box.innerHTML=`✉️ Envio por <strong>${c.email.provedor}</strong> · remetente <strong>${c.email.remetente}</strong>`
+  }else{
+    box.style.display='flex'; box.className='alert-banner alert-warn'
+    box.innerHTML=`⚠️ <strong>E-mail ainda não configurado no servidor:</strong> ${(c.email&&c.email.motivo)||'faltam variáveis de ambiente.'} `+
+      `Defina no Railway <code>EMAIL_FROM</code> e uma chave (<code>RESEND_API_KEY</code>, <code>BREVO_API_KEY</code> ou <code>SENDGRID_API_KEY</code>). A configuração abaixo pode ser salva mesmo assim.`
+  }
+}
+
+function alertasRenderEmails(){
+  const box=document.getElementById('al-emails')
+  if(!alertasCfg.emails.length){box.innerHTML='<span style="font-size:12px;color:#999">Nenhum e-mail cadastrado — o alerta não será enviado.</span>';return}
+  box.innerHTML=alertasCfg.emails.map((e,i)=>
+    `<span style="display:inline-flex;align-items:center;gap:6px;background:#EAF1F9;color:#0C447C;padding:5px 10px;border-radius:14px;font-size:12px">
+      ${e}<button onclick="alertasRemoveEmail(${i})" title="Remover" style="background:none;border:none;color:#0C447C;cursor:pointer;font-size:13px;line-height:1;padding:0">✕</button>
+    </span>`).join('')
+}
+
+function alertasRenderDias(){
+  const box=document.getElementById('al-dias')
+  if(!alertasCfg.dias.length){box.innerHTML='<span style="font-size:12px;color:#999">Nenhuma antecedência definida.</span>';return}
+  box.innerHTML=alertasCfg.dias.map((d,i)=>
+    `<span style="display:inline-flex;align-items:center;gap:6px;background:#FFF4E5;color:#8A5A00;padding:5px 10px;border-radius:14px;font-size:12px;font-weight:600">
+      ${d===0?'no dia':d+' dias antes'}<button onclick="alertasRemoveDia(${i})" title="Remover" style="background:none;border:none;color:#8A5A00;cursor:pointer;font-size:13px;line-height:1;padding:0">✕</button>
+    </span>`).join('')
+}
+
+function alertasAddEmail(){
+  const inp=document.getElementById('al-email-input')
+  const novos=String(inp.value||'').split(/[;,\s]+/).map(s=>s.trim().toLowerCase()).filter(Boolean)
+  const ruins=novos.filter(e=>!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e))
+  if(ruins.length){alert('E-mail inválido: '+ruins.join(', '));return}
+  novos.forEach(e=>{if(!alertasCfg.emails.includes(e)) alertasCfg.emails.push(e)})
+  inp.value=''; alertasRenderEmails()
+}
+function alertasRemoveEmail(i){alertasCfg.emails.splice(i,1);alertasRenderEmails()}
+
+function alertasAddDia(valor){
+  const inp=document.getElementById('al-dia-input')
+  const n=parseInt(valor!==undefined?valor:inp.value,10)
+  if(!Number.isFinite(n)||n<0||n>365){alert('Informe um número de dias entre 0 e 365.');return}
+  if(!alertasCfg.dias.includes(n)) alertasCfg.dias.push(n)
+  alertasCfg.dias.sort((a,b)=>b-a)
+  if(valor===undefined) inp.value=''
+  alertasRenderDias()
+}
+function alertasRemoveDia(i){alertasCfg.dias.splice(i,1);alertasRenderDias()}
+
+async function alertasSalvar(){
+  const btn=document.getElementById('al-btn-salvar')
+  const ativo=document.getElementById('al-ativo').checked
+  if(ativo && !alertasCfg.emails.length){alert('Cadastre ao menos um e-mail antes de ativar o alerta.');return}
+  if(!alertasCfg.dias.length){alert('Defina ao menos uma antecedência (ex.: 10 e 7 dias antes).');return}
+  if(btn){btn.disabled=true;btn.textContent='Salvando...'}
+  try{
+    const cfg=await apiCall('/api/alertas/revisao/config','PUT',{
+      ativo,
+      emails: alertasCfg.emails,
+      dias: alertasCfg.dias,
+      incluir_vencidas: document.getElementById('al-vencidas').checked,
+      hora: parseInt(document.getElementById('al-hora').value,10),
+      assunto: document.getElementById('al-assunto').value
+    })
+    alertasCfg=cfg
+    alertasRenderEmails(); alertasRenderDias(); alertasRenderStatus()
+    alert('✅ Configuração salva.\n\n'+(cfg.ativo
+      ? `O alerta será enviado todo dia às ${String(cfg.hora).padStart(2,'0')}:00 para ${cfg.emails.length} destinatário(s), com ${cfg.dias.join(' e ')} dia(s) de antecedência.`
+      : 'O envio automático está DESATIVADO (marque "Ativar" para começar a disparar).'))
+  }catch(e){ alert('Erro ao salvar: '+e.message) }
+  finally{ if(btn){btn.disabled=false;btn.textContent='💾 Salvar configuração'} }
+}
+
+async function alertasVerPrevia(){
+  const card=document.getElementById('al-previa-card')
+  const tb=document.getElementById('al-previa-table')
+  card.style.display='block'
+  tb.innerHTML='<tr><td colspan="7" class="loading"><span class="spinner"></span>Carregando...</td></tr>'
+  try{
+    const p=await apiCall('/api/alertas/revisao/previa')
+    document.getElementById('al-previa-resumo').textContent=
+      `— ${p.total} veículo(s) no critério · ${p.novos} ainda não avisado(s) · antecedências: ${p.dias.join(', ')} dia(s)`
+    if(!p.itens.length){tb.innerHTML='<tr><td colspan="7" class="empty">Nenhum veículo dentro dos prazos configurados.</td></tr>';return}
+    tb.innerHTML=p.itens.map(i=>{
+      const prazo=i.vencida?`<span style="color:#B22;font-weight:600">vencida há ${Math.abs(i.dias)} dia(s)</span>`
+        :(i.dias===0?'<span style="color:#791F1F;font-weight:600">vence hoje</span>':`${i.dias} dia(s)`)
+      const marco=i.marco===-1?'vencida':`${i.marco} dias antes`
+      const sit=i.ja_enviado?'<span class="badge badge-green">já avisado</span>':'<span class="badge badge-amber">vai ser avisado</span>'
+      return `<tr>
+        <td><strong>${i.placa}</strong></td>
+        <td>${i.localidade||'-'}</td>
+        <td>${i.km_atual?Number(i.km_atual).toLocaleString('pt-BR')+' km':'-'}</td>
+        <td>${fmtData(i.proxima_revisao)}</td>
+        <td>${prazo}</td>
+        <td>${marco}</td>
+        <td>${sit}</td>
+      </tr>`
+    }).join('')
+  }catch(e){ tb.innerHTML=`<tr><td colspan="7" class="empty">Erro: ${e.message}</td></tr>` }
+}
+
+async function alertasEnviarTeste(){
+  const destino=prompt('Enviar e-mail de teste para:\n\n(deixe como está para mandar aos destinatários cadastrados)',
+    alertasCfg.emails.join(', '))
+  if(destino===null) return
+  try{
+    const r=await apiCall('/api/alertas/revisao/teste','POST',destino.trim()?{email:destino}:{})
+    alert(`✅ E-mail de teste enviado por ${r.provedor} para:\n${r.destinatarios.join('\n')}` +
+      (r.exemplo?'\n\n(nenhum veículo no critério agora — foi enviado um exemplo fictício)':''))
+  }catch(e){ alert('Erro ao enviar teste: '+e.message) }
+}
+
+async function alertasEnviarAgora(){
+  if(!confirm('Enviar agora o alerta para os destinatários cadastrados?\n\nSó entram os veículos que ainda não foram avisados no marco atual.')) return
+  const btn=document.getElementById('al-btn-agora')
+  if(btn){btn.disabled=true;btn.textContent='Enviando...'}
+  try{
+    const r=await apiCall('/api/alertas/revisao/executar','POST',{ignorarAtivo:true})
+    if(r.enviado) alert(`✅ Alerta enviado: ${r.total} veículo(s) para ${r.destinatarios.length} destinatário(s).`)
+    else alert('Nada enviado: '+(r.motivo||r.status))
+    carregarConfigAlertas()
+  }catch(e){ alert('Erro ao enviar: '+e.message) }
+  finally{ if(btn){btn.disabled=false;btn.textContent='📨 Enviar agora'} }
 }
 
 // ── IMPORTAR KM (TicketLog) ───────────────────────────────────

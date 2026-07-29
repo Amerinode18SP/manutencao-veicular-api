@@ -267,6 +267,45 @@ decisão de renovação da frota (TCO).
 - **Limitação honesta:** "km na 1ª manutenção" não é exato (ordens não guardam km) — usa o 1º
   registro do histórico de km como proxy; custo/km só aparece com ≥2 leituras de km no período.
 
+## 🔔 Alerta de revisão por e-mail (subaba de Próximas Revisões)
+
+3ª subaba de `page-revisoes` (`subtab-alertas`/`subcontent-alertas`). Avisa por e-mail quando a
+revisão de um veículo está chegando. **Tudo é parametrizado pelo operador — não há regra fixa
+no código:** destinatários, dias de antecedência (ex.: 10 e 7), horário do disparo, incluir ou
+não as vencidas, e o assunto.
+
+- **Config:** colunas `alerta_revisao_*` em `config_sistema` (linha única id=1). Rodar
+  `scripts/alertas-revisao.sql` (cria também `alertas_revisao_log`).
+- **Backend:** `src/services/email.js` (envio por API HTTP — Resend/Brevo/SendGrid, **sem
+  dependência nova**, porque mexer no `package-lock` quebra o `npm ci` do Railway) e
+  `src/controllers/alertasRevisao.js`; rotas em `src/routes/alertas.js` → `/api/alertas/*`.
+- **Regra de seleção:** para cada veículo com `proxima_revisao`, escolhe o **menor marco
+  configurado já alcançado** (`dias <= marco`) — com marcos {10,7}, faltando 9 dias cai no marco
+  10; faltando 6, no marco 7. Vencidas usam o marco especial `-1`. Usar "menor marco alcançado"
+  (e não igualdade exata) garante que um dia sem disparo (deploy/queda) não perca o aviso.
+- **Anti-spam:** `alertas_revisao_log` com `UNIQUE(veiculo_id, data_revisao, dias_antecedencia)`.
+  Cada veículo recebe **um e-mail por marco**. Resiliente: se a tabela não existir, envia sem dedupe.
+- **Agendamento:** interno, no `server.js` (`iniciarAgendador`, mesmo padrão do keep-alive
+  TicketLog). Tick a cada `ALERTA_REVISAO_TICK_MIN` (default 20 min); dispara 1x/dia a partir da
+  hora escolhida, no fuso `America/Sao_Paulo` (Railway roda em UTC). Não precisa de cron externo,
+  mas `POST /api/alertas/revisao/executar` continua aberto pra cron-job.org se preferirem.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET  | `/api/alertas/revisao/config`    | config + status do provedor de e-mail |
+| PUT  | `/api/alertas/revisao/config`    | operador ajusta emails/dias/hora/assunto |
+| GET  | `/api/alertas/revisao/previa`    | quem seria avisado agora (não envia) |
+| POST | `/api/alertas/revisao/executar`  | dispara (`{forcar}` reenvia, `{ignorarAtivo}` ignora o toggle) |
+| POST | `/api/alertas/revisao/teste`     | e-mail de teste (não grava log) |
+| GET  | `/api/alertas/revisao/historico` | últimos avisos disparados |
+
+- **Frontend:** `carregarConfigAlertas`/`alertasSalvar`/`alertasVerPrevia`/`alertasEnviarTeste`/
+  `alertasEnviarAgora` + chips de e-mail e de dias (`alertasAddEmail`/`alertasAddDia`).
+- **AÇÃO MANUAL UMA VEZ:** rodar `scripts/alertas-revisao.sql` no Supabase SQL Editor.
+- **AÇÃO MANUAL (Railway):** definir `EMAIL_FROM` (remetente verificado) + **uma** chave:
+  `RESEND_API_KEY` | `BREVO_API_KEY` | `SENDGRID_API_KEY`. Enquanto faltar, a subaba mostra
+  faixa laranja explicando o que falta — a config pode ser salva, mas nada é enviado.
+
 ## 🔧 Manutenção & operação — REGRAS PRÁTICAS (ler antes de mexer)
 
 **Caminho real do projeto (pegadinha do OneDrive):** o repo tem uma cópia OneDrive **aninhada**.
@@ -286,6 +325,7 @@ no SQL Editor; se persistir, **Settings → General → Restart project**. O SQL
 - `scripts/km-ticketlog.sql` (snapshot subaba Quilometragem) — FEITO
 - `scripts/km-historico.sql` (histórico de km) — verificar se rodou
 - `scripts/km-sync.sql` (cria `config_sistema` se faltar + colunas do sync) — FEITO jul/2026
+- `scripts/alertas-revisao.sql` (config do alerta de revisão por e-mail + log de envios) — PENDENTE
 - `ALTER TABLE veiculos ADD COLUMN IF NOT EXISTS km_atualizado_em DATE;` — verificar
 - `config_sistema` **não existia** neste projeto até jul/2026 (o toggle de bloqueio de fornecedor
   também dependia dela). `km-sync.sql` agora cria a tabela se faltar.
