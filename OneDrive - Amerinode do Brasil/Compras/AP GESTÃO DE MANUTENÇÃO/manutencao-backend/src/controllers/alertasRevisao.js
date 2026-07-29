@@ -23,7 +23,8 @@ const PADRAO = {
   alerta_revisao_dias: [10, 7],
   alerta_revisao_incluir_vencidas: true,
   alerta_revisao_hora: 8,
-  alerta_revisao_assunto: ''
+  alerta_revisao_assunto: '',
+  alerta_revisao_mensagem: ''
 }
 
 // ── Datas no fuso de Brasília (o Railway roda em UTC) ────────────────────────
@@ -98,6 +99,7 @@ function recorteConfig(cfg) {
     incluir_vencidas: cfg.alerta_revisao_incluir_vencidas !== false,
     hora:             cfg.alerta_revisao_hora,
     assunto:          cfg.alerta_revisao_assunto || '',
+    mensagem:         cfg.alerta_revisao_mensagem || '',
     ultima_execucao:  cfg.alerta_revisao_ultima_execucao || null,
     ultimo_status:    cfg.alerta_revisao_ultimo_status || null,
     ultimo_detalhe:   cfg.alerta_revisao_ultimo_detalhe || null,
@@ -215,6 +217,20 @@ function montarAssunto(cfg, itens) {
     .replace(/\{data\}/g, fmtBR(hojeISO()))
 }
 
+// O recado livre é digitado pelo operador → escapa HTML antes de injetar no e-mail
+// e converte quebra de linha em <br> (parágrafo em branco vira espaço entre blocos).
+const escapeHtml = s => String(s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+
+function blocoMensagem(cfg) {
+  const txt = String(cfg.alerta_revisao_mensagem || '').trim()
+  if (!txt) return ''
+  return `<div style="margin:0 0 16px;padding:12px 14px;background:#FAFCFE;border-left:3px solid #185FA5;border-radius:6px;font-size:13px;line-height:1.6;color:#33475B">
+        ${escapeHtml(txt).replace(/\r?\n/g, '<br>')}
+      </div>`
+}
+
 function montarHtml(cfg, itens) {
   const linhas = itens.map(i => {
     const cor = i.vencida ? '#B22222' : (i.dias <= 3 ? '#B26A00' : '#0C447C')
@@ -238,6 +254,7 @@ function montarHtml(cfg, itens) {
       <p style="margin:0 0 14px;font-size:14px">
         <strong>${itens.length}</strong> veículo(s) precisam de atenção.
       </p>
+      ${blocoMensagem(cfg)}
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
           <tr style="background:#F5F8FB;color:#0C447C;text-align:left">
@@ -261,8 +278,10 @@ function montarHtml(cfg, itens) {
 </body></html>`
 }
 
-function montarTexto(itens) {
+function montarTexto(cfg, itens) {
+  const recado = String(cfg.alerta_revisao_mensagem || '').trim()
   return 'Revisões de manutenção se aproximando:\n\n' +
+    (recado ? recado + '\n\n' : '') +
     itens.map(i => `- ${i.placa} (${i.localidade || 's/ localidade'}) — revisão ${fmtBR(i.proxima_revisao)} · ${rotuloPrazo(i)}`).join('\n') +
     '\n\nSistema de Gestão de Manutenção Veicular — Amerinode'
 }
@@ -293,7 +312,7 @@ async function executarAlerta(opcoes = {}) {
       para: cfg.alerta_revisao_emails,
       assunto: montarAssunto(cfg, itens),
       html: montarHtml(cfg, itens),
-      texto: montarTexto(itens)
+      texto: montarTexto(cfg, itens)
     })
     await registrarEnvios(itens, cfg.alerta_revisao_emails)
     const detalhe = `${itens.length} veículo(s) para ${cfg.alerta_revisao_emails.length} destinatário(s)${opcoes.origem ? ' · ' + opcoes.origem : ''}`
@@ -347,6 +366,7 @@ async function putConfigAlerta(req, res) {
       payload.alerta_revisao_hora = h
     }
     if ('assunto' in body) payload.alerta_revisao_assunto = String(body.assunto || '').trim().slice(0, 200) || null
+    if ('mensagem' in body) payload.alerta_revisao_mensagem = String(body.mensagem || '').trim().slice(0, 2000) || null
 
     // Ligar o alerta sem nenhum destinatário é erro de operação, não config válida.
     if (payload.alerta_revisao_ativo) {
@@ -422,7 +442,7 @@ async function testeAlerta(req, res) {
       para: destino,
       assunto: '[TESTE] ' + montarAssunto(cfg, exemplo),
       html: montarHtml(cfg, exemplo),
-      texto: montarTexto(exemplo)
+      texto: montarTexto(cfg, exemplo)
     })
     res.json({ enviado: true, destinatarios: destino, provedor: r.provedor, amostra: itens.length, exemplo: !itens.length })
   } catch (err) {

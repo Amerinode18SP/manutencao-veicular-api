@@ -275,7 +275,8 @@ no código:** destinatários, dias de antecedência (ex.: 10 e 7), horário do d
 não as vencidas, e o assunto.
 
 - **Config:** colunas `alerta_revisao_*` em `config_sistema` (linha única id=1). Rodar
-  `scripts/alertas-revisao.sql` (cria também `alertas_revisao_log`).
+  `scripts/alertas-revisao.sql` (cria também `alertas_revisao_log`). Inclui `alerta_revisao_mensagem`
+  — recado livre do operador, renderizado acima da tabela (escapado com `escapeHtml`, `\n` → `<br>`).
 - **Backend:** `src/services/email.js` (envio por API HTTP — Resend/Brevo/SendGrid, **sem
   dependência nova**, porque mexer no `package-lock` quebra o `npm ci` do Railway) e
   `src/controllers/alertasRevisao.js`; rotas em `src/routes/alertas.js` → `/api/alertas/*`.

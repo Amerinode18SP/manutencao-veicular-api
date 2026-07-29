@@ -723,6 +723,15 @@ tr:hover td{background:#F9F9F9}
               </div>
             </div>
           </div>
+
+          <!-- Recado livre no corpo do e-mail -->
+          <div style="margin-top:16px;padding-top:14px;border-top:1px dashed #DCE6F1">
+            <label style="font-size:12px;font-weight:600;color:#1E3A5F;display:block;margin-bottom:6px">📝 Mensagem no corpo do e-mail (opcional)</label>
+            <textarea id="al-mensagem" rows="3" maxlength="2000"
+              placeholder="Ex.: Favor agendar a revisão com a oficina credenciada e informar a supervisão até o fim da semana."
+              style="width:100%;padding:10px 12px;border:1px solid #DDD;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+            <div style="font-size:11px;color:#888;margin-top:4px">Aparece em destaque acima da tabela de veículos, em todos os e-mails. Deixe vazio para não incluir nenhum recado.</div>
+          </div>
         </div>
 
         <!-- Prévia -->
@@ -3987,6 +3996,7 @@ async function carregarConfigAlertas(){
     document.getElementById('al-ativo').checked=!!cfg.ativo
     document.getElementById('al-vencidas').checked=cfg.incluir_vencidas!==false
     document.getElementById('al-assunto').value=cfg.assunto||''
+    document.getElementById('al-mensagem').value=cfg.mensagem||''
     sel.value=String(cfg.hora)
     alertasRenderEmails(); alertasRenderDias(); alertasRenderStatus()
   }catch(e){
@@ -3994,7 +4004,7 @@ async function carregarConfigAlertas(){
   }
   // visualizador não edita
   const isAdmin=currentPerfil==='administrador'
-  ;['al-email-input','al-dia-input','al-hora','al-vencidas','al-ativo','al-assunto']
+  ;['al-email-input','al-dia-input','al-hora','al-vencidas','al-ativo','al-assunto','al-mensagem']
     .forEach(id=>{const el=document.getElementById(id); if(el) el.disabled=!isAdmin})
 }
 
@@ -4069,7 +4079,8 @@ async function alertasSalvar(){
       dias: alertasCfg.dias,
       incluir_vencidas: document.getElementById('al-vencidas').checked,
       hora: parseInt(document.getElementById('al-hora').value,10),
-      assunto: document.getElementById('al-assunto').value
+      assunto: document.getElementById('al-assunto').value,
+      mensagem: document.getElementById('al-mensagem').value
     })
     alertasCfg=cfg
     alertasRenderEmails(); alertasRenderDias(); alertasRenderStatus()

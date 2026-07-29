@@ -20,6 +20,7 @@ ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS alerta_revisao_dias         
 ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS alerta_revisao_incluir_vencidas BOOLEAN     DEFAULT TRUE;       -- avisa também as revisões já vencidas
 ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS alerta_revisao_hora             SMALLINT    DEFAULT 8;          -- hora do disparo (0-23, horário de Brasília)
 ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS alerta_revisao_assunto          TEXT;                           -- assunto customizado (aceita {n} e {data})
+ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS alerta_revisao_mensagem         TEXT;                           -- recado livre que aparece no corpo, acima da tabela
 ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS alerta_revisao_ultima_execucao  TIMESTAMPTZ;                    -- quando rodou por último
 ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS alerta_revisao_ultimo_status    TEXT;                           -- ok | sem_pendencias | sem_destinatarios | desativado | erro
 ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS alerta_revisao_ultimo_detalhe   TEXT;                           -- mensagem legível do último disparo
