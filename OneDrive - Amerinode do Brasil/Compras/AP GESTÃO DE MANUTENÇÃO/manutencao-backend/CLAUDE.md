@@ -230,7 +230,41 @@ Se a sessão expirou (401), abre `modal-km-sessao` com passo-a-passo → `salvar
 - **AÇÃO MANUAL UMA VEZ:** rodar `scripts/km-sync.sql` (ALTERs em `config_sistema`).
 - **AÇÃO MANUAL:** conectar a sessão pela 1ª vez — botão online → modal → colar o cURL
   (Copy as cURL da requisição `FuelRelUltimasKmLista.cfm`, logada no portal).
-- **Risco em aberto:** longevidade do cookie. O login SSO dura ~90 dias (renovado jul/2026 →
+### Login automático no portal legado (RESOLVE a expiração — jul/2026)
+
+A sessão morria em poucas horas mesmo com keep-alive. Investigando, três causas:
+
+1. **O portal reemite `CFID`/`CFTOKEN` com `Max-Age=7200`** e o código **descartava** os
+   `Set-Cookie` das respostas — seguíamos mandando o valor velho. Agora `mesclarCookies()`
+   funde todo `Set-Cookie` no cookie guardado, e `pingSessao`/`baixarRelatorioKm` devolvem o
+   cookie atualizado para `salvarCookieSessao()` regravar.
+2. **O cookie era a MESMA sessão do navegador da usuária** — quando ela logava no portal, a
+   sessão do robô caía (e vice-versa). O formulário tem um campo escondido `forceLogin`, que
+   é exatamente a tomada de sessão.
+3. **`legacy-soulog.ticketlog.com.br/autenticacao/` tem login PRÓPRIO do SouLog**, com três
+   campos (`codigo`, `usuario`, `senha`), **sem MFA e sem captcha** — o SSO Edenred é só a
+   alternativa ("ou conectar com Conta Edenred"). Havia uma crença antiga de que só existia
+   SSO+MFA; é falsa para o legado.
+
+**Como funciona:** `loginPortal()` em `services/ticketlog.js` faz GET da tela (pega cookies +
+`<meta name="csrf-token">`), POST com as credenciais + `_csrf_token` e header `X-CSRF-Token`,
+segue os redirects mesclando cookies e confirma com `pingSessao`. Se o portal responder "já
+conectado", repete com `forceLogin=true`. `renovarSessao()` em `importarKm.js` é chamada
+automaticamente pelo keep-alive e pelo `sync` (retry único no 401).
+
+- **Env (Railway):** `TICKETLOG_CODIGO`, `TICKETLOG_USUARIO`, `TICKETLOG_SENHA`.
+  Sem elas nada muda — o sistema volta a depender do cookie colado à mão.
+- **Recomendado:** usuário dedicado à integração, para não brigar com o login da equipe.
+- **Rotas novas:** `POST /api/km/login` (entra e guarda a sessão; usar para testar),
+  `GET /api/km/sessao/status` (a tela pergunta se há login automático).
+- **Aviso por e-mail:** quando a sessão cai E o login automático não resolve, sai e-mail pelos
+  destinatários do alerta de revisão (`avisarSessaoCaiu`). Só na **transição** para expirado —
+  `statusSessaoAnterior()` evita spam a cada 15 min do keep-alive.
+- **AÇÃO MANUAL:** rodar as colunas de telemetria do keep-alive (não existiam):
+  `ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS km_keepalive_em TIMESTAMPTZ;` e
+  `... km_keepalive_status TEXT;` — sem elas não há como medir a duração real da sessão.
+
+- **Risco em aberto (histórico):** longevidade do cookie. O login SSO dura ~90 dias (renovado jul/2026 →
   vale até ~out/2026, sem MFA nesse período), MAS o cookie legado (`JSESSIONID`/`CFID`) pode
   expirar antes. O sync detecta (`km_sync_ultimo_status='expirado'`) e a UI pede reautenticação.
   Ainda **não medido** quanto dura na prática.

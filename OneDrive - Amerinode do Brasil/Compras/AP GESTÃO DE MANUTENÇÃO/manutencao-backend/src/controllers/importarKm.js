@@ -269,6 +269,79 @@ async function getSessaoCookie() {
   }
 }
 
+// Regrava o cookie quando o portal rotaciona CFID/CFTOKEN (Max-Age=7200). Sem
+// isto a sessão viva no portal aparecia como expirada aqui em poucas horas.
+async function salvarCookieSessao(cookie) {
+  if (!cookie) return
+  try {
+    await supabase.from('config_sistema').update({ ticketlog_sessao: cookie }).eq('id', 1)
+  } catch (e) {
+    console.warn('[km] não regravou o cookie rotacionado:', e.message)
+  }
+}
+
+// Faz login no portal com as credenciais do ambiente e guarda a sessão nova.
+// Devolve o cookie, ou null quando não há credenciais / o portal recusou.
+async function renovarSessao(motivo) {
+  if (!ticketlog.credenciaisPortal()) return null
+  try {
+    const { cookie } = await ticketlog.loginPortal()
+    await salvarCookieSessao(cookie)
+    await marcarKeepalive('ok')
+    try { await supabase.from('config_sistema').update({ km_sync_ultimo_status: 'ok' }).eq('id', 1) } catch {}
+    console.log(`🔑  [km] sessão TicketLog renovada automaticamente (${motivo})`)
+    return cookie
+  } catch (e) {
+    console.warn(`[km] login automático falhou (${motivo}):`, e.message, e.detalhe || '')
+    return null
+  }
+}
+
+// Status de sessão já registrado, pra avisar só na TRANSIÇÃO para expirado
+// (o keep-alive roda a cada 15 min — avisar sempre seria spam).
+async function statusSessaoAnterior() {
+  try {
+    const { data } = await supabase.from('config_sistema')
+      .select('km_sync_ultimo_status, km_keepalive_status').eq('id', 1).single()
+    if (!data) return null
+    return data.km_keepalive_status === 'expirado' || data.km_sync_ultimo_status === 'expirado'
+      ? 'expirado' : (data.km_keepalive_status || data.km_sync_ultimo_status || null)
+  } catch (e) {
+    return null
+  }
+}
+
+// Avisa por e-mail que a sessão caiu E o login automático não resolveu — sem isso
+// a pessoa só descobre pela faixa vermelha, quando abre o sistema.
+async function avisarSessaoCaiu(detalhe) {
+  try {
+    const { enviarEmail, statusEmail } = require('../services/email')
+    if (!statusEmail().configurado) return
+    const { data } = await supabase.from('config_sistema')
+      .select('alerta_revisao_emails').eq('id', 1).single()
+    const para = (data && data.alerta_revisao_emails) || []
+    if (!para.length) return
+
+    const temCred = !!ticketlog.credenciaisPortal()
+    await enviarEmail({
+      para,
+      assunto: '⚠️ Atualização automática de KM parou (sessão TicketLog)',
+      html: `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#333;line-height:1.6">
+        <p><strong>A atualização automática de quilometragem parou.</strong></p>
+        <p>Motivo: ${detalhe || 'sessão do portal TicketLog expirada'}.</p>
+        <p>${temCred
+          ? 'O login automático está configurado, mas o portal recusou — vale conferir se a senha do usuário da integração mudou.'
+          : 'O login automático não está configurado; é preciso reconectar manualmente no sistema (Análise de Gastos → Quilometragem → 🔄 Atualizar (online)).'}</p>
+        <p style="color:#777;font-size:12px">Aviso automático do Sistema de Gestão de Manutenção Veicular — Amerinode.</p>
+      </div>`,
+      texto: `A atualização automática de KM parou. Motivo: ${detalhe || 'sessão TicketLog expirada'}.`
+    })
+    console.log('[km] aviso de sessão caída enviado por e-mail')
+  } catch (e) {
+    console.warn('[km] não avisou por e-mail:', e.message)
+  }
+}
+
 // Anota o resultado da última sync em config_sistema (não derruba a resposta).
 async function marcarSync(status) {
   try {
@@ -304,13 +377,29 @@ async function marcarKeepalive(status) {
 // devolve login/redirect conta como sessão morta.
 async function manterSessaoViva() {
   const cookie = await getSessaoCookie()
-  if (!cookie) return { skip: 'sem_sessao' }
+  if (!cookie) {
+    // Sem cookie guardado, mas com credenciais: já entra sozinho.
+    const novo = await renovarSessao('sem sessão guardada')
+    return novo ? { alive: true, renovada: true } : { skip: 'sem_sessao' }
+  }
   try {
-    const { estado } = await ticketlog.pingSessao({ cookie })
-    if (estado === 'viva')     { await marcarKeepalive('ok');       return { alive: true } }
+    const ping = await ticketlog.pingSessao({ cookie })
+    const { estado } = ping
+    if (estado === 'viva') {
+      if (ping.cookieMudou) await salvarCookieSessao(ping.cookie)  // portal rotacionou
+      await marcarKeepalive('ok')
+      return { alive: true, cookieRotacionado: !!ping.cookieMudou }
+    }
     if (estado === 'expirada') {
+      // Antes de acusar expiração, tenta entrar de novo com as credenciais.
+      const novo = await renovarSessao('keep-alive detectou expiração')
+      if (novo) return { alive: true, renovada: true }
+      const antes = await statusSessaoAnterior()
       await marcarKeepalive('expirado')
       console.warn('[km-keepalive] sessão TicketLog expirada — reconectar pelo modal')
+      if (antes !== 'expirado') {
+        await avisarSessaoCaiu('a sessão do portal expirou e o login automático não conseguiu renovar')
+      }
       return { alive: false }
     }
     // 'erro' = portal instável; NÃO marca expirado pra não dar falso alarme
@@ -327,14 +416,30 @@ async function manterSessaoViva() {
 // Chamado pelo botão "Atualizar (online)" e pelo Railway Cron.
 async function sync(req, res) {
   try {
-    const cookie = await getSessaoCookie()
+    let cookie = await getSessaoCookie()
     if (!cookie) {
-      await marcarSync('sem_sessao')
-      return res.status(401).json({ error: 'sessao_ausente' })
+      cookie = await renovarSessao('sync sem sessão guardada')
+      if (!cookie) {
+        await marcarSync('sem_sessao')
+        return res.status(401).json({ error: 'sessao_ausente' })
+      }
     }
 
-    const dias    = req.body && req.body.dias ? parseInt(req.body.dias, 10) : undefined
-    const buffer  = await ticketlog.baixarRelatorioKm({ cookie, dias })
+    const dias = req.body && req.body.dias ? parseInt(req.body.dias, 10) : undefined
+
+    // Sessão expirada no meio do caminho → entra de novo e repete UMA vez.
+    let buffer
+    try {
+      buffer = await ticketlog.baixarRelatorioKm({ cookie, dias })
+    } catch (e) {
+      if (e.status !== 401) throw e
+      const novo = await renovarSessao('sync recebeu 401')
+      if (!novo) throw e
+      cookie = novo
+      buffer = await ticketlog.baixarRelatorioKm({ cookie, dias })
+    }
+    if (buffer.cookieAtualizado) await salvarCookieSessao(buffer.cookieAtualizado)
+
     const leituras = parseRelatorio(buffer)
     const itens   = await montarItens(leituras)
 
@@ -355,7 +460,11 @@ async function sync(req, res) {
     })
   } catch (err) {
     if (err.status === 401) {
+      const antes = await statusSessaoAnterior()
       await marcarSync('expirado')
+      if (antes !== 'expirado') {
+        await avisarSessaoCaiu('o sync não conseguiu baixar o relatório: sessão expirada')
+      }
       return res.status(401).json({ error: 'sessao_expirada' })
     }
     await marcarSync('erro')
@@ -400,4 +509,41 @@ async function salvarSessao(req, res) {
   }
 }
 
-module.exports = { preview, aplicar, gravarKm, listarTicketlog, sync, salvarSessao, manterSessaoViva, parseRelatorio }
+// POST /api/km/login — entra no portal com as credenciais do ambiente e guarda a
+// sessão. Serve para testar a configuração e para reconectar sem colar cURL.
+async function loginAutomatico(_req, res) {
+  if (!ticketlog.credenciaisPortal()) {
+    return res.status(412).json({
+      error: 'credenciais_ausentes',
+      detalhe: 'Defina TICKETLOG_CODIGO, TICKETLOG_USUARIO e TICKETLOG_SENHA no Railway.'
+    })
+  }
+  try {
+    const { cookie } = await ticketlog.loginPortal()
+    await salvarCookieSessao(cookie)
+    await marcarKeepalive('ok')
+    try { await supabase.from('config_sistema').update({ km_sync_ultimo_status: 'ok' }).eq('id', 1) } catch {}
+    res.json({ ok: true, conectado: true })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message, detalhe: err.detalhe || null })
+  }
+}
+
+// GET /api/km/sessao/status — a tela usa pra saber se pode oferecer "reconectar sozinho"
+async function statusSessao(_req, res) {
+  try {
+    const cookie = await getSessaoCookie()
+    res.json({
+      sessao_configurada: !!cookie,
+      login_automatico: !!ticketlog.credenciaisPortal(),
+      ultimo_status: await statusSessaoAnterior()
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}
+
+module.exports = {
+  preview, aplicar, gravarKm, listarTicketlog, sync, salvarSessao, manterSessaoViva,
+  parseRelatorio, loginAutomatico, statusSessao
+}

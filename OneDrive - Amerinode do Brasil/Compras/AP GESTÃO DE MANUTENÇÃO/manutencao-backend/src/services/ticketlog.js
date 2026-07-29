@@ -10,8 +10,10 @@
 // rodar do Railway. O cookie expira com o tempo; quando isso acontece o portal
 // devolve login/redirect em vez do relatório → detectamos e sinalizamos 401.
 
+const HOST          = 'https://legacy-soulog.ticketlog.com.br'
 const URL_RELATORIO = 'https://legacy-soulog.ticketlog.com.br/GoodManagerSSL/Fuel/FuelRelUltimasKmLista.cfm?RequestTimeOut=360'
 const URL_FORM      = 'https://legacy-soulog.ticketlog.com.br/GoodManagerSSL/Fuel/FuelRelUltimasKmForm.cfm'
+const URL_LOGIN     = 'https://legacy-soulog.ticketlog.com.br/autenticacao/?urlretorno=/goodmanagerssl/index.cfm&skin=goodmanagerssl'
 const UA            = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36'
 
 // Parâmetros estáticos do cliente AMERINODE (cd_tipo_frota é o "Tipo Frota" fixo).
@@ -40,6 +42,49 @@ function extrairCookie(valor) {
   // já é uma string de cookie (tem = e ;), ou um único par nome=valor
   if (/=/.test(v)) return v.replace(/^cookie:\s*/i, '').trim()
   return ''
+}
+
+// ── Cookies ──────────────────────────────────────────────────────────────────
+// O portal REEMITE CFID/CFTOKEN nas respostas (Max-Age=7200). Antes a gente
+// descartava esses Set-Cookie e seguia mandando o valor antigo — a sessão morria
+// "sozinha" em poucas horas. Agora todo Set-Cookie é mesclado no cookie guardado.
+function lerSetCookie(resp) {
+  if (typeof resp.headers.getSetCookie === 'function') return resp.headers.getSetCookie()
+  const bruto = resp.headers.get('set-cookie')
+  return bruto ? [bruto] : []
+}
+
+// "a=1; b=2" → Map { a=>1, b=>2 }
+function paraMapa(cookie) {
+  const mapa = new Map()
+  for (const par of String(cookie || '').split(';')) {
+    const i = par.indexOf('=')
+    if (i <= 0) continue
+    const nome = par.slice(0, i).trim()
+    if (nome) mapa.set(nome, par.slice(i + 1).trim())
+  }
+  return mapa
+}
+
+// Mescla os Set-Cookie da resposta no cookie atual. Devolve a string nova, ou a
+// original quando nada mudou (assim o chamador só grava no banco se precisar).
+function mesclarCookies(cookieAtual, resp) {
+  const novos = lerSetCookie(resp)
+  if (!novos.length) return { cookie: cookieAtual, mudou: false }
+
+  const mapa = paraMapa(cookieAtual)
+  let mudou = false
+  for (const linha of novos) {
+    const [par] = String(linha).split(';')
+    const i = par.indexOf('=')
+    if (i <= 0) continue
+    const nome  = par.slice(0, i).trim()
+    const valor = par.slice(i + 1).trim()
+    if (!nome || !valor || valor === 'deleted') continue
+    if (mapa.get(nome) !== valor) { mapa.set(nome, valor); mudou = true }
+  }
+  if (!mudou) return { cookie: cookieAtual, mudou: false }
+  return { cookie: [...mapa].map(([k, v]) => `${k}=${v}`).join('; '), mudou: true }
 }
 
 // Heurística: o corpo é mesmo o relatório? (vs página de login/redirect do SSO)
@@ -86,7 +131,118 @@ async function pingSessao(opts = {}) {
   let estado = 'erro'
   if (resp.status === 401 || resp.status === 403 || (resp.status >= 300 && resp.status < 400)) estado = 'expirada'
   else if (resp.ok) estado = 'viva'
-  return { estado, status: resp.status }
+
+  // Cookie rotacionado pelo portal → devolve pro chamador regravar.
+  const { cookie: atualizado, mudou } = mesclarCookies(cookie, resp)
+  return { estado, status: resp.status, cookie: atualizado, cookieMudou: mudou }
+}
+
+// ── Login automático no portal legado ────────────────────────────────────────
+// Descoberta jul/2026: `legacy-soulog.ticketlog.com.br/autenticacao/` tem login
+// PRÓPRIO do SouLog — três campos (codigo, usuario, senha), sem MFA e sem captcha.
+// O SSO Edenred é só a alternativa ("ou conectar com Conta Edenred"). Com isso o
+// servidor renova a sessão sozinho e ninguém precisa colar cURL de novo.
+//
+// Fluxo: GET da tela (pega cookies iniciais + <meta name="csrf-token">) → POST com
+// as credenciais + token (campo _csrf_token e header X-CSRF-Token) → segue os
+// redirects mesclando cookies → confirma com pingSessao.
+//
+// `forceLogin` é um campo escondido do próprio formulário: assume a sessão quando
+// o usuário já está conectado em outro lugar (é o que fazia a sessão do robô morrer
+// quando alguém logava no portal).
+
+function credenciaisPortal() {
+  const codigo  = (process.env.TICKETLOG_CODIGO  || '').trim()
+  const usuario = (process.env.TICKETLOG_USUARIO || '').trim()
+  const senha   = (process.env.TICKETLOG_SENHA   || '').trim()
+  if (!codigo || !usuario || !senha) return null
+  return { codigo, usuario, senha }
+}
+
+function extrairCsrf(html) {
+  const m = /<meta\s+name=["']csrf-token["']\s+content=["']([^"']+)["']/i.exec(html || '')
+  return m ? m[1] : ''
+}
+
+// Portal pede confirmação quando já existe sessão ativa do mesmo usuário.
+const pedeForce = html => /j[áa]\s*(est[áa]\s*)?conectad|sess[ãa]o\s*(j[áa]\s*)?ativa|forceLogin/i.test(html || '')
+const pareceLogado = html => !/name=["']senha["']/i.test(html || '')
+
+async function loginPortal(opts = {}) {
+  const cred = opts.credenciais || credenciaisPortal()
+  if (!cred) { const e = new Error('credenciais_ausentes'); e.status = 412; throw e }
+
+  const base = { 'user-agent': UA, 'accept-language': 'pt-BR,pt;q=0.9' }
+
+  // 1) tela de login: cookies iniciais + token CSRF
+  let resp
+  try {
+    resp = await fetch(URL_LOGIN, { headers: base, redirect: 'manual' })
+  } catch (e) {
+    const err = new Error('falha_rede: ' + e.message); err.status = 502; throw err
+  }
+  let cookie = mesclarCookies('', resp).cookie
+  const html = await resp.text()
+  const csrf = extrairCsrf(html)
+
+  // 2) POST das credenciais (com retry forçando a tomada da sessão)
+  const tentar = async forcar => {
+    const body = new URLSearchParams({
+      codigo: cred.codigo,
+      usuario: cred.usuario,
+      senha: cred.senha,
+      acao: '',
+      forceLogin: forcar ? 'true' : ''
+    })
+    if (csrf) body.set('_csrf_token', csrf)
+
+    let r
+    try {
+      r = await fetch(URL_LOGIN, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: {
+          ...base,
+          'content-type': 'application/x-www-form-urlencoded',
+          'origin': HOST,
+          'referer': URL_LOGIN,
+          'cookie': cookie,
+          ...(csrf ? { 'x-csrf-token': csrf } : {})
+        },
+        body: body.toString()
+      })
+    } catch (e) {
+      const err = new Error('falha_rede: ' + e.message); err.status = 502; throw err
+    }
+    cookie = mesclarCookies(cookie, r).cookie
+
+    // 3) segue os redirects (a sessão costuma se firmar no destino)
+    let saltos = 0
+    while (r.status >= 300 && r.status < 400 && saltos < 4) {
+      const destino = new URL(r.headers.get('location'), HOST).toString()
+      r = await fetch(destino, { headers: { ...base, cookie, referer: URL_LOGIN }, redirect: 'manual' })
+      cookie = mesclarCookies(cookie, r).cookie
+      saltos++
+    }
+    return r
+  }
+
+  let r = await tentar(false)
+  let corpo = r.status < 300 ? await r.text() : ''
+  if (pedeForce(corpo) && !pareceLogado(corpo)) {
+    r = await tentar(true)                       // usuário já conectado → assume a sessão
+    corpo = r.status < 300 ? await r.text() : ''
+  }
+
+  // 4) confirma de fato: a sessão abre o formulário do relatório?
+  const { estado } = await pingSessao({ cookie })
+  if (estado !== 'viva') {
+    const e = new Error('login_recusado')
+    e.status = 401
+    e.detalhe = pareceLogado(corpo) ? 'sessão não firmou no portal' : 'credenciais ou código do usuário recusados'
+    throw e
+  }
+  return { cookie }
 }
 
 // Baixa o relatório e devolve um Buffer (latin1) pronto pro parseRelatorio.
@@ -151,7 +307,13 @@ async function baixarRelatorioKm(opts = {}) {
     // 200 mas conteúdo não é o relatório (provável tela de login/erro de sessão)
     const e = new Error('sessao_expirada'); e.status = 401; throw e
   }
+  // Anexa o cookie rotacionado no Buffer (compatível com quem só usa o retorno).
+  const { cookie: atualizado, mudou } = mesclarCookies(cookie, resp)
+  buf.cookieAtualizado = mudou ? atualizado : null
   return buf
 }
 
-module.exports = { baixarRelatorioKm, pingSessao, extrairCookie, ddmmyyyy }
+module.exports = {
+  baixarRelatorioKm, pingSessao, extrairCookie, ddmmyyyy,
+  loginPortal, credenciaisPortal, mesclarCookies
+}

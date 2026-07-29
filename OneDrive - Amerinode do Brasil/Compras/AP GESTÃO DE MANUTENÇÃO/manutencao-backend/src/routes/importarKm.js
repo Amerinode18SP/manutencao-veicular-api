@@ -1,7 +1,7 @@
 const express = require('express')
 const multer  = require('multer')
 const router  = express.Router()
-const { preview, aplicar, listarTicketlog, sync, salvarSessao } = require('../controllers/importarKm')
+const { preview, aplicar, listarTicketlog, sync, salvarSessao, loginAutomatico, statusSessao } = require('../controllers/importarKm')
 
 // O relatório do portal TicketLog vem como .xls, mas é HTML por dentro.
 const upload = multer({
@@ -20,5 +20,7 @@ router.post('/aplicar', aplicar)
 router.get('/ticketlog', listarTicketlog)
 router.post('/sync', sync)          // baixa o relatório server-side e atualiza a km (botão online + Railway Cron)
 router.post('/sessao', salvarSessao) // admin cola o cookie/cURL da sessão do portal
+router.post('/login', loginAutomatico)      // entra no portal com usuário/senha do ambiente
+router.get('/sessao/status', statusSessao)  // a tela pergunta se o login automático existe
 
 module.exports = router
