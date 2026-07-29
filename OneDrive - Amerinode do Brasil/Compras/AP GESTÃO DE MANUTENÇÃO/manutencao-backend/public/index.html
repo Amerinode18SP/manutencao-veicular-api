@@ -615,8 +615,8 @@ tr:hover td{background:#F9F9F9}
             </div>
           </div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Placa</th><th>Localidade</th><th>Tipo</th><th>Serviço</th><th>Data prevista</th><th>KM previsto</th><th>Situação</th><th>Prazo</th><th style="text-align:right">Ações</th></tr></thead>
-            <tbody id="revisoes-table"><tr><td colspan="9" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
+            <thead><tr><th>Placa</th><th>Localidade</th><th>Tipo</th><th>Serviço</th><th>Data prevista</th><th title="Vem do cadastro do veículo, atualizado pelo TicketLog">KM atual</th><th title="Km em que o serviço vence (opcional, você preenche)">KM previsto</th><th>Situação</th><th>Prazo</th><th style="text-align:right">Ações</th></tr></thead>
+            <tbody id="revisoes-table"><tr><td colspan="10" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
           </table></div>
         </div>
       </div>
@@ -4000,7 +4000,7 @@ function exportarRecorrenciaXLSX(){
 let revisoesDados=[], revEditandoId=null, revImportBuffer=[], revImportIgnorados=[]
 let revVeiculosCache=[], revServicosCache=[]
 
-const REV_COLS=9  // colunas da tabela (para o colspan das mensagens)
+const REV_COLS=10 // colunas da tabela (para o colspan das mensagens)
 
 async function carregarRevisoes(){
   const tb=document.getElementById('revisoes-table')
@@ -4051,6 +4051,17 @@ function revSituacao(r){
   return {badge:'<span class="badge badge-green">OK</span>',prazo:dias+' dias',urgente:false}
 }
 
+// KM previsto + quanto falta rodar (quando dá para comparar com o km atual)
+function revKmPrevisto(r){
+  if(!r.km_previsto) return '<span style="color:#BBB">—</span>'
+  const prev=Number(r.km_previsto).toLocaleString('pt-BR')+' km'
+  if(!r.km_atual) return prev
+  const falta=Number(r.km_previsto)-Number(r.km_atual)
+  const cor=falta<0?'#B22':(falta<=1000?'#8A5A00':'#888')
+  const txt=falta<0?`passou ${Math.abs(falta).toLocaleString('pt-BR')} km`:`faltam ${falta.toLocaleString('pt-BR')} km`
+  return `${prev}<div style="font-size:11px;color:${cor}">${txt}</div>`
+}
+
 function renderRevisoes(){
   const tb=document.getElementById('revisoes-table')
   const busca=(document.getElementById('rev-busca').value||'').toLowerCase().trim()
@@ -4090,7 +4101,8 @@ function renderRevisoes(){
       <td><span class="badge ${r.tipo==='Corretiva'?'badge-red':(r.tipo==='Segurança'?'badge-amber':(r.tipo==='Preditiva'?'badge-purple':'badge-blue'))}">${r.tipo||'-'}</span></td>
       <td>${r.servico||'-'}${r.observacao?`<div style="font-size:11px;color:#888">${r.observacao}</div>`:''}</td>
       <td>${fmtData(r.data_prevista)}</td>
-      <td>${r.km_previsto?Number(r.km_previsto).toLocaleString('pt-BR')+' km':'-'}</td>
+      <td>${r.km_atual?Number(r.km_atual).toLocaleString('pt-BR')+' km':'<span style="color:#BBB">—</span>'}</td>
+      <td>${revKmPrevisto(r)}</td>
       <td>${s.badge}</td>
       <td>${s.prazo}</td>
       <td style="text-align:right;white-space:nowrap">${acoes}</td>
