@@ -588,16 +588,35 @@ tr:hover td{background:#F9F9F9}
         <div id="rev-alert-box" style="display:none" class="alert-banner alert-warn"></div>
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Próximas revisões</span>
+            <div>
+              <span class="card-title">Próximas revisões</span>
+              <span style="font-size:11px;color:#888;font-weight:400;margin-left:6px" id="rev-count"></span>
+            </div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input id="rev-busca" placeholder="🔎 Placa, serviço, localidade..." oninput="renderRevisoes()"
+                     style="padding:7px 12px;border:1px solid #DDD;border-radius:8px;font-size:13px;min-width:200px">
+              <select id="rev-filtro-tipo" onchange="renderRevisoes()" style="padding:7px 10px;border:1px solid #DDD;border-radius:8px;font-size:12px">
+                <option value="">Todos os tipos</option>
+                <option>Preventiva</option><option>Corretiva</option><option>Preditiva</option><option>Segurança</option>
+              </select>
+              <select id="rev-filtro-status" onchange="carregarRevisoes()" style="padding:7px 10px;border:1px solid #DDD;border-radius:8px;font-size:12px">
+                <option value="Pendente">Pendentes</option>
+                <option value="Concluída">Concluídas</option>
+                <option value="Cancelada">Canceladas</option>
+                <option value="todas">Todas</option>
+              </select>
+              <button class="btn btn-primary man-admin-only" onclick="abrirModalRevisao()">+ Nova revisão</button>
+              <button class="btn man-admin-only" onclick="document.getElementById('rev-import-input').click()">⬆ Importar planilha</button>
+              <input type="file" id="rev-import-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="importarRevisoesXLSX(this)">
+              <button class="btn" onclick="baixarTemplateRevisoes()">⬇ Baixar template</button>
               <button class="btn man-admin-only" onclick="document.getElementById('km-import-input').click()">🔢 Importar Km (TicketLog)</button>
               <input type="file" id="km-import-input" accept=".xls,.html,.htm" style="display:none" onchange="importarKmTicketlog(this)">
               <button class="btn" onclick="carregarRevisoes()">🔄 Atualizar</button>
             </div>
           </div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Placa</th><th>Localidade</th><th>KM atual</th><th>Próxima revisão</th><th>Situação</th><th>Dias restantes</th><th>Ações</th></tr></thead>
-            <tbody id="revisoes-table"><tr><td colspan="7" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
+            <thead><tr><th>Placa</th><th>Localidade</th><th>Tipo</th><th>Serviço</th><th>Data prevista</th><th>KM previsto</th><th>Situação</th><th>Prazo</th><th style="text-align:right">Ações</th></tr></thead>
+            <tbody id="revisoes-table"><tr><td colspan="9" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
           </table></div>
         </div>
       </div>
@@ -747,6 +766,71 @@ tr:hover td{background:#F9F9F9}
             <thead><tr><th>Placa</th><th>Localidade</th><th>KM atual</th><th>Próxima revisão</th><th>Prazo</th><th>Marco</th><th>Situação do aviso</th></tr></thead>
             <tbody id="al-previa-table"></tbody>
           </table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Nova / editar revisão programada -->
+    <div class="modal-overlay" id="modal-revisao">
+      <div class="modal" style="width:680px;max-width:95vw">
+        <h3 style="font-size:15px;color:#1E3A5F;margin-bottom:14px" id="rev-modal-titulo">Nova revisão programada</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="form-group">
+            <label>Placa *</label>
+            <input id="rev-f-placa" list="rev-placas-list" placeholder="ABC1D23" style="text-transform:uppercase">
+            <datalist id="rev-placas-list"></datalist>
+          </div>
+          <div class="form-group">
+            <label>Data prevista *</label>
+            <input id="rev-f-data" type="date">
+          </div>
+          <div class="form-group">
+            <label>Tipo de revisão *</label>
+            <select id="rev-f-tipo">
+              <option>Preventiva</option>
+              <option>Corretiva</option>
+              <option>Preditiva</option>
+              <option>Segurança</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>KM previsto</label>
+            <input id="rev-f-km" type="number" min="0" placeholder="ex: 220000">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label>Tipo de manutenção / serviço *</label>
+            <input id="rev-f-servico" list="rev-servicos-list" placeholder="Ex.: Troca de pneu, Alinhamento e balanceamento...">
+            <datalist id="rev-servicos-list"></datalist>
+            <div style="font-size:11px;color:#888;margin-top:4px">Pode escolher da lista ou digitar um serviço novo.</div>
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label>Observação</label>
+            <input id="rev-f-obs" placeholder="Opcional">
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:16px">
+          <span style="font-size:11px;color:#888" id="rev-modal-dica">A mesma placa pode ter vários serviços agendados em datas diferentes.</span>
+          <div style="display:flex;gap:8px">
+            <button class="btn" onclick="closeModal('modal-revisao')">Cancelar</button>
+            <button class="btn btn-primary" id="rev-btn-salvar" onclick="salvarRevisao()">Salvar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: prévia do import de revisões por planilha -->
+    <div class="modal-overlay" id="modal-rev-import">
+      <div class="modal" style="width:900px;max-width:95vw">
+        <h3 style="font-size:15px;color:#1E3A5F;margin-bottom:6px">⬆ Importar revisões da planilha</h3>
+        <div id="rev-import-resumo" style="font-size:12px;color:#666;margin-bottom:10px"></div>
+        <div class="table-wrap" style="max-height:50vh;overflow:auto;border:1px solid #E0E0E0;border-radius:8px"><table>
+          <thead><tr><th>Placa</th><th>Tipo</th><th>Serviço</th><th>Data prevista</th><th>KM previsto</th><th>Observação</th></tr></thead>
+          <tbody id="rev-import-table"></tbody>
+        </table></div>
+        <div id="rev-import-ignorados" style="margin-top:10px"></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+          <button class="btn" onclick="closeModal('modal-rev-import')">Cancelar</button>
+          <button class="btn btn-primary" id="rev-import-btn" onclick="confirmarImportRevisoes()">Importar</button>
         </div>
       </div>
     </div>
@@ -3909,75 +3993,271 @@ function exportarRecorrenciaXLSX(){
   XLSX.writeFile(wb, 'recorrencia_manutencao.xlsx')
 }
 
-// ── REVISÕES ──────────────────────────────────────────────────
+// ── REVISÕES PROGRAMADAS ──────────────────────────────────────
+// Agenda de revisões: várias por veículo, cada uma com TIPO (Preventiva/Corretiva/
+// ...) e SERVIÇO (troca de pneu, alinhamento e balanceamento...). Cadastro manual
+// pelo modal ou em lote pela planilha (template gerado aqui mesmo).
+let revisoesDados=[], revEditandoId=null, revImportBuffer=[], revImportIgnorados=[]
+let revVeiculosCache=[], revServicosCache=[]
+
+const REV_COLS=9  // colunas da tabela (para o colspan das mensagens)
+
 async function carregarRevisoes(){
-  document.getElementById('revisoes-table').innerHTML='<tr><td colspan="7" class="loading"><span class="spinner"></span>Carregando...</td></tr>'
+  const tb=document.getElementById('revisoes-table')
+  tb.innerHTML=`<tr><td colspan="${REV_COLS}" class="loading"><span class="spinner"></span>Carregando...</td></tr>`
   try{
-    const data=await apiCall('/api/veiculos/revisoes?dias=3650')
-    const hoje=new Date();hoje.setHours(0,0,0,0)
-    const lista=(data||[]).map(v=>{
-      const d=new Date(v.proxima_revisao);d.setHours(0,0,0,0)
-      return{...v,diff:Math.ceil((d-hoje)/(1000*60*60*24))}
-    }).sort((a,b)=>a.diff-b.diff)
-    const urgentes=lista.filter(v=>v.diff>=0&&v.diff<=10)
-    const alertBox=document.getElementById('rev-alert-box')
-    if(urgentes.length){
-      alertBox.style.display='flex'
-      alertBox.innerHTML=`⚠️ <strong>${urgentes.length} veículo(s)</strong> com revisão nos próximos 10 dias: ${urgentes.map(u=>`<strong>${u.placa}</strong> (${u.diff===0?'hoje':u.diff+' dias'})`).join(', ')}`
-    }else{alertBox.style.display='none'}
-    const tb=document.getElementById('revisoes-table')
-    if(!lista.length){tb.innerHTML='<tr><td colspan="7" class="empty">Nenhuma revisão cadastrada. Preencha a data de próxima revisão ao cadastrar as ordens.</td></tr>';return}
-    const isAdmin=currentPerfil==='administrador'
-    tb.innerHTML=lista.map(v=>{
-      const isU=v.diff>=0&&v.diff<=10,isVenc=v.diff<0
-      let sit,dias
-      if(isVenc){
-        sit='<span class="badge badge-red">Vencida</span>'
-        dias=`<span style="color:red;font-weight:500">${Math.abs(v.diff)} dias atrás</span>`
-      }else if(isU){
-        sit='<span class="rev-urgent-badge">⚠ Urgente</span>'
-        dias=`<span style="color:#791F1F;font-weight:500">${v.diff===0?'Hoje':v.diff+' dia(s)'}</span>`
-      }else if(v.diff<=30){
-        sit='<span class="badge badge-amber">Próxima</span>';dias=v.diff+' dias'
-      }else{
-        sit='<span class="badge badge-green">OK</span>';dias=v.diff+' dias'
-      }
-      const btnConcluir=isAdmin
-        ?`<button class="btn-sm" style="background:#EAF3DE;color:#27500A;border-color:#B7DFA3" onclick="concluirRevisao('${v.id}','${v.placa}')">✓ Concluída</button>`
-        :''
-      return`<tr class="${isU?'rev-alert-row':''}">
-        <td><strong>${v.placa}</strong></td>
-        <td>${v.localidade||'-'}</td>
-        <td>${v.km_atual?Number(v.km_atual).toLocaleString('pt-BR')+' km':'-'}</td>
-        <td>${fmtData(v.proxima_revisao)}</td>
-        <td>${sit}</td>
-        <td>${dias}</td>
-        <td>${btnConcluir}</td>
-      </tr>`
-    }).join('')
+    const status=document.getElementById('rev-filtro-status').value
+    revisoesDados=await apiCall('/api/revisoes?status='+encodeURIComponent(status))
+    renderRevisoes()
+    revCarregarAuxiliares()
   }catch(e){
-    document.getElementById('revisoes-table').innerHTML=`<tr><td colspan="7" class="empty">Erro: ${e.message}</td></tr>`
+    tb.innerHTML=`<tr><td colspan="${REV_COLS}" class="empty">Erro: ${e.message}</td></tr>`
   }
 }
 
-async function concluirRevisao(veiculoId, placa){
-  if(!confirm(`Marcar revisão do veículo ${placa} como Concluída?\n\nIsso vai atualizar todas as ordens deste veículo com status "Concluído" e limpar a data de próxima revisão.`)) return
-  try{
-    // Buscar ordens do veículo e marcar como Concluído
-    const ordensData=await apiCall(`/api/ordens?limit=200`)
-    const ordensVeiculo=(ordensData.data||[]).filter(o=>o.veiculo_id===veiculoId||o.veiculo?.id===veiculoId)
-    for(const o of ordensVeiculo){
-      if(o.status!=='Concluído'){
-        await apiCall(`/api/ordens/${o.id}`,'PATCH',{status:'Concluído'})
-      }
-    }
-    // Limpar proxima_revisao do veículo
-    await apiCall(`/api/veiculos/${veiculoId}`,'PUT',{proxima_revisao:null}).catch(()=>{})
-    alert(`✅ Revisão do veículo ${placa} marcada como Concluída!`)
-    carregarRevisoes()
-  }catch(e){
-    alert('Erro: '+e.message)
+// placas e sugestões de serviço para os datalists do modal (uma vez por sessão)
+async function revCarregarAuxiliares(){
+  if(!revVeiculosCache.length){
+    try{
+      const v=await apiCall('/api/veiculos')
+      revVeiculosCache=Array.isArray(v)?v:(v.data||[])
+      document.getElementById('rev-placas-list').innerHTML=
+        revVeiculosCache.map(x=>`<option value="${x.placa}">${x.localidade||''}</option>`).join('')
+    }catch(e){}
   }
+  if(!revServicosCache.length){
+    try{
+      const s=await apiCall('/api/revisoes/servicos')
+      revServicosCache=s.servicos||[]
+      document.getElementById('rev-servicos-list').innerHTML=
+        revServicosCache.map(x=>`<option value="${x}">`).join('')
+    }catch(e){}
+  }
+}
+
+function revDias(dataISO){
+  const hoje=new Date();hoje.setHours(0,0,0,0)
+  const d=new Date(String(dataISO).slice(0,10)+'T00:00:00')
+  return Math.round((d-hoje)/86400000)
+}
+
+function revSituacao(r){
+  if(r.status==='Concluída') return {badge:'<span class="badge badge-green">Concluída</span>',prazo:r.concluida_em?fmtData(r.concluida_em):'—',urgente:false}
+  if(r.status==='Cancelada') return {badge:'<span class="badge badge-gray">Cancelada</span>',prazo:'—',urgente:false}
+  const dias=revDias(r.data_prevista)
+  if(dias<0)  return {badge:'<span class="badge badge-red">Vencida</span>',prazo:`<span style="color:#B22;font-weight:500">${Math.abs(dias)} dias atrás</span>`,urgente:true}
+  if(dias<=10)return {badge:'<span class="rev-urgent-badge">⚠ Urgente</span>',prazo:`<span style="color:#791F1F;font-weight:500">${dias===0?'Hoje':dias+' dia(s)'}</span>`,urgente:true}
+  if(dias<=30)return {badge:'<span class="badge badge-amber">Próxima</span>',prazo:dias+' dias',urgente:false}
+  return {badge:'<span class="badge badge-green">OK</span>',prazo:dias+' dias',urgente:false}
+}
+
+function renderRevisoes(){
+  const tb=document.getElementById('revisoes-table')
+  const busca=(document.getElementById('rev-busca').value||'').toLowerCase().trim()
+  const tipo=document.getElementById('rev-filtro-tipo').value
+  let lista=revisoesDados.slice()
+  if(tipo)  lista=lista.filter(r=>r.tipo===tipo)
+  if(busca) lista=lista.filter(r=>[r.placa,r.servico,r.localidade,r.tipo,r.observacao].join(' ').toLowerCase().includes(busca))
+  lista.sort((a,b)=>String(a.data_prevista).localeCompare(String(b.data_prevista)))
+
+  // faixa de aviso: pendentes vencidas ou nos próximos 10 dias
+  const urgentes=lista.filter(r=>r.status==='Pendente'&&revDias(r.data_prevista)<=10)
+  const box=document.getElementById('rev-alert-box')
+  if(urgentes.length){
+    box.style.display='flex'
+    box.innerHTML=`⚠️ <strong>${urgentes.length} revisão(ões)</strong> vencida(s) ou nos próximos 10 dias: `+
+      urgentes.slice(0,8).map(u=>{const d=revDias(u.data_prevista);return `<strong>${u.placa}</strong> (${u.servico}, ${d<0?Math.abs(d)+'d atrás':(d===0?'hoje':d+'d')})`}).join(', ')+
+      (urgentes.length>8?` e mais ${urgentes.length-8}...`:'')
+  }else{box.style.display='none'}
+
+  document.getElementById('rev-count').textContent=`— ${lista.length} registro(s)`
+
+  if(!lista.length){
+    tb.innerHTML=`<tr><td colspan="${REV_COLS}" class="empty">Nenhuma revisão programada. Use <strong>+ Nova revisão</strong> ou <strong>⬆ Importar planilha</strong>.</td></tr>`
+    return
+  }
+  const isAdmin=currentPerfil==='administrador'
+  tb.innerHTML=lista.map(r=>{
+    const s=revSituacao(r)
+    const pendente=r.status==='Pendente'
+    const acoes=isAdmin?`
+      ${pendente?`<button class="btn-sm" style="background:#EAF3DE;color:#27500A;border-color:#B7DFA3" onclick="concluirRevisaoProgramada('${r.id}')" title="Marcar como concluída">✓</button>`:''}
+      <button class="btn-sm" onclick="abrirModalRevisao('${r.id}')" title="Editar">✏️</button>
+      <button class="btn-sm" style="color:#B22" onclick="excluirRevisao('${r.id}')" title="Excluir">🗑</button>`:''
+    return `<tr class="${s.urgente&&pendente?'rev-alert-row':''}">
+      <td><strong>${r.placa||'-'}</strong></td>
+      <td>${r.localidade||'-'}</td>
+      <td><span class="badge ${r.tipo==='Corretiva'?'badge-red':(r.tipo==='Segurança'?'badge-amber':(r.tipo==='Preditiva'?'badge-purple':'badge-blue'))}">${r.tipo||'-'}</span></td>
+      <td>${r.servico||'-'}${r.observacao?`<div style="font-size:11px;color:#888">${r.observacao}</div>`:''}</td>
+      <td>${fmtData(r.data_prevista)}</td>
+      <td>${r.km_previsto?Number(r.km_previsto).toLocaleString('pt-BR')+' km':'-'}</td>
+      <td>${s.badge}</td>
+      <td>${s.prazo}</td>
+      <td style="text-align:right;white-space:nowrap">${acoes}</td>
+    </tr>`
+  }).join('')
+}
+
+// ── Cadastro manual ───────────────────────────────────────────
+function abrirModalRevisao(id){
+  if(currentPerfil!=='administrador'){alert('Apenas administrador pode agendar revisões.');return}
+  revEditandoId=id||null
+  revCarregarAuxiliares()
+  const r=id?revisoesDados.find(x=>x.id===id):null
+  document.getElementById('rev-modal-titulo').textContent=r?'Editar revisão programada':'Nova revisão programada'
+  document.getElementById('rev-f-placa').value=r?r.placa||'':''
+  document.getElementById('rev-f-placa').disabled=!!r   // trocar de veículo = criar outra
+  document.getElementById('rev-f-data').value=r?String(r.data_prevista).slice(0,10):''
+  document.getElementById('rev-f-tipo').value=r?r.tipo||'Preventiva':'Preventiva'
+  document.getElementById('rev-f-km').value=r&&r.km_previsto?r.km_previsto:''
+  document.getElementById('rev-f-servico').value=r?r.servico||'':''
+  document.getElementById('rev-f-obs').value=r?r.observacao||'':''
+  document.getElementById('rev-modal-dica').textContent=r
+    ?'Para trocar o veículo, crie uma nova revisão e exclua esta.'
+    :'A mesma placa pode ter vários serviços agendados em datas diferentes.'
+  showModal('modal-revisao')
+}
+
+async function salvarRevisao(){
+  const btn=document.getElementById('rev-btn-salvar')
+  const payload={
+    placa:    document.getElementById('rev-f-placa').value.trim().toUpperCase(),
+    data_prevista: document.getElementById('rev-f-data').value,
+    tipo:     document.getElementById('rev-f-tipo').value,
+    km_previsto: document.getElementById('rev-f-km').value||null,
+    servico:  document.getElementById('rev-f-servico').value.trim(),
+    observacao: document.getElementById('rev-f-obs').value.trim()
+  }
+  if(!revEditandoId&&!payload.placa){alert('Informe a placa.');return}
+  if(!payload.data_prevista){alert('Informe a data prevista.');return}
+  if(!payload.servico){alert('Informe o tipo de manutenção / serviço.');return}
+  if(btn){btn.disabled=true;btn.textContent='Salvando...'}
+  try{
+    if(revEditandoId){
+      const {placa,...semPlaca}=payload
+      await apiCall('/api/revisoes/'+revEditandoId,'PUT',semPlaca)
+    }else{
+      const r=await apiCall('/api/revisoes','POST',payload)
+      if(r.erros&&r.erros.length) alert('Atenção: '+r.erros.join('; '))
+    }
+    closeModal('modal-revisao')
+    revServicosCache=[]   // pode ter surgido serviço novo
+    carregarRevisoes()
+  }catch(e){ alert('Erro ao salvar: '+e.message) }
+  finally{ if(btn){btn.disabled=false;btn.textContent='Salvar'} }
+}
+
+async function concluirRevisaoProgramada(id){
+  const r=revisoesDados.find(x=>x.id===id); if(!r) return
+  const resp=prompt(`Concluir "${r.servico}" da placa ${r.placa}.\n\nSe este serviço se repete, informe em quantos DIAS agendar o próximo (ex.: 180).\nDeixe vazio para apenas concluir.`,'')
+  if(resp===null) return
+  const dias=parseInt(resp,10)
+  try{
+    const res=await apiCall(`/api/revisoes/${id}/concluir`,'POST', Number.isFinite(dias)&&dias>0?{proxima_em_dias:dias}:{})
+    alert('✅ Revisão concluída.'+(res.proxima?`\nPróxima já agendada para ${fmtData(res.proxima.data_prevista)}.`:''))
+    carregarRevisoes()
+  }catch(e){ alert('Erro: '+e.message) }
+}
+
+async function excluirRevisao(id){
+  const r=revisoesDados.find(x=>x.id===id); if(!r) return
+  if(!confirm(`Excluir o agendamento "${r.servico}" da placa ${r.placa} (${fmtData(r.data_prevista)})?`)) return
+  try{
+    await apiCall('/api/revisoes/'+id,'DELETE')
+    carregarRevisoes()
+  }catch(e){ alert('Erro: '+e.message) }
+}
+
+// ── Template + import por planilha ────────────────────────────
+function baixarTemplateRevisoes(){
+  const exemplo=[
+    {'Placa':'ABC1D23','Tipo de Revisão':'Preventiva','Tipo de Manutenção':'Troca de óleo e filtro','Data Prevista':'15/09/2026','KM Previsto':220000,'Observação':'Trocar também o filtro de ar'},
+    {'Placa':'ABC1D23','Tipo de Revisão':'Preventiva','Tipo de Manutenção':'Alinhamento e balanceamento','Data Prevista':'15/09/2026','KM Previsto':220000,'Observação':''},
+    {'Placa':'XYZ9W88','Tipo de Revisão':'Corretiva','Tipo de Manutenção':'Troca de pneu','Data Prevista':'02/10/2026','KM Previsto':'','Observação':'Dianteiros'}
+  ]
+  const instrucoes=[
+    {'Coluna':'Placa','Obrigatória':'Sim','Como preencher':'Placa já cadastrada em Veículos. Aceita com ou sem hífen.'},
+    {'Coluna':'Tipo de Revisão','Obrigatória':'Não','Como preencher':'Preventiva (padrão), Corretiva, Preditiva ou Segurança.'},
+    {'Coluna':'Tipo de Manutenção','Obrigatória':'Sim','Como preencher':'Serviço a executar. Ex.: Troca de pneu, Alinhamento e balanceamento, Troca de óleo e filtro. Texto livre.'},
+    {'Coluna':'Data Prevista','Obrigatória':'Sim','Como preencher':'DD/MM/AAAA ou data do Excel.'},
+    {'Coluna':'KM Previsto','Obrigatória':'Não','Como preencher':'Somente números. Km em que o serviço vence.'},
+    {'Coluna':'Observação','Obrigatória':'Não','Como preencher':'Texto livre.'},
+    {'Coluna':'—','Obrigatória':'—','Como preencher':'A mesma placa pode ter várias linhas (um serviço por linha). Reimportar a mesma planilha não duplica.'}
+  ]
+  const wb=XLSX.utils.book_new()
+  const ws=XLSX.utils.json_to_sheet(exemplo)
+  ws['!cols']=[{wch:12},{wch:16},{wch:34},{wch:14},{wch:12},{wch:34}]
+  XLSX.utils.book_append_sheet(wb,ws,'Revisoes')
+  const wi=XLSX.utils.json_to_sheet(instrucoes)
+  wi['!cols']=[{wch:20},{wch:12},{wch:80}]
+  XLSX.utils.book_append_sheet(wb,wi,'Instrucoes')
+  XLSX.writeFile(wb,'template_revisoes_programadas.xlsx')
+}
+
+function importarRevisoesXLSX(input){
+  if(currentPerfil!=='administrador'){alert('Apenas administrador pode importar.');input.value='';return}
+  const file=input.files[0];if(!file) return
+  const reader=new FileReader()
+  reader.onload=async e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'binary'})
+      const ws=wb.Sheets[wb.SheetNames[0]]
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false})
+      const itens=rows.map(r=>({
+        placa:        r['Placa']||r['placa']||r['PLACA']||'',
+        tipo:         r['Tipo de Revisão']||r['Tipo de Revisao']||r['Tipo']||r['tipo']||'Preventiva',
+        servico:      r['Tipo de Manutenção']||r['Tipo de Manutencao']||r['Serviço']||r['Servico']||r['servico']||'',
+        data_prevista:r['Data Prevista']||r['Data']||r['data_prevista']||r['Próxima Revisão']||'',
+        km_previsto:  r['KM Previsto']||r['Km Previsto']||r['km_previsto']||'',
+        observacao:   r['Observação']||r['Observacao']||r['observacao']||''
+      })).filter(r=>String(r.placa).trim()||String(r.servico).trim())
+      if(!itens.length){alert('Nenhuma linha encontrada. Baixe o template para ver as colunas esperadas.');input.value='';return}
+      const prev=await apiCall('/api/revisoes/importar','POST',{itens,preview:true})
+      revImportBuffer=prev.itens||[]
+      revImportIgnorados=prev.ignorados||[]
+      renderRevImportPreview(prev)
+      showModal('modal-rev-import')
+    }catch(err){alert('Erro ao ler a planilha: '+err.message)}
+    finally{input.value=''}
+  }
+  reader.readAsBinaryString(file)
+}
+
+function renderRevImportPreview(prev){
+  document.getElementById('rev-import-resumo').innerHTML=
+    `${prev.total} linha(s) na planilha · <strong style="color:#27500A">${prev.validos} válida(s)</strong>`+
+    (revImportIgnorados.length?` · <strong style="color:#B22">${revImportIgnorados.length} ignorada(s)</strong>`:'')
+  document.getElementById('rev-import-table').innerHTML=revImportBuffer.length
+    ? revImportBuffer.map(i=>`<tr>
+        <td><strong>${i.placa}</strong></td><td>${i.tipo}</td><td>${i.servico}</td>
+        <td>${fmtData(i.data_prevista)}</td>
+        <td>${i.km_previsto?Number(i.km_previsto).toLocaleString('pt-BR'):'-'}</td>
+        <td>${i.observacao||'-'}</td></tr>`).join('')
+    : '<tr><td colspan="6" class="empty">Nenhuma linha válida.</td></tr>'
+  document.getElementById('rev-import-ignorados').innerHTML=revImportIgnorados.length
+    ? `<div style="font-size:11px;color:#792020;background:#FFF4F4;border:1px solid #F3D0D0;border-radius:8px;padding:8px 12px">
+         <strong>Linhas ignoradas:</strong><ul style="margin:6px 0 0 16px;line-height:1.6">`+
+         revImportIgnorados.map(g=>`<li>linha ${g.linha}${g.placa?` (${g.placa})`:''}: ${g.motivo}</li>`).join('')+
+       `</ul></div>`
+    : ''
+  const btn=document.getElementById('rev-import-btn')
+  btn.disabled=!revImportBuffer.length
+  btn.textContent=`Importar ${revImportBuffer.length} revisão(ões)`
+}
+
+async function confirmarImportRevisoes(){
+  if(!revImportBuffer.length) return
+  const btn=document.getElementById('rev-import-btn')
+  btn.disabled=true;btn.textContent='Importando...'
+  try{
+    const res=await apiCall('/api/revisoes/importar','POST',{itens:revImportBuffer})
+    closeModal('modal-rev-import')
+    alert(`✅ ${res.gravadas} revisão(ões) importada(s).`+
+      (res.ignorados&&res.ignorados.length?`\n${res.ignorados.length} linha(s) ignorada(s).`:''))
+    revServicosCache=[]
+    carregarRevisoes()
+  }catch(e){ alert('Erro ao importar: '+e.message) }
+  finally{ btn.disabled=false;btn.textContent='Importar' }
 }
 
 // ── ALERTAS DE REVISÃO POR E-MAIL ─────────────────────────────

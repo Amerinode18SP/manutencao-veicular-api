@@ -105,6 +105,12 @@ async function importar(req, res) {
         )
         if (ve) throw ve
 
+        // Data de revisão da planilha também entra na agenda (fonte do alerta).
+        if (veiculoPayload.proxima_revisao) {
+          const { garantirRevisaoDaData } = require('./revisoesProgramadas')
+          await garantirRevisaoDaData(v.id, v.placa, veiculoPayload.proxima_revisao)
+        }
+
         // Upsert fornecedor
         const cnpjLimpo = r.cnpj.toString().replace(/\D/g, '')
         const fornecedorPayload = { razao_social: r.fornecedor.toString().trim(), cnpj: cnpjLimpo }

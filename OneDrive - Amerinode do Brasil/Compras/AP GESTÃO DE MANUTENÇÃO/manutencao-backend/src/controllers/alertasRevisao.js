@@ -126,19 +126,14 @@ async function marcarExecucao(status, detalhe) {
 // já foi alcançado (diff <= marco). Assim, com marcos {10,7}: faltando 9 dias cai
 // no marco 10; faltando 6, no marco 7. Vencida vira o marco especial -1.
 async function montarCandidatos(cfg) {
-  const { data, error } = await supabase
-    .from('veiculos')
-    .select('id, placa, localidade, km_atual, proxima_revisao, observacao')
-    .not('proxima_revisao', 'is', null)
-    .order('proxima_revisao')
-  if (error) throw error
+  const brutos = await lerAgenda()
 
   const marcos = cfg.alerta_revisao_dias
   const maior  = Math.max(...marcos)
   const itens  = []
 
-  for (const v of (data || [])) {
-    const dias = diasAte(v.proxima_revisao)
+  for (const v of brutos) {
+    const dias = diasAte(v.data)
     let marco
     if (dias < 0) {
       if (cfg.alerta_revisao_incluir_vencidas === false) continue
@@ -148,18 +143,61 @@ async function montarCandidatos(cfg) {
       marco = marcos.filter(m => dias <= m).pop()   // menor marco alcançado
       if (marco === undefined) continue
     }
-    itens.push({
+    itens.push({ ...v, proxima_revisao: v.data, dias, marco, vencida: marco === VENCIDA })
+  }
+  return itens.sort((a, b) => a.dias - b.dias)
+}
+
+// Fonte da agenda: `revisoes_programadas` (uma linha por serviço agendado, com
+// tipo e serviço). Se a tabela ainda não existir (SQL manual pendente), cai no
+// modelo antigo — uma data solta em `veiculos.proxima_revisao`.
+async function lerAgenda() {
+  try {
+    const { data, error } = await supabase
+      .from('revisoes_programadas')
+      .select('id, veiculo_id, placa, data_prevista, km_previsto, tipo, servico, observacao')
+      .eq('status', 'Pendente')
+      .order('data_prevista')
+    if (error) throw error
+
+    // localidade/km atual vêm do cadastro do veículo
+    const { data: veics } = await supabase.from('veiculos').select('id, localidade, km_atual')
+    const porId = new Map((veics || []).map(v => [v.id, v]))
+
+    return (data || []).map(r => {
+      const v = porId.get(r.veiculo_id) || {}
+      return {
+        revisao_id: r.id,
+        veiculo_id: r.veiculo_id,
+        placa: r.placa,
+        localidade: v.localidade || '',
+        km_atual: v.km_atual || null,
+        km_previsto: r.km_previsto || null,
+        tipo: r.tipo || 'Preventiva',
+        servico: r.servico || 'Revisão preventiva',
+        data: String(r.data_prevista).slice(0, 10)
+      }
+    })
+  } catch (e) {
+    console.warn('[alerta-revisao] usando veiculos.proxima_revisao (revisoes_programadas indisponível):', e.message)
+    const { data, error } = await supabase
+      .from('veiculos')
+      .select('id, placa, localidade, km_atual, proxima_revisao')
+      .not('proxima_revisao', 'is', null)
+      .order('proxima_revisao')
+    if (error) throw error
+    return (data || []).map(v => ({
+      revisao_id: null,
       veiculo_id: v.id,
       placa: v.placa,
       localidade: v.localidade || '',
       km_atual: v.km_atual || null,
-      proxima_revisao: String(v.proxima_revisao).slice(0, 10),
-      dias,
-      marco,
-      vencida: marco === VENCIDA
-    })
+      km_previsto: null,
+      tipo: 'Preventiva',
+      servico: 'Revisão preventiva',
+      data: String(v.proxima_revisao).slice(0, 10)
+    }))
   }
-  return itens.sort((a, b) => a.dias - b.dias)
 }
 
 // Marca `ja_enviado` consultando o log (chave: veículo + data + marco).
@@ -170,17 +208,22 @@ async function marcarJaEnviados(itens) {
   try {
     const { data, error } = await supabase
       .from('alertas_revisao_log')
-      .select('veiculo_id, data_revisao, dias_antecedencia')
+      .select('veiculo_id, data_revisao, dias_antecedencia, servico')
       .in('veiculo_id', ids)
     if (error) throw error
     log = data || []
   } catch (e) {
-    // Tabela ainda não criada (SQL manual pendente): segue sem dedupe.
+    // Tabela/coluna ainda não criada (SQL manual pendente): segue sem dedupe.
     console.warn('[alerta-revisao] log indisponível, seguindo sem dedupe:', e.message)
     return itens.map(i => ({ ...i, ja_enviado: false }))
   }
-  const chaves = new Set(log.map(l => `${l.veiculo_id}|${String(l.data_revisao).slice(0, 10)}|${l.dias_antecedencia}`))
-  return itens.map(i => ({ ...i, ja_enviado: chaves.has(`${i.veiculo_id}|${i.proxima_revisao}|${i.marco}`) }))
+  // A chave inclui o SERVIÇO: pneu e alinhamento na mesma data são avisos distintos.
+  const chaves = new Set(log.map(l =>
+    `${l.veiculo_id}|${String(l.data_revisao).slice(0, 10)}|${l.dias_antecedencia}|${l.servico || ''}`))
+  return itens.map(i => ({
+    ...i,
+    ja_enviado: chaves.has(`${i.veiculo_id}|${i.proxima_revisao}|${i.marco}|${i.servico || ''}`)
+  }))
 }
 
 async function registrarEnvios(itens, destinatarios) {
@@ -190,11 +233,13 @@ async function registrarEnvios(itens, destinatarios) {
     placa: i.placa,
     data_revisao: i.proxima_revisao,
     dias_antecedencia: i.marco,
+    servico: i.servico || '',
+    revisao_id: i.revisao_id || null,
     destinatarios
   }))
   try {
     await supabase.from('alertas_revisao_log')
-      .upsert(linhas, { onConflict: 'veiculo_id,data_revisao,dias_antecedencia', ignoreDuplicates: true })
+      .upsert(linhas, { onConflict: 'veiculo_id,data_revisao,dias_antecedencia,servico', ignoreDuplicates: true })
   } catch (e) {
     console.warn('[alerta-revisao] não gravou o log de envio:', e.message)
   }
@@ -235,8 +280,10 @@ function montarHtml(cfg, itens) {
   const linhas = itens.map(i => {
     const cor = i.vencida ? '#B22222' : (i.dias <= 3 ? '#B26A00' : '#0C447C')
     return `<tr>
-      <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2"><strong>${i.placa}</strong></td>
-      <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${i.localidade || '-'}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2"><strong>${escapeHtml(i.placa)}</strong></td>
+      <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${escapeHtml(i.localidade || '-')}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${escapeHtml(i.tipo || 'Preventiva')}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${escapeHtml(i.servico || '-')}</td>
       <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${i.km_atual ? Number(i.km_atual).toLocaleString('pt-BR') + ' km' : '-'}</td>
       <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${fmtBR(i.proxima_revisao)}</td>
       <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2;color:${cor};font-weight:600">${rotuloPrazo(i)}</td>
@@ -260,8 +307,10 @@ function montarHtml(cfg, itens) {
           <tr style="background:#F5F8FB;color:#0C447C;text-align:left">
             <th style="padding:8px 10px;border-bottom:2px solid #E0E6ED">Placa</th>
             <th style="padding:8px 10px;border-bottom:2px solid #E0E6ED">Localidade</th>
+            <th style="padding:8px 10px;border-bottom:2px solid #E0E6ED">Tipo</th>
+            <th style="padding:8px 10px;border-bottom:2px solid #E0E6ED">Serviço</th>
             <th style="padding:8px 10px;border-bottom:2px solid #E0E6ED">KM atual</th>
-            <th style="padding:8px 10px;border-bottom:2px solid #E0E6ED">Próxima revisão</th>
+            <th style="padding:8px 10px;border-bottom:2px solid #E0E6ED">Data prevista</th>
             <th style="padding:8px 10px;border-bottom:2px solid #E0E6ED">Prazo</th>
           </tr>
         </thead>
@@ -282,7 +331,7 @@ function montarTexto(cfg, itens) {
   const recado = String(cfg.alerta_revisao_mensagem || '').trim()
   return 'Revisões de manutenção se aproximando:\n\n' +
     (recado ? recado + '\n\n' : '') +
-    itens.map(i => `- ${i.placa} (${i.localidade || 's/ localidade'}) — revisão ${fmtBR(i.proxima_revisao)} · ${rotuloPrazo(i)}`).join('\n') +
+    itens.map(i => `- ${i.placa} (${i.localidade || 's/ localidade'}) — ${i.servico || 'Revisão'} [${i.tipo || 'Preventiva'}] — ${fmtBR(i.proxima_revisao)} · ${rotuloPrazo(i)}`).join('\n') +
     '\n\nSistema de Gestão de Manutenção Veicular — Amerinode'
 }
 
@@ -436,6 +485,7 @@ async function testeAlerta(req, res) {
     const itens = (await montarCandidatos(cfg)).slice(0, 10)
     const exemplo = itens.length ? itens : [{
       placa: 'ABC1D23', localidade: 'Exemplo', km_atual: 120000,
+      tipo: 'Preventiva', servico: 'Alinhamento e balanceamento',
       proxima_revisao: hojeISO(), dias: 7, marco: 7, vencida: false
     }]
     const r = await enviarEmail({

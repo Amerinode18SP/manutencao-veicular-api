@@ -14,6 +14,7 @@ const vidaUtilRoutes    = require('./routes/vidaUtil')
 const distanciaRoutes   = require('./routes/distancia')
 const configRoutes      = require('./routes/config')
 const alertasRoutes     = require('./routes/alertas')
+const revisoesRoutes    = require('./routes/revisoes')
 const { runMigrations } = require('./migrate')
 const { manterSessaoViva } = require('./controllers/importarKm')
 const { iniciarAgendador: iniciarAlertasRevisao } = require('./controllers/alertasRevisao')
@@ -46,6 +47,7 @@ app.use('/api/vida-util',    vidaUtilRoutes)
 app.use('/api/distancia',    distanciaRoutes)
 app.use('/api/config',       configRoutes)
 app.use('/api/alertas',      alertasRoutes)
+app.use('/api/revisoes',     revisoesRoutes)
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {

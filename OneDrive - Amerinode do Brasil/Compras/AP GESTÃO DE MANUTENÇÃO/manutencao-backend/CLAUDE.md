@@ -267,6 +267,44 @@ decisão de renovação da frota (TCO).
 - **Limitação honesta:** "km na 1ª manutenção" não é exato (ordens não guardam km) — usa o 1º
   registro do histórico de km como proxy; custo/km só aparece com ≥2 leituras de km no período.
 
+## 🗓️ Revisões programadas (agenda com TIPO e SERVIÇO)
+
+Antes existia **uma** data por veículo (`veiculos.proxima_revisao`), sem tipo nem serviço.
+Agora há a tabela **`revisoes_programadas`**: várias revisões por veículo, cada uma com
+`tipo` (Preventiva | Corretiva | Preditiva | Segurança) e `servico` (texto livre — troca de
+pneu, alinhamento e balanceamento, troca de óleo…), `data_prevista`, `km_previsto`, `status`
+(Pendente | Concluída | Cancelada), `observacao`, `origem` (Manual | Planilha | Migracao).
+
+- **SQL:** `scripts/revisoes-programadas.sql` — cria a tabela, **migra** as datas que já existiam
+  em `veiculos.proxima_revisao` (como Preventiva/"Revisão preventiva") e troca a UNIQUE de
+  `alertas_revisao_log` para incluir o `servico` (pneu e alinhamento no mesmo dia são avisos
+  distintos). A UNIQUE antiga é derrubada por um `DO $$` que a acha pela definição, já que o
+  nome é gerado pelo Postgres.
+- **Idempotência:** `UNIQUE (veiculo_id, data_prevista, servico)` — reimportar a mesma planilha
+  não duplica (upsert com esse `onConflict`).
+- **Backend:** `src/controllers/revisoesProgramadas.js`, rotas em `src/routes/revisoes.js` →
+  `/api/revisoes` (GET lista, GET `/servicos`, POST, POST `/importar`, PUT `/:id`,
+  POST `/:id/concluir`, DELETE `/:id`).
+- **`veiculos.proxima_revisao` continua viva e sincronizada** com a data da revisão PENDENTE
+  mais próxima (`sincronizarVeiculos`), a cada gravação — assim dashboard (`revisoes_proximas`/
+  `revisoes_urgentes`), relatórios e exports antigos não mudam.
+- **Ponte com os caminhos antigos:** `garantirRevisaoDaData()` espelha na agenda qualquer data
+  gravada por fora (edição de veículo em `outros.js`, cadastro/edição de OC em `ordens.js`,
+  import de Excel em `importar.js`). Sem isso, uma data digitada na OC nunca geraria alerta.
+- **Concluir** aceita `{ proxima_em_dias }` e já reagenda o mesmo serviço (ciclo de manutenção).
+- **Frontend:** subaba Próximas Revisões refeita — filtros (busca/tipo/status), colunas Tipo e
+  Serviço, `abrirModalRevisao`/`salvarRevisao` (modal `modal-revisao`, datalists de placa e
+  serviço), `concluirRevisaoProgramada`, `excluirRevisao`, `baixarTemplateRevisoes` (gera XLSX
+  com abas *Revisoes* + *Instrucoes* via SheetJS), `importarRevisoesXLSX` → prévia server-side
+  (`preview: true`) no modal `modal-rev-import` → `confirmarImportRevisoes`.
+- **Colunas da planilha:** Placa, Tipo de Revisão, Tipo de Manutenção, Data Prevista, KM Previsto,
+  Observação. Datas aceitam DD/MM/AAAA, ISO e serial do Excel — validadas no calendário
+  (`dataReal`), então 31/13/2026 é recusada como "data inválida" em vez de estourar no banco.
+- **A função antiga `concluirRevisao`** (marcava TODAS as ordens do veículo como Concluído e
+  limpava a data) foi removida: concluir agora encerra só o agendamento específico.
+- **AÇÃO MANUAL UMA VEZ:** rodar `scripts/revisoes-programadas.sql` **antes** de subir o deploy —
+  se a tabela não existir, a aba lista vazio (o alerta por e-mail tem fallback, a listagem não).
+
 ## 🔔 Alerta de revisão por e-mail (subaba de Próximas Revisões)
 
 3ª subaba de `page-revisoes` (`subtab-alertas`/`subcontent-alertas`). Avisa por e-mail quando a
@@ -280,7 +318,10 @@ não as vencidas, e o assunto.
 - **Backend:** `src/services/email.js` (envio por API HTTP — Resend/Brevo/SendGrid, **sem
   dependência nova**, porque mexer no `package-lock` quebra o `npm ci` do Railway) e
   `src/controllers/alertasRevisao.js`; rotas em `src/routes/alertas.js` → `/api/alertas/*`.
-- **Regra de seleção:** para cada veículo com `proxima_revisao`, escolhe o **menor marco
+- **Fonte da agenda:** `revisoes_programadas` (status Pendente) via `lerAgenda()`, com tipo e
+  serviço no corpo do e-mail. Se a tabela não existir, cai no modelo antigo
+  (`veiculos.proxima_revisao`) — não deixa de avisar por causa de SQL pendente.
+- **Regra de seleção:** para cada revisão pendente, escolhe o **menor marco
   configurado já alcançado** (`dias <= marco`) — com marcos {10,7}, faltando 9 dias cai no marco
   10; faltando 6, no marco 7. Vencidas usam o marco especial `-1`. Usar "menor marco alcançado"
   (e não igualdade exata) garante que um dia sem disparo (deploy/queda) não perca o aviso.
@@ -326,7 +367,8 @@ no SQL Editor; se persistir, **Settings → General → Restart project**. O SQL
 - `scripts/km-ticketlog.sql` (snapshot subaba Quilometragem) — FEITO
 - `scripts/km-historico.sql` (histórico de km) — verificar se rodou
 - `scripts/km-sync.sql` (cria `config_sistema` se faltar + colunas do sync) — FEITO jul/2026
-- `scripts/alertas-revisao.sql` (config do alerta de revisão por e-mail + log de envios) — PENDENTE
+- `scripts/alertas-revisao.sql` (config do alerta de revisão por e-mail + log de envios) — FEITO jul/2026
+- `scripts/revisoes-programadas.sql` (agenda com tipo/serviço + migra proxima_revisao) — PENDENTE
 - `ALTER TABLE veiculos ADD COLUMN IF NOT EXISTS km_atualizado_em DATE;` — verificar
 - `config_sistema` **não existia** neste projeto até jul/2026 (o toggle de bloqueio de fornecedor
   também dependia dela). `km-sync.sql` agora cria a tabela se faltar.

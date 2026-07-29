@@ -90,6 +90,12 @@ async function criar(req, res) {
     )
     if (veiculoErr) throw veiculoErr
 
+    // Data de revisão informada na OC também entra na agenda (fonte do alerta).
+    if (proxima_revisao) {
+      const { garantirRevisaoDaData } = require('./revisoesProgramadas')
+      await garantirRevisaoDaData(veiculoData.id, veiculoData.placa, proxima_revisao)
+    }
+
     // 2. Upsert fornecedor — Fase 2: respeita config bloquear_fornecedor_nao_homologado.
     //    Se a flag tiver ligada, qualquer OC com fornecedor inexistente OU nao homologado
     //    e rejeitada com 409 (precisa cadastrar/homologar antes).
@@ -198,6 +204,10 @@ async function atualizar(req, res) {
         )
         if (vErr) throw vErr
         camposOrdem.veiculo_id = novoVeic.id
+        if (proxima_revisao) {
+          const { garantirRevisaoDaData } = require('./revisoesProgramadas')
+          await garantirRevisaoDaData(novoVeic.id, novoVeic.placa, proxima_revisao)
+        }
       } else if (ordemAtual.veiculo_id) {
         const veiculoUpdate = { updated_at: new Date().toISOString() }
         if (localidade)                       veiculoUpdate.localidade = localidade
@@ -208,6 +218,10 @@ async function atualizar(req, res) {
           await tentarSemColunaFaltante(veiculoUpdate, p =>
             supabase.from('veiculos').update(p).eq('id', ordemAtual.veiculo_id)
           )
+        }
+        if (proxima_revisao) {
+          const { garantirRevisaoDaData } = require('./revisoesProgramadas')
+          await garantirRevisaoDaData(ordemAtual.veiculo_id, placaAtual, proxima_revisao)
         }
       }
 

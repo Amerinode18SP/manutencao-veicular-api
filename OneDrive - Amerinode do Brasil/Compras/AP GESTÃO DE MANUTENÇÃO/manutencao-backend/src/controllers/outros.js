@@ -48,6 +48,11 @@ async function atualizarVeiculo(req, res) {
       .select()
       .single()
     if (error) throw error
+    // Data digitada aqui também entra na agenda de revisões (fonte do alerta).
+    if (req.body && req.body.proxima_revisao) {
+      const { garantirRevisaoDaData } = require('./revisoesProgramadas')
+      await garantirRevisaoDaData(data.id, data.placa, req.body.proxima_revisao)
+    }
     res.json(data)
   } catch (err) {
     res.status(500).json({ error: err.message })
