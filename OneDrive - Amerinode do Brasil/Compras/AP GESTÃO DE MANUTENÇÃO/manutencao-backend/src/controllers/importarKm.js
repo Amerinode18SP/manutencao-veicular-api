@@ -529,14 +529,24 @@ async function loginAutomatico(_req, res) {
   }
 }
 
-// GET /api/km/sessao/status — a tela usa pra saber se pode oferecer "reconectar sozinho"
+// GET /api/km/sessao/status — a tela usa pra saber se pode oferecer "reconectar
+// sozinho". Devolve também um diagnóstico das credenciais: só PRESENÇA (nunca
+// valores) e os nomes de env que começam com TICKETLOG_, pra pegar erro de
+// digitação na variável do Railway.
 async function statusSessao(_req, res) {
   try {
     const cookie = await getSessaoCookie()
+    const preenchida = n => !!(process.env[n] || '').trim()
     res.json({
       sessao_configurada: !!cookie,
       login_automatico: !!ticketlog.credenciaisPortal(),
-      ultimo_status: await statusSessaoAnterior()
+      ultimo_status: await statusSessaoAnterior(),
+      credenciais: {
+        TICKETLOG_CODIGO:  preenchida('TICKETLOG_CODIGO'),
+        TICKETLOG_USUARIO: preenchida('TICKETLOG_USUARIO'),
+        TICKETLOG_SENHA:   preenchida('TICKETLOG_SENHA')
+      },
+      variaveis_ticketlog_no_ambiente: Object.keys(process.env).filter(k => /^TICKETLOG/i.test(k)).sort()
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
