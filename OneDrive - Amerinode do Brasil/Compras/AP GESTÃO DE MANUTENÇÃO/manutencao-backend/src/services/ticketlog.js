@@ -173,6 +173,21 @@ const pareceLogado = html => !/name=["']senha["']/i.test(html || '')
 // Só texto visível, cortado — nunca ecoa o que foi enviado.
 function mensagemDoPortal(html) {
   if (!html) return ''
+
+  // O portal manda o erro num alert() dentro de <script> — é ali que está a
+  // mensagem útil ("Senha ou usuário inválido", "Usuário bloqueado", ...).
+  // Precisa vir ANTES de remover os scripts, senão se perde.
+  const m = /alert\(\s*(['"])([\s\S]*?)\1\s*\)/i.exec(String(html))
+  if (m) {
+    return m[2]
+      .replace(/\\u([0-9a-f]{4})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/\\n/g, ' ')
+      .replace(/\\'/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 240)
+  }
+
   const texto = String(html)
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
