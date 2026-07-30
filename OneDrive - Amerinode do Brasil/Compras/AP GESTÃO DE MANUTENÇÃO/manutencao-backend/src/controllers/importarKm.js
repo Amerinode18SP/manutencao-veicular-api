@@ -525,7 +525,12 @@ async function loginAutomatico(_req, res) {
     try { await supabase.from('config_sistema').update({ km_sync_ultimo_status: 'ok' }).eq('id', 1) } catch {}
     res.json({ ok: true, conectado: true })
   } catch (err) {
-    res.status(err.status || 500).json({ error: err.message, detalhe: err.detalhe || null })
+    res.status(err.status || 500).json({
+      error: err.message,
+      detalhe: err.detalhe || null,
+      mensagem_portal: err.mensagem_portal || null,  // o texto que o portal mostrou
+      http_login: err.http_login || null
+    })
   }
 }
 

@@ -165,8 +165,29 @@ function extrairCsrf(html) {
 }
 
 // Portal pede confirmação quando já existe sessão ativa do mesmo usuário.
-const pedeForce = html => /j[áa]\s*(est[áa]\s*)?conectad|sess[ãa]o\s*(j[áa]\s*)?ativa|forceLogin/i.test(html || '')
+const pedeForce = html => /j[áa]\s*(est[áa]\s*)?conectad|sess[ãa]o\s*(j[áa]\s*)?ativa/i.test(html || '')
 const pareceLogado = html => !/name=["']senha["']/i.test(html || '')
+
+// Extrai a mensagem que o portal mostrou (ex.: "Usuário ou senha inválidos").
+// Sem isto o erro chega como um genérico e não dá pra saber o que corrigir.
+// Só texto visível, cortado — nunca ecoa o que foi enviado.
+function mensagemDoPortal(html) {
+  if (!html) return ''
+  const texto = String(html)
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&aacute;/gi, 'á').replace(/&eacute;/gi, 'é').replace(/&oacute;/gi, 'ó')
+    .replace(/&ccedil;/gi, 'ç').replace(/&atilde;/gi, 'ã').replace(/&otilde;/gi, 'õ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  // procura frases típicas de erro de autenticação
+  const alvo = /([^.]{0,120}(inv[áa]lid|incorret|n[ãa]o (foi|est[áa]|encontrad)|bloquead|expirad|senha|usu[áa]rio|c[óo]digo|tentativ)[^.]{0,120})/i.exec(texto)
+  const trecho = alvo ? alvo[1] : texto.slice(0, 200)
+  return trecho.trim().slice(0, 240)
+}
 
 async function loginPortal(opts = {}) {
   const cred = opts.credenciais || credenciaisPortal()
@@ -192,7 +213,10 @@ async function loginPortal(opts = {}) {
       usuario: cred.usuario,
       senha: cred.senha,
       acao: '',
-      forceLogin: forcar ? 'true' : ''
+      forceLogin: forcar ? 'true' : '',
+      // O navegador envia o campo do botão de submit; o ColdFusion costuma testar
+      // a presença dele para saber que é um envio de login de verdade.
+      'aem-login': 'ENTRAR'
     })
     if (csrf) body.set('_csrf_token', csrf)
 
@@ -240,6 +264,8 @@ async function loginPortal(opts = {}) {
     const e = new Error('login_recusado')
     e.status = 401
     e.detalhe = pareceLogado(corpo) ? 'sessão não firmou no portal' : 'credenciais ou código do usuário recusados'
+    e.mensagem_portal = mensagemDoPortal(corpo)   // o que o portal escreveu na tela
+    e.http_login = r.status
     throw e
   }
   return { cookie }
