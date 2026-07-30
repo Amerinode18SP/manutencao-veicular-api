@@ -260,6 +260,52 @@ automaticamente pelo keep-alive e pelo `sync` (retry único no 401).
 - **Aviso por e-mail:** quando a sessão cai E o login automático não resolve, sai e-mail pelos
   destinatários do alerta de revisão (`avisarSessaoCaiu`). Só na **transição** para expirado —
   `statusSessaoAnterior()` evita spam a cada 15 min do keep-alive.
+#### Estado da investigação (parada em 29/jul/2026, 23h) — RETOMAR AQUI
+
+**O que foi provado funcionando** no login do SouLog (`/autenticacao/`):
+- `acao=login` é **obrigatório** — o `jquery-comum.js` da tela faz `$('#acao').val('login')`
+  antes de submeter e o form cancela o envio se estiver vazio. Com vazio, o portal só
+  redesenha a tela **sem mensagem de erro** (foi o que nos enganou por várias rodadas).
+- Enviar também `aem-login=ENTRAR` (campo do botão de submit) e `_csrf_token` + header
+  `X-CSRF-Token` (token vem da `<meta name="csrf-token">` da própria tela).
+- O erro do portal vem dentro de um **`alert()` em `<script>`** — `mensagemDoPortal()` extrai
+  de lá (antes o extrator removia os scripts e perdia justamente a mensagem).
+- Validado com credenciais falsas: o portal responde *"Senha ou usuário inválido..."*, ou seja
+  o fluxo chega na autenticação de verdade.
+
+**Onde travou:** com as credenciais reais (`TICKETLOG_CODIGO=244457`, usuário = e-mail),
+o SouLog respondeu *"Senha ou usuário inválido"*. A usuária **nunca usa essa tela** — ela
+entra pela Conta Edenred (SSO), então provavelmente não existe senha própria no legado.
+**Próximo passo barato:** usar o link "Esqueceu sua senha?" da tela do SouLog (precisa código
++ nome do usuário) para receber uma senha por e-mail e colocá-la em `TICKETLOG_SENHA`.
+
+**Caminho do SSO (preferido pela usuária, ciclo de ~90 dias) — o que já se sabe:**
+- Login real dela: `https://sso.sa.edenred.io/web/session/step/password?returnUrl=/connect/authorize/callback?...`
+  · `client_id=fcfc49a2ff3b45ef9c5f245b37b4d567` · `acr_values=tenant:br-fleet-mobility`
+  · `scope=openid profile email portal-fleet-and-mobility-ms_application-mfa offline_access`
+  · PKCE S256 · `redirect_uri=https://plataforma.ticketlog.com.br/login-callback`
+- **`grant_type=password` é BLOQUEADO** para esse client → `{"error":"unauthorized_client"}`
+  (o SSO suporta o grant; o cliente não tem permissão).
+- **A tela de login tem reCAPTCHA** (`data-sitekey=6LeDfbIZAAAAAF_IQ7_L0OFQQpf--fbWkMhwdfsq`)
+  → automatizar o login server-side está **descartado**.
+- **Sobrou o caminho do refresh token** (o scope pede `offline_access`): a pessoa loga no
+  navegador (resolve o captcha), captura-se o refresh token uma vez, e o servidor renova
+  sozinho por ~90 dias.
+- **PONTE DESCOBERTA:** `https://plataforma.ticketlog.com.br/legacy?link=<base64 do caminho>`
+  — o base64 de `GoodManagerSSL/Fuel/FuelRelUltimasKmForm.cfm` é
+  `R29vZE1hbmFnZXJTU0wvRnVlbC9GdWVsUmVsVWx0aW1hc0ttRm9ybS5jZm0=`; o do relatório
+  (`...FuelRelUltimasKmLista.cfm`) é `R29vZE1hbmFnZXJTU0wvRnVlbC9GdWVsUmVsVWx0aW1hc0ttTGlzdGEuY2Zt`.
+  Essa rota da plataforma cria a sessão no legado e carrega o portal antigo num **iframe**.
+- **PEÇA QUE FALTA:** qual requisição a rota `/legacy` dispara para criar a sessão (provável
+  chamada a `plataformaapi.ticketlog.com.br/soulog/...` com Bearer, devolvendo um token/URL
+  que o legado aceita). Capturar com F12 → Network → botão **Doc** ao abrir a URL da ponte.
+  A API não expõe swagger (`/swagger/*` → 404).
+
+**Ideia da usuária a validar antes de tudo isso:** a correção do cookie rotacionado subiu hoje
+**depois** da sessão já ter expirado (15:20), então **nunca foi testada**. Reconectar pelo cURL
+e, com a telemetria (`km_keepalive_em`/`km_keepalive_status`) agora gravando, medir quanto a
+sessão dura. Se durar dias, toda a ponte/refresh token vira opcional.
+
 - **AÇÃO MANUAL:** rodar as colunas de telemetria do keep-alive (não existiam):
   `ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS km_keepalive_em TIMESTAMPTZ;` e
   `... km_keepalive_status TEXT;` — sem elas não há como medir a duração real da sessão.
