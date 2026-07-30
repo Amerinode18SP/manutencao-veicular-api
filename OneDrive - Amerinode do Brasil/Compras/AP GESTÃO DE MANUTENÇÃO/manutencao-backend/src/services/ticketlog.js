@@ -212,7 +212,11 @@ async function loginPortal(opts = {}) {
       codigo: cred.codigo,
       usuario: cred.usuario,
       senha: cred.senha,
-      acao: '',
+      // OBRIGATÓRIO: o jquery-comum.js da própria tela faz $('#acao').val('login')
+      // antes de enviar, e o form bloqueia o submit se 'acao' estiver vazio. Com o
+      // campo vazio o portal apenas redesenha a tela de login, sem erro nenhum —
+      // foi o que nos enganou na primeira tentativa.
+      acao: 'login',
       forceLogin: forcar ? 'true' : '',
       // O navegador envia o campo do botão de submit; o ColdFusion costuma testar
       // a presença dele para saber que é um envio de login de verdade.
