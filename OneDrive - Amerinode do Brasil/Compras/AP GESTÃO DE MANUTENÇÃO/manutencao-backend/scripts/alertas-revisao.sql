@@ -25,6 +25,11 @@ ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS alerta_revisao_ultima_execuc
 ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS alerta_revisao_ultimo_status    TEXT;                           -- ok | sem_pendencias | sem_destinatarios | desativado | erro
 ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS alerta_revisao_ultimo_detalhe   TEXT;                           -- mensagem legível do último disparo
 
+-- ── Avisos TÉCNICOS da integração (sessão TicketLog caiu) ────────────────────
+-- Lista SEPARADA de propósito: o alerta de revisão vai para o time todo, mas o
+-- aviso técnico só interessa a quem administra a integração. Vazio = ninguém recebe.
+ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS alerta_tecnico_emails           TEXT[]      DEFAULT '{}';
+
 -- ── Log de envios: evita mandar o MESMO aviso duas vezes ─────────────────────
 -- Uma linha por (veículo, data da revisão, antecedência). dias_antecedencia = -1
 -- representa o aviso de revisão VENCIDA.

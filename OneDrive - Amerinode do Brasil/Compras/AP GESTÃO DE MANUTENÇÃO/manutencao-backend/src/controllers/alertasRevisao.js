@@ -24,7 +24,11 @@ const PADRAO = {
   alerta_revisao_incluir_vencidas: true,
   alerta_revisao_hora: 8,
   alerta_revisao_assunto: '',
-  alerta_revisao_mensagem: ''
+  alerta_revisao_mensagem: '',
+  // Lista SEPARADA: avisos técnicos da integração (sessão TicketLog caiu).
+  // Não usa alerta_revisao_emails de propósito — o alerta de revisão vai pro time
+  // todo, e o técnico só interessa a quem administra a integração.
+  alerta_tecnico_emails: []
 }
 
 // ── Datas no fuso de Brasília (o Railway roda em UTC) ────────────────────────
@@ -83,6 +87,7 @@ async function lerConfig() {
   if (error) throw error
   const cfg = { ...PADRAO, ...(data || {}) }
   cfg.alerta_revisao_emails = normalizarEmails(cfg.alerta_revisao_emails).emails
+  cfg.alerta_tecnico_emails = normalizarEmails(cfg.alerta_tecnico_emails).emails
   cfg.alerta_revisao_dias   = normalizarDias(cfg.alerta_revisao_dias)
   if (!cfg.alerta_revisao_dias.length) cfg.alerta_revisao_dias = PADRAO.alerta_revisao_dias
   const h = parseInt(cfg.alerta_revisao_hora, 10)
@@ -95,6 +100,7 @@ function recorteConfig(cfg) {
   return {
     ativo:            !!cfg.alerta_revisao_ativo,
     emails:           cfg.alerta_revisao_emails,
+    emails_tecnico:   cfg.alerta_tecnico_emails,
     dias:             cfg.alerta_revisao_dias,
     incluir_vencidas: cfg.alerta_revisao_incluir_vencidas !== false,
     hora:             cfg.alerta_revisao_hora,
@@ -403,6 +409,11 @@ async function putConfigAlerta(req, res) {
       if (invalidos.length) return res.status(400).json({ error: `E-mail inválido: ${invalidos.join(', ')}` })
       payload.alerta_revisao_emails = n.emails
     }
+    if ('emails_tecnico' in body) {
+      const n = normalizarEmails(body.emails_tecnico)
+      if (n.invalidos.length) return res.status(400).json({ error: `E-mail inválido (avisos técnicos): ${n.invalidos.join(', ')}` })
+      payload.alerta_tecnico_emails = n.emails
+    }
     if ('dias' in body) {
       const dias = normalizarDias(body.dias)
       if (!dias.length) return res.status(400).json({ error: 'Informe ao menos uma antecedência em dias (ex.: 10 e 7).' })
@@ -430,7 +441,7 @@ async function putConfigAlerta(req, res) {
     res.json(recorteConfig(await lerConfig()))
   } catch (err) {
     // Colunas novas → PostgREST reclama até o SQL manual rodar (ver CLAUDE.md).
-    const falta = /schema cache|column .* does not exist|alerta_revisao/i.test(err.message)
+    const falta = /schema cache|column .* does not exist|alerta_revisao|alerta_tecnico/i.test(err.message)
     res.status(500).json({
       error: falta
         ? `As colunas de configuração ainda não existem no banco. Rode "scripts/alertas-revisao.sql" no Supabase (SQL Editor) e depois NOTIFY pgrst, 'reload schema'. Detalhe: ${err.message}`

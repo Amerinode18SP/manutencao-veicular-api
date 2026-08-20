@@ -317,10 +317,19 @@ async function avisarSessaoCaiu(detalhe) {
   try {
     const { enviarEmail, statusEmail } = require('../services/email')
     if (!statusEmail().configurado) return
-    const { data } = await supabase.from('config_sistema')
-      .select('alerta_revisao_emails').eq('id', 1).single()
-    const para = (data && data.alerta_revisao_emails) || []
-    if (!para.length) return
+    // Lista PRÓPRIA (alerta_tecnico_emails). Antes reusava alerta_revisao_emails,
+    // e o time inteiro do aviso de revisão levava também este e-mail técnico.
+    const { data, error } = await supabase.from('config_sistema')
+      .select('alerta_tecnico_emails').eq('id', 1).single()
+    if (error) {
+      console.warn('[km] não avisou por e-mail (coluna alerta_tecnico_emails ausente?):', error.message)
+      return
+    }
+    const para = (data && data.alerta_tecnico_emails) || []
+    if (!para.length) {
+      console.log('[km] sessão caiu, mas nenhum e-mail cadastrado em "Avisos técnicos da integração"')
+      return
+    }
 
     const temCred = !!ticketlog.credenciaisPortal()
     await enviarEmail({

@@ -372,8 +372,10 @@ pneu, alinhamento e balanceamento, troca de óleo…), `data_prevista`, `km_prev
   gravada por fora (edição de veículo em `outros.js`, cadastro/edição de OC em `ordens.js`,
   import de Excel em `importar.js`). Sem isso, uma data digitada na OC nunca geraria alerta.
 - **Concluir** aceita `{ proxima_em_dias }` e já reagenda o mesmo serviço (ciclo de manutenção).
-- **Frontend:** subaba Próximas Revisões refeita — filtros (busca/tipo/status), colunas Tipo e
-  Serviço, `abrirModalRevisao`/`salvarRevisao` (modal `modal-revisao`, datalists de placa e
+- **Frontend:** subaba Próximas Revisões refeita — filtros (busca/tipo/status), colunas com os
+  MESMOS nomes da planilha (Tipo de Revisão, Tipo de Manutenção, Observação — a observação tem
+  coluna própria, antes era só um subtexto embaixo do serviço; `REV_COLS` = nº de colunas, usado
+  nos colspan das mensagens), `abrirModalRevisao`/`salvarRevisao` (modal `modal-revisao`, datalists de placa e
   serviço), `concluirRevisaoProgramada`, `excluirRevisao`, `baixarTemplateRevisoes` (gera XLSX
   com abas *Revisoes* + *Instrucoes* via SheetJS), `importarRevisoesXLSX` → prévia server-side
   (`preview: true`) no modal `modal-rev-import` → `confirmarImportRevisoes`.
@@ -395,6 +397,12 @@ não as vencidas, e o assunto.
 - **Config:** colunas `alerta_revisao_*` em `config_sistema` (linha única id=1). Rodar
   `scripts/alertas-revisao.sql` (cria também `alertas_revisao_log`). Inclui `alerta_revisao_mensagem`
   — recado livre do operador, renderizado acima da tabela (escapado com `escapeHtml`, `\n` → `<br>`).
+- **Avisos TÉCNICOS têm lista PRÓPRIA** (`alerta_tecnico_emails`, `scripts/alerta-tecnico-emails.sql`,
+  ago/2026). O e-mail "Atualização automática de KM parou (sessão TicketLog)" reusava
+  `alerta_revisao_emails` e ia para o time inteiro do alerta de revisão — 8 pessoas que não
+  administram a integração. Agora é lista separada, editada no mesmo card da tela
+  (🛠️ Avisos técnicos da integração). **Vazia = ninguém recebe**; se a coluna faltar,
+  `avisarSessaoCaiu()` loga e sai sem enviar (não derruba o keep-alive).
 - **Backend:** `src/services/email.js` (envio por API HTTP — Resend/Brevo/SendGrid, **sem
   dependência nova**, porque mexer no `package-lock` quebra o `npm ci` do Railway) e
   `src/controllers/alertasRevisao.js`; rotas em `src/routes/alertas.js` → `/api/alertas/*`.
@@ -455,6 +463,7 @@ no SQL Editor; se persistir, **Settings → General → Restart project**. O SQL
 - `scripts/km-historico.sql` (histórico de km) — verificar se rodou
 - `scripts/km-sync.sql` (cria `config_sistema` se faltar + colunas do sync) — FEITO jul/2026
 - `scripts/alertas-revisao.sql` (config do alerta de revisão por e-mail + log de envios) — FEITO jul/2026
+- `scripts/alerta-tecnico-emails.sql` (lista separada dos avisos técnicos da integração) — FEITO ago/2026
 - `scripts/revisoes-programadas.sql` (agenda com tipo/serviço + migra proxima_revisao) — FEITO jul/2026 (migrou 4 datas)
 - `ALTER TABLE veiculos ADD COLUMN IF NOT EXISTS km_atualizado_em DATE;` — verificar
 - `config_sistema` **não existia** neste projeto até jul/2026 (o toggle de bloqueio de fornecedor

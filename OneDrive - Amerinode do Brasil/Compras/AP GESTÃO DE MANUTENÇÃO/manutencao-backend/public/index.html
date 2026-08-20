@@ -751,6 +751,22 @@ tr:hover td{background:#F9F9F9}
               style="width:100%;padding:10px 12px;border:1px solid #DDD;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
             <div style="font-size:11px;color:#888;margin-top:4px">Aparece em destaque acima da tabela de veículos, em todos os e-mails. Deixe vazio para não incluir nenhum recado.</div>
           </div>
+
+          <!-- Avisos TÉCNICOS: lista separada, só para quem administra a integração -->
+          <div style="margin-top:16px;padding-top:14px;border-top:1px dashed #DCE6F1">
+            <label style="font-size:12px;font-weight:600;color:#1E3A5F;display:block;margin-bottom:6px">🛠️ Avisos técnicos da integração (quem recebe)</label>
+            <div style="display:flex;gap:6px;max-width:520px">
+              <input id="al-tec-input" type="email" placeholder="nome@amerinode.com.br"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault();alertasAddEmailTecnico()}"
+                     style="flex:1;padding:8px 12px;border:1px solid #DDD;border-radius:8px;font-size:13px">
+              <button class="btn" onclick="alertasAddEmailTecnico()">+ Adicionar</button>
+            </div>
+            <div id="al-tec-emails" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;min-height:30px"></div>
+            <div style="font-size:11px;color:#888;margin-top:6px">
+              Lista <strong>separada</strong> da de cima. Recebe só os avisos de falha da integração (ex.: “A atualização automática de KM parou — sessão TicketLog”),
+              que não interessam a quem só acompanha as revisões. <strong>Vazia = ninguém recebe</strong> esse tipo de aviso.
+            </div>
+          </div>
         </div>
 
         <!-- Prévia -->
@@ -4275,7 +4291,7 @@ async function confirmarImportRevisoes(){
 // ── ALERTAS DE REVISÃO POR E-MAIL ─────────────────────────────
 // Nada é fixo no código: destinatários, dias de antecedência, horário e
 // "incluir vencidas" são editados aqui e gravados em config_sistema.
-let alertasCfg={ativo:false,emails:[],dias:[],incluir_vencidas:true,hora:8,assunto:'',email:{configurado:false}}
+let alertasCfg={ativo:false,emails:[],emails_tecnico:[],dias:[],incluir_vencidas:true,hora:8,assunto:'',email:{configurado:false}}
 
 async function carregarConfigAlertas(){
   const sel=document.getElementById('al-hora')
@@ -4290,13 +4306,13 @@ async function carregarConfigAlertas(){
     document.getElementById('al-assunto').value=cfg.assunto||''
     document.getElementById('al-mensagem').value=cfg.mensagem||''
     sel.value=String(cfg.hora)
-    alertasRenderEmails(); alertasRenderDias(); alertasRenderStatus()
+    alertasRenderEmails(); alertasRenderEmailsTecnico(); alertasRenderDias(); alertasRenderStatus()
   }catch(e){
     document.getElementById('al-status').textContent='— erro ao carregar: '+e.message
   }
   // visualizador não edita
   const isAdmin=currentPerfil==='administrador'
-  ;['al-email-input','al-dia-input','al-hora','al-vencidas','al-ativo','al-assunto','al-mensagem']
+  ;['al-email-input','al-tec-input','al-dia-input','al-hora','al-vencidas','al-ativo','al-assunto','al-mensagem']
     .forEach(id=>{const el=document.getElementById(id); if(el) el.disabled=!isAdmin})
 }
 
@@ -4347,6 +4363,28 @@ function alertasAddEmail(){
 }
 function alertasRemoveEmail(i){alertasCfg.emails.splice(i,1);alertasRenderEmails()}
 
+// Lista dos avisos técnicos da integração — separada da de revisão de propósito:
+// o aviso de "KM parou / sessão TicketLog" só interessa a quem administra a integração.
+function alertasRenderEmailsTecnico(){
+  const box=document.getElementById('al-tec-emails'); if(!box) return
+  const lista=alertasCfg.emails_tecnico||[]
+  if(!lista.length){box.innerHTML='<span style="font-size:12px;color:#999">Ninguém cadastrado — os avisos técnicos não serão enviados.</span>';return}
+  box.innerHTML=lista.map((e,i)=>
+    `<span style="display:inline-flex;align-items:center;gap:6px;background:#EFEFEF;color:#444;padding:5px 10px;border-radius:14px;font-size:12px">
+      ${e}<button onclick="alertasRemoveEmailTecnico(${i})" title="Remover" style="background:none;border:none;color:#444;cursor:pointer;font-size:13px;line-height:1;padding:0">✕</button>
+    </span>`).join('')
+}
+function alertasAddEmailTecnico(){
+  const inp=document.getElementById('al-tec-input')
+  const novos=String(inp.value||'').split(/[;,\s]+/).map(s=>s.trim().toLowerCase()).filter(Boolean)
+  const ruins=novos.filter(e=>!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e))
+  if(ruins.length){alert('E-mail inválido: '+ruins.join(', '));return}
+  if(!alertasCfg.emails_tecnico) alertasCfg.emails_tecnico=[]
+  novos.forEach(e=>{if(!alertasCfg.emails_tecnico.includes(e)) alertasCfg.emails_tecnico.push(e)})
+  inp.value=''; alertasRenderEmailsTecnico()
+}
+function alertasRemoveEmailTecnico(i){alertasCfg.emails_tecnico.splice(i,1);alertasRenderEmailsTecnico()}
+
 function alertasAddDia(valor){
   const inp=document.getElementById('al-dia-input')
   const n=parseInt(valor!==undefined?valor:inp.value,10)
@@ -4368,6 +4406,7 @@ async function alertasSalvar(){
     const cfg=await apiCall('/api/alertas/revisao/config','PUT',{
       ativo,
       emails: alertasCfg.emails,
+      emails_tecnico: alertasCfg.emails_tecnico||[],
       dias: alertasCfg.dias,
       incluir_vencidas: document.getElementById('al-vencidas').checked,
       hora: parseInt(document.getElementById('al-hora').value,10),
@@ -4375,7 +4414,7 @@ async function alertasSalvar(){
       mensagem: document.getElementById('al-mensagem').value
     })
     alertasCfg=cfg
-    alertasRenderEmails(); alertasRenderDias(); alertasRenderStatus()
+    alertasRenderEmails(); alertasRenderEmailsTecnico(); alertasRenderDias(); alertasRenderStatus()
     alert('✅ Configuração salva.\n\n'+(cfg.ativo
       ? `O alerta será enviado todo dia às ${String(cfg.hora).padStart(2,'0')}:00 para ${cfg.emails.length} destinatário(s), com ${cfg.dias.join(' e ')} dia(s) de antecedência.`
       : 'O envio automático está DESATIVADO (marque "Ativar" para começar a disparar).'))
