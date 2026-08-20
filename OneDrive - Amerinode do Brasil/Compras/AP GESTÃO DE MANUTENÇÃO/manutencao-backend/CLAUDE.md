@@ -257,9 +257,12 @@ automaticamente pelo keep-alive e pelo `sync` (retry único no 401).
 - **Recomendado:** usuário dedicado à integração, para não brigar com o login da equipe.
 - **Rotas novas:** `POST /api/km/login` (entra e guarda a sessão; usar para testar),
   `GET /api/km/sessao/status` (a tela pergunta se há login automático).
-- **Aviso por e-mail:** quando a sessão cai E o login automático não resolve, sai e-mail pelos
-  destinatários do alerta de revisão (`avisarSessaoCaiu`). Só na **transição** para expirado —
-  `statusSessaoAnterior()` evita spam a cada 15 min do keep-alive.
+- **Aviso por e-mail:** quando a sessão cai E o login automático não resolve, sai e-mail
+  (`avisarSessaoCaiu`) para `config_sistema.alerta_tecnico_emails` — lista **própria**, editada em
+  🔔 Alertas por e-mail → 🛠️ Avisos técnicos da integração. Vazia = ninguém recebe. Só na
+  **transição** para expirado — `statusSessaoAnterior()` evita spam a cada 15 min do keep-alive.
+  Até ago/2026 reusava `alerta_revisao_emails` e o aviso técnico ia para as 8 pessoas do alerta
+  de revisão.
 #### Estado da investigação (parada em 29/jul/2026, 23h) — RETOMAR AQUI
 
 **O que foi provado funcionando** no login do SouLog (`/autenticacao/`):
@@ -372,6 +375,11 @@ pneu, alinhamento e balanceamento, troca de óleo…), `data_prevista`, `km_prev
   gravada por fora (edição de veículo em `outros.js`, cadastro/edição de OC em `ordens.js`,
   import de Excel em `importar.js`). Sem isso, uma data digitada na OC nunca geraria alerta.
 - **Concluir** aceita `{ proxima_em_dias }` e já reagenda o mesmo serviço (ciclo de manutenção).
+- **Atalho no menu lateral** (ago/2026): 🔔 Alertas por e-mail, logo abaixo de Próximas Revisões.
+  `abrirAlertasEmail()` reusa a MESMA tela (`showPage('revisoes')` + `abrirSubabaRevisoes('alertas')`),
+  sem duplicar config. Junto veio a correção do realce do menu: era por **índice** do `.nav-item`,
+  então qualquer item inserido no meio desalinhava Relatórios/Análise/Em Manutenção; agora casa
+  pelo próprio `onclick`. **Ao mexer no menu, não volte a indexar por posição.**
 - **Frontend:** subaba Próximas Revisões refeita — filtros (busca/tipo/status), colunas com os
   MESMOS nomes da planilha (Tipo de Revisão, Tipo de Manutenção, Observação — a observação tem
   coluna própria, antes era só um subtexto embaixo do serviço; `REV_COLS` = nº de colunas, usado
