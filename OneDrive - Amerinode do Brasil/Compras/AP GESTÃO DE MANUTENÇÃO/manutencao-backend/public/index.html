@@ -329,6 +329,7 @@ tr:hover td{background:#F9F9F9}
   <div class="nav-item" id="nav-cadastro" onclick="showPage('cadastro')">➕ Novo Cadastro</div>
   <div class="nav-item" id="nav-importar" onclick="showPage('importar')">📥 Importar Excel</div>
   <div class="nav-item" onclick="showPage('revisoes')">🛡️ Próximas Revisões</div>
+  <div class="nav-item" id="nav-alertas" onclick="abrirAlertasEmail()">🔔 Alertas por e-mail</div>
   <div class="nav-item" onclick="showPage('relatorios')">📑 Relatórios</div>
   <div class="nav-item" onclick="showPage('analise')">💰 Análise de Gastos</div>
   <div class="nav-item" onclick="showPage('manutencao')">🔧 Em Manutenção</div>
@@ -1964,8 +1965,11 @@ function showPage(id){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'))
   const titles={dashboard:'Dashboard',ordens:'Ordens de Compra',cadastro:'Novo Cadastro',importar:'Importar Excel',revisoes:'Próximas Revisões',relatorios:'Relatórios',analise:'Análise de Gastos',manutencao:'Controle em Manutenção',usuarios:'Gerenciar Usuários'}
   document.getElementById('page-title').textContent=titles[id]||''
-  const navs=['dashboard','ordens','cadastro','importar','revisoes','relatorios','analise','manutencao']
-  navs.forEach((n,i)=>{if(n===id)document.querySelectorAll('.nav-item')[i]?.classList.add('active')})
+  // Destaca pelo proprio onclick. Antes era por INDICE do .nav-item, o que quebrava
+  // o realce de todo mundo abaixo assim que um item novo entrava no meio do menu.
+  document.querySelectorAll('.nav-item').forEach(n=>{
+    if((n.getAttribute('onclick')||'').includes("showPage('"+id+"')")) n.classList.add('active')
+  })
   if(id==='dashboard') carregarDashboard()
   if(id==='ordens') carregarOrdens()
   if(id==='revisoes') carregarRevisoes()
@@ -1974,6 +1978,16 @@ function showPage(id){
   if(id==='analise') carregarAnalise()
   if(id==='cadastro' && cadastroItens.length===0){cadastroItens=[novoItemCadastro()];renderItensCadastro()}
   if(id==='manutencao') carregarManutencao()
+}
+
+// Atalho do menu lateral -> subaba de alertas (ficava escondida em 3 cliques).
+// Reusa a mesma tela, sem duplicar a config em outro lugar.
+function abrirAlertasEmail(){
+  showPage('revisoes')
+  abrirSubabaRevisoes('alertas')
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'))
+  document.getElementById('nav-alertas').classList.add('active')
+  document.getElementById('page-title').textContent='Alertas por e-mail'
 }
 
 function showModal(id){document.getElementById(id).classList.add('open')}
