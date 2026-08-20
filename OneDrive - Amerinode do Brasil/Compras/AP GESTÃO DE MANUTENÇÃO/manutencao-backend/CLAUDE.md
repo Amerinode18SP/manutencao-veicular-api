@@ -263,6 +263,23 @@ automaticamente pelo keep-alive e pelo `sync` (retry único no 401).
   **transição** para expirado — `statusSessaoAnterior()` evita spam a cada 15 min do keep-alive.
   Até ago/2026 reusava `alerta_revisao_emails` e o aviso técnico ia para as 8 pessoas do alerta
   de revisão.
+#### Medição de 20/ago/2026 (mais recente)
+
+- `GET /api/km/sessao/status` → `sessao_configurada:true`, `login_automatico:true`,
+  `ultimo_status:"ok"`; `/api/km/ticketlog` mostrava sync do próprio dia. Ou seja: **a integração
+  funciona**; o que dói é a sessão morrer de tempos em tempos e exigir reconexão manual.
+- `POST /api/km/login` testado 1x: **ainda recusado** — `login_recusado`, mensagem do portal
+  *"Senha ou usuário inválido..."*, HTTP 200. Confirma que a mecânica do login está certa e o que
+  falta é credencial válida no legado. **Não repetir esse teste em série** (risco de bloqueio).
+- **Decisão:** pedir à TicketLog um **usuário dedicado de integração** (login direto no SouLog, sem
+  SSO/MFA/reCAPTCHA, com acesso ao relatório de Últimas Quilometragens) ou, melhor, uma API
+  oficial de hodômetro. Texto do chamado redigido em ago/2026. Com a senha válida em
+  `TICKETLOG_SENHA`, o login automático já implementado resolve sozinho e o refresh token do SSO
+  (ponte `/legacy`) vira desnecessário.
+- **Por que "só pegar um token" não resolve:** o relatório vive no legado ColdFusion, que aceita
+  **apenas cookie de sessão** — não Bearer. Token do SSO só serviria via a ponte `/legacy`, que
+  continua sem captura.
+
 #### Estado da investigação (parada em 29/jul/2026, 23h) — RETOMAR AQUI
 
 **O que foi provado funcionando** no login do SouLog (`/autenticacao/`):
