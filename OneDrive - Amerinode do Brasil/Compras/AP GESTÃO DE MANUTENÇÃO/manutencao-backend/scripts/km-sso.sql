@@ -27,6 +27,15 @@ INSERT INTO config_sistema (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 -- GET /api/km/sessao/status (que informa apenas se está preenchido).
 ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS ticketlog_sso_refresh TEXT;
 
--- Conferência (deve listar a coluna nova):
+-- ── Aviso de renovação dos ~90 dias (26/08/2026) ────────────────────────────
+-- Quando o ciclo atual COMEÇOU. Só muda quando uma PESSOA cola um codigo novo no
+-- Railway (a semente do ambiente) — NUNCA nas renovações automáticas. Se ela
+-- fosse atualizada a cada rotação, que acontece o dia todo, o aviso de validade
+-- nunca chegaria a disparar e o acesso venceria de surpresa.
+ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS ticketlog_sso_conectado_em TIMESTAMPTZ;
+-- Último e-mail de "renove o acesso" — segura a repetição em 1x por semana.
+ALTER TABLE config_sistema ADD COLUMN IF NOT EXISTS ticketlog_sso_aviso_em     TIMESTAMPTZ;
+
+-- Conferência (deve listar as três colunas):
 -- SELECT column_name FROM information_schema.columns
---  WHERE table_name = 'config_sistema' AND column_name = 'ticketlog_sso_refresh';
+--  WHERE table_name = 'config_sistema' AND column_name LIKE 'ticketlog_sso%';

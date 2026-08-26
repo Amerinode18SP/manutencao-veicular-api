@@ -870,7 +870,7 @@ tr:hover td{background:#F9F9F9}
           <tbody id="km-import-table"></tbody>
         </table></div>
         <div style="font-size:11px;color:#888;margin-top:10px;padding:8px 12px;background:#FAFCFE;border:1px dashed #DCE6F1;border-radius:8px">
-          Só os veículos marcados serão atualizados. Leituras com <strong>km menor que a atual</strong> vêm desmarcadas (possível erro de digitação no posto) — marque manualmente se quiser forçar. Placas não cadastradas e valores 999.999 são ignorados.
+          Só os veículos marcados serão atualizados. Leituras com <strong>km menor que a atual</strong> vêm desmarcadas (possível erro de digitação no posto) — marque manualmente se quiser forçar. Placas fora do cadastro (🚗 veículo alugado) e valores 999.999 são ignorados.
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
           <button class="btn" onclick="closeModal('modal-km-import')">Cancelar</button>
@@ -1116,7 +1116,7 @@ tr:hover td{background:#F9F9F9}
             <tbody id="km-vei-table"><tr><td colspan="5" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
           </table></div>
           <div style="font-size:11px;color:#888;margin-top:10px;padding:8px 12px;background:#FAFCFE;border:1px dashed #DCE6F1;border-radius:8px">
-            Mostra as placas do <strong>último relatório TicketLog importado</strong>. Use o botão <strong>🔢 Importar Km (TicketLog)</strong> acima para atualizar. "Lida em" é a data da leitura no posto. Placas <strong>não cadastradas</strong> como veículo aparecem marcadas em vermelho — cadastre-as em Veículos para vinculá-las.
+            Mostra as placas do <strong>último relatório TicketLog importado</strong>. Use o botão <strong>🔢 Importar Km (TicketLog)</strong> acima para atualizar. "Lida em" é a data da leitura no posto. Placas que não existem no cadastro de Veículos aparecem como <strong>🚗 Veículo alugado</strong> — em geral são carros alugados, que abastecem no cartão mas não entram no controle de revisão. Se alguma delas for da frota própria, cadastre-a em Veículos para vinculá-la.
           </div>
         </div>
       </div>
@@ -3857,7 +3857,7 @@ function renderKmVeiculos(){
   })
   const naoCad=kmVeiculosDados.filter(v=>!v.cadastrada).length
   document.getElementById('km-vei-count').textContent=
-    `${kmVeiculosDados.length} placas do relatório`+(naoCad?` · ${naoCad} não cadastrada(s)`:'')
+    `${kmVeiculosDados.length} placas do relatório`+(naoCad?` · ${naoCad} alugado(s)`:'')
   const tb=document.getElementById('km-vei-table')
   if(!kmVeiculosDados.length){tb.innerHTML='<tr><td colspan="5" class="empty">Nenhum relatório TicketLog importado ainda. Importe pela aba <strong>Próximas Revisões</strong>.</td></tr>';return}
   if(!lista.length){tb.innerHTML='<tr><td colspan="5" class="empty">Nenhuma placa com esse filtro.</td></tr>';return}
@@ -4511,7 +4511,12 @@ function kmStatusInfo(s){
   if(s==='ok')             return {txt:'✅ Atualizar',              cor:'#27500A', check:true,  lock:false}
   if(s==='regressao')      return {txt:'⚠️ Km menor que a atual',   cor:'#8A5A00', check:false, lock:false}
   if(s==='invalido')       return {txt:'⛔ Valor inválido (999.999)', cor:'#791F1F', check:false, lock:true}
-  if(s==='nao_encontrado') return {txt:'❓ Placa não cadastrada',   cor:'#791F1F', check:false, lock:true}
+  // Placa que abastece no cartão TicketLog mas não existe em `veiculos` é, na
+  // prática da Amerinode, CARRO ALUGADO (decisão da Luciana, 26/08/2026) — daí a
+  // etiqueta e a cor deixarem de ser de erro. O "(não cadastrado)" continua dito
+  // de propósito: se um dia for esquecimento de cadastro, e não aluguel, some da
+  // tela justamente o veículo que ficaria fora de todo controle de revisão.
+  if(s==='nao_encontrado') return {txt:'🚗 Veículo alugado (não cadastrado)', cor:'#1F4E79', check:false, lock:true}
   return {txt:s, cor:'#666', check:false, lock:true}
 }
 
@@ -4520,7 +4525,7 @@ function renderKmImport(res){
     `${res.total} veículo(s) no relatório — <strong style="color:#27500A">${res.ok} para atualizar</strong>`+
     (res.regressao?`, <span style="color:#8A5A00">${res.regressao} com km menor</span>`:'')+
     (res.invalido?`, <span style="color:#791F1F">${res.invalido} inválido(s)</span>`:'')+
-    (res.nao_encontrado?`, <span style="color:#791F1F">${res.nao_encontrado} não cadastrada(s)</span>`:'')
+    (res.nao_encontrado?`, <span style="color:#1F4E79">${res.nao_encontrado} alugado(s)</span>`:'')
   const tb=document.getElementById('km-import-table')
   if(!kmImportItens.length){tb.innerHTML='<tr><td colspan="7" class="empty">Nada encontrado no arquivo.</td></tr>';return}
   tb.innerHTML=kmImportItens.map((it,i)=>{

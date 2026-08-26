@@ -287,13 +287,147 @@ async function salvarCookieSessao(cookie) {
 // pararia ~1h depois — sem erro nenhum na tela, só a sessão caindo e não
 // levantando mais. A env TICKETLOG_SSO_REFRESH é só a SEMENTE: vale enquanto o
 // banco estiver vazio; a partir da primeira gravação, quem manda é o banco.
-async function getRefreshSSO() {
+async function refreshSSOdoBanco() {
   try {
     const { data, error } = await supabase
       .from('config_sistema').select('ticketlog_sso_refresh').eq('id', 1).single()
     if (!error && data && data.ticketlog_sso_refresh) return data.ticketlog_sso_refresh
   } catch (e) { /* coluna nova ainda não criada (scripts/km-sso.sql) */ }
-  return (process.env.TICKETLOG_SSO_REFRESH || '').trim() || null
+  return null
+}
+const refreshSSOdoAmbiente = () => (process.env.TICKETLOG_SSO_REFRESH || '').trim() || null
+
+async function getRefreshSSO() {
+  return (await refreshSSOdoBanco()) || refreshSSOdoAmbiente()
+}
+
+// ── Validade dos ~90 dias ────────────────────────────────────────────────────
+const SSO_VALIDADE_DIAS    = Number(process.env.TICKETLOG_SSO_VALIDADE_DIAS || 90)
+const SSO_AVISO_ANTES_DIAS = Number(process.env.TICKETLOG_SSO_AVISO_ANTES_DIAS || 7)
+
+// Marca quando o ciclo de ~90 dias COMEÇOU. `forcar` só é verdadeiro quando a
+// conexão usou a semente do ambiente — ou seja, quando uma PESSOA acabou de
+// capturar um código novo. Nas renovações automáticas a data NÃO se mexe: se ela
+// fosse atualizada a cada rotação (que acontece o dia todo), o aviso de validade
+// nunca chegaria a disparar.
+async function marcarConexaoSSO(forcar) {
+  try {
+    const { data } = await supabase.from('config_sistema')
+      .select('ticketlog_sso_conectado_em').eq('id', 1).single()
+    if (!forcar && data && data.ticketlog_sso_conectado_em) return
+    await supabase.from('config_sistema').update({
+      ticketlog_sso_conectado_em: new Date().toISOString(),
+      ticketlog_sso_aviso_em: null // ciclo novo recomeça o aviso
+    }).eq('id', 1)
+  } catch (e) {
+    console.warn('[km] não marcou a data da conexão SSO (rodar scripts/km-sso.sql):', e.message)
+  }
+}
+
+// Avisa por e-mail quando faltam poucos dias para os ~90 vencerem. Chamado pelo
+// keep-alive; repete no máximo 1x por semana até alguém renovar.
+async function conferirValidadeSSO() {
+  try {
+    const { data, error } = await supabase.from('config_sistema')
+      .select('ticketlog_sso_conectado_em, ticketlog_sso_aviso_em').eq('id', 1).single()
+    if (error || !data || !data.ticketlog_sso_conectado_em) return
+    const dias = (Date.now() - new Date(data.ticketlog_sso_conectado_em).getTime()) / 86400000
+    if (dias < SSO_VALIDADE_DIAS - SSO_AVISO_ANTES_DIAS) return
+    if (data.ticketlog_sso_aviso_em) {
+      const desdeAviso = (Date.now() - new Date(data.ticketlog_sso_aviso_em).getTime()) / 86400000
+      if (desdeAviso < 7) return // já avisou esta semana
+    }
+    await avisarRenovarSSO(Math.max(0, Math.round(SSO_VALIDADE_DIAS - dias)))
+    await supabase.from('config_sistema')
+      .update({ ticketlog_sso_aviso_em: new Date().toISOString() }).eq('id', 1)
+  } catch (e) {
+    console.warn('[km] conferência de validade do SSO ignorada:', e.message)
+  }
+}
+
+// Resumo da validade para a tela: quando começou, quando vence, quanto falta.
+async function validadeSSO() {
+  try {
+    const { data, error } = await supabase.from('config_sistema')
+      .select('ticketlog_sso_conectado_em').eq('id', 1).single()
+    if (error || !data || !data.ticketlog_sso_conectado_em) return null
+    const inicio = new Date(data.ticketlog_sso_conectado_em)
+    const vence  = new Date(inicio.getTime() + SSO_VALIDADE_DIAS * 86400000)
+    const faltam = Math.ceil((vence.getTime() - Date.now()) / 86400000)
+    return {
+      conectado_em:   inicio.toISOString().slice(0, 10),
+      vence_em:       vence.toISOString().slice(0, 10),
+      dias_restantes: faltam,
+      renovar:        faltam <= SSO_AVISO_ANTES_DIAS
+    }
+  } catch (e) { return null }
+}
+
+// Aviso PREVENTIVO (o de sessão caída é o avisarSessaoCaiu, que é corretivo).
+async function avisarRenovarSSO(diasRestantes) {
+  try {
+    const { enviarEmail, statusEmail } = require('../services/email')
+    if (!statusEmail().configurado) return
+    const { data } = await supabase.from('config_sistema')
+      .select('alerta_tecnico_emails').eq('id', 1).single()
+    const para = (data && data.alerta_tecnico_emails) || []
+    if (!para.length) {
+      console.log('[km] validade do SSO perto do fim, mas nenhum e-mail em "Avisos técnicos da integração"')
+      return
+    }
+    const prazo = diasRestantes > 0 ? `faltam cerca de ${diasRestantes} dia(s)` : 'o prazo já venceu'
+    await enviarEmail({
+      para,
+      assunto: '🔑 Renovar o acesso do TicketLog (atualização automática de KM)',
+      html: `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#333;line-height:1.6">
+        <p><strong>O acesso de ~${SSO_VALIDADE_DIAS} dias do TicketLog está perto de vencer</strong> — ${prazo}.</p>
+        <p>Enquanto ele vale, a quilometragem se atualiza sozinha. Quando vencer, a
+           atualização para até alguém renovar.</p>
+        <p><strong>Como renovar (3 minutos):</strong> abra uma janela anônima, entre no portal
+           TicketLog, capture o código e cole no Railway. O passo a passo está em
+           <em>COMO-CONECTAR-SSO-TICKETLOG.md</em>, no projeto.</p>
+        <p style="color:#777;font-size:12px">Aviso automático do Sistema de Gestão de Manutenção Veicular — Amerinode.</p>
+      </div>`,
+      texto: `O acesso de ~${SSO_VALIDADE_DIAS} dias do TicketLog está perto de vencer (${prazo}). ` +
+             `Renove capturando o código no portal e colando no Railway (ver COMO-CONECTAR-SSO-TICKETLOG.md).`
+    })
+    console.log('[km] aviso de renovação do acesso TicketLog enviado')
+  } catch (e) {
+    console.warn('[km] não avisou sobre a validade do SSO:', e.message)
+  }
+}
+
+// Conecta pela Conta Edenred. Tenta o código EM USO (banco) e, se ele estiver
+// vencido, cai para a SEMENTE do ambiente.
+// ⚠️ Essa segunda tentativa É a renovação de 90 dias: a pessoa cola o código novo
+// no Railway, mas o banco ainda guarda o velho — sem ela, a renovação não pegaria
+// e o guia da usuária estaria mentindo.
+async function conectarSSO() {
+  const doBanco = await refreshSSOdoBanco()
+  const doAmbiente = refreshSSOdoAmbiente()
+  const tentativas = []
+  if (doBanco) tentativas.push({ token: doBanco, origem: 'banco' })
+  if (doAmbiente && doAmbiente !== doBanco) tentativas.push({ token: doAmbiente, origem: 'ambiente' })
+  if (!tentativas.length) { const e = new Error('refresh_ausente'); e.status = 412; throw e }
+
+  let ultimoErro = null
+  for (const t of tentativas) {
+    try {
+      const r = await ticketlog.sessaoViaSSO({ refreshToken: t.token, aoRotacionar: salvarRefreshSSO })
+      await salvarCookieSessao(r.cookie)
+      await marcarKeepalive('ok')
+      try { await supabase.from('config_sistema').update({ km_sync_ultimo_status: 'ok' }).eq('id', 1) } catch {}
+      if (t.origem === 'ambiente') await salvarRefreshSSO(t.token) // semente vira o token em uso
+      await marcarConexaoSSO(t.origem === 'ambiente')              // captura nova reinicia os 90 dias
+      return r
+    } catch (e) {
+      ultimoErro = e
+      // Só faz sentido tentar o outro código quando ESTE venceu. Portal fora do
+      // ar ou ponte quebrada dá o mesmo erro nos dois — melhor falhar logo.
+      if (!e.expirado) throw e
+    }
+  }
+  throw ultimoErro
 }
 
 async function salvarRefreshSSO(token) {
@@ -311,14 +445,9 @@ async function salvarRefreshSSO(token) {
 // não passa por tela de login, então não esbarra em captcha nem MFA.
 // Devolve o cookie, ou null quando não há refresh guardado / o SSO recusou.
 async function renovarSessaoPorSSO(motivo) {
-  const refresh = await getRefreshSSO()
-  if (!refresh) return null
+  if (!(await getRefreshSSO())) return null
   try {
-    // aoRotacionar grava o token novo NA HORA da troca — ver o porquê no serviço.
-    const r = await ticketlog.sessaoViaSSO({ refreshToken: refresh, aoRotacionar: salvarRefreshSSO })
-    await salvarCookieSessao(r.cookie)
-    await marcarKeepalive('ok')
-    try { await supabase.from('config_sistema').update({ km_sync_ultimo_status: 'ok' }).eq('id', 1) } catch {}
+    const r = await conectarSSO()
     console.log(`🔑  [km] sessão criada pela Conta Edenred (${motivo})`)
     return r.cookie
   } catch (e) {
@@ -444,6 +573,9 @@ async function marcarKeepalive(status) {
 // Falha de rede NÃO marca expirado (evita alarme falso); só um portal que
 // devolve login/redirect conta como sessão morta.
 async function manterSessaoViva() {
+  // Aproveita o tique de 15 min para conferir se os ~90 dias estão perto do fim.
+  // É uma leitura só, e a própria função se cala se já avisou nesta semana.
+  await conferirValidadeSSO()
   const cookie = await getSessaoCookie()
   if (!cookie) {
     // Sem cookie guardado, mas com credenciais: já entra sozinho.
@@ -615,10 +747,7 @@ async function loginSSO(_req, res) {
     })
   }
   try {
-    const r = await ticketlog.sessaoViaSSO({ refreshToken: refresh, aoRotacionar: salvarRefreshSSO })
-    await salvarCookieSessao(r.cookie)
-    await marcarKeepalive('ok')
-    try { await supabase.from('config_sistema').update({ km_sync_ultimo_status: 'ok' }).eq('id', 1) } catch {}
+    const r = await conectarSSO()
     res.json({ ok: true, conectado: true, refresh_rotacionado: !!r.rotacionou, etapas_da_ponte: r.etapas })
   } catch (err) {
     res.status(err.status || 500).json({
@@ -650,6 +779,9 @@ async function statusSessao(_req, res) {
       // "colaram o campo errado", e sem isto os dois casos ficam iguais na tela.
       // O erro mais provável é colar o access_token/id_token (começam com "ey")
       // em vez do refresh_token, ou trazer junto as aspas do JSON.
+      // Quando o ciclo de ~90 dias começou e quanto falta — é o que a tela mostra
+      // para ninguém ser pego de surpresa (e o e-mail avisa antes de vencer).
+      sso_validade: await validadeSSO(),
       sso_refresh_formato: refresh ? {
         tamanho:    refresh.length,
         parece_jwt: /^ey[A-Za-z0-9_-]/.test(refresh),  // colou access_token/id_token por engano
