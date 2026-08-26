@@ -3832,7 +3832,12 @@ function kmDiasDesde(dateStr){
 }
 
 function kmSituacao(v){
-  if(!v.cadastrada) return {txt:'⚠️ Não cadastrada', cls:'badge-red', ord:100000}
+  // Placa que abastece no cartão mas não existe em `veiculos` é, na prática da
+  // Amerinode, CARRO ALUGADO (decisão da Luciana, 26/08/2026) — por isso deixou
+  // de ser vermelho de erro. Continua no TOPO da ordenação de propósito: se um
+  // dia for esquecimento de cadastro, e não aluguel, é o veículo que ficaria
+  // fora de todo controle de revisão — tem de saltar aos olhos.
+  if(!v.cadastrada) return {txt:'🚗 Veículo alugado', cls:'badge-blue', ord:100000}
   if(v.status==='invalido'||(v.km!=null&&v.km>=999999)) return {txt:'⛔ Leitura inválida', cls:'badge-red', ord:99998}
   const dias=kmDiasDesde(v.data_leitura)
   if(v.km==null)  return {txt:'Sem km', cls:'badge-gray', ord:99997}
@@ -3863,7 +3868,7 @@ function renderKmVeiculos(){
   if(!lista.length){tb.innerHTML='<tr><td colspan="5" class="empty">Nenhuma placa com esse filtro.</td></tr>';return}
   tb.innerHTML=lista.map(v=>{
     const s=kmSituacao(v)
-    const loc=v.localidade||(v.cadastrada?'-':'<span style="color:#B22">— sem cadastro —</span>')
+    const loc=v.localidade||(v.cadastrada?'-':'<span style="color:#1F4E79">— alugado —</span>')
     return `<tr>
       <td><strong>${v.placa||'-'}</strong></td>
       <td>${loc}</td>
@@ -3878,7 +3883,7 @@ function exportarKmVeiculosXLSX(){
   if(!kmVeiculosDados.length){alert('Nada para exportar. Importe um relatório TicketLog primeiro (aba Próximas Revisões).');return}
   const rows=kmVeiculosDados.slice().sort((a,b)=>(a.placa||'').localeCompare(b.placa||'')).map(v=>({
     'Placa':v.placa||'',
-    'Localidade':v.localidade||(v.cadastrada?'':'NÃO CADASTRADA'),
+    'Localidade':v.localidade||(v.cadastrada?'':'VEICULO ALUGADO'),
     'KM':v.km!=null?v.km:'',
     'Lida em':v.data_leitura?fmtData(v.data_leitura):'',
     'Situação':kmSituacao(v).txt
