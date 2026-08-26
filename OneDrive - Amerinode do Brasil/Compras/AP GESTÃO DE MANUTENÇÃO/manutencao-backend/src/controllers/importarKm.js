@@ -314,8 +314,8 @@ async function renovarSessaoPorSSO(motivo) {
   const refresh = await getRefreshSSO()
   if (!refresh) return null
   try {
-    const r = await ticketlog.sessaoViaSSO({ refreshToken: refresh })
-    if (r.rotacionou) await salvarRefreshSSO(r.refreshToken)
+    // aoRotacionar grava o token novo NA HORA da troca — ver o porquê no serviço.
+    const r = await ticketlog.sessaoViaSSO({ refreshToken: refresh, aoRotacionar: salvarRefreshSSO })
     await salvarCookieSessao(r.cookie)
     await marcarKeepalive('ok')
     try { await supabase.from('config_sistema').update({ km_sync_ultimo_status: 'ok' }).eq('id', 1) } catch {}
@@ -615,12 +615,11 @@ async function loginSSO(_req, res) {
     })
   }
   try {
-    const r = await ticketlog.sessaoViaSSO({ refreshToken: refresh })
-    if (r.rotacionou) await salvarRefreshSSO(r.refreshToken)
+    const r = await ticketlog.sessaoViaSSO({ refreshToken: refresh, aoRotacionar: salvarRefreshSSO })
     await salvarCookieSessao(r.cookie)
     await marcarKeepalive('ok')
     try { await supabase.from('config_sistema').update({ km_sync_ultimo_status: 'ok' }).eq('id', 1) } catch {}
-    res.json({ ok: true, conectado: true, refresh_rotacionado: !!r.rotacionou })
+    res.json({ ok: true, conectado: true, refresh_rotacionado: !!r.rotacionou, etapas_da_ponte: r.etapas })
   } catch (err) {
     res.status(err.status || 500).json({
       error: err.message,

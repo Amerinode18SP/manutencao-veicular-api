@@ -443,11 +443,53 @@ async function renovarAccessToken(refreshToken) {
   }
 }
 
+const decodeHtml = s => String(s)
+  .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
+
+// A ponte NÃO cria a sessão no primeiro POST. Ela responde 200 com uma tela
+// "Aguarde..." que traz um <form id="formWaitScreen"> e o submete sozinha no
+// window.onload — agora com o campo `waitScreenLoaded=S`. É esse SEGUNDO POST
+// que autentica a sessão no ColdFusion.
+//
+// ⚠️ Sem repetir esse envio, o cookie que volta é de sessão ANÔNIMA: a ponte
+// responde 200 (parece sucesso!) e só depois o portal manda para o login. Era o
+// "ponte_nao_firmou / ping 302" de 26/08/2026.
+//
+// Os campos são lidos do HTML em vez de montados à mão de propósito: a tela de
+// espera renomeia `tipocartao` para `tipoCartao` (maiúscula no meio) e acrescenta
+// `produto`. Remontar na mão significaria repetir esse detalhe aqui e quebrar em
+// silêncio no dia em que o portal mudar um nome.
+function camposDaTelaDeEspera(html) {
+  const form = /<form[^>]*id=["']formWaitScreen["'][\s\S]*?<\/form>/i.exec(html || '')
+  if (!form) return null
+  const campos = new URLSearchParams()
+  const inputRe = /<input\b[^>]*>/gi
+  let m
+  while ((m = inputRe.exec(form[0]))) {
+    const nome = /\bname=["']([^"']+)["']/i.exec(m[0])
+    if (!nome) continue
+    const valor = /\bvalue=["']([^"']*)["']/i.exec(m[0])
+    campos.set(nome[1], valor ? decodeHtml(valor[1]) : '')
+  }
+  return campos.toString() ? campos : null
+}
+
 // Cria uma sessão no portal legado usando a Conta Edenred e devolve o cookie
 // pronto para o `baixarRelatorioKm`. Devolve também o refresh token que precisa
 // ser gravado (pode ter rotacionado — ver o aviso acima).
+// `opts.aoRotacionar` é chamado ASSIM QUE o SSO devolve um refresh token novo —
+// antes de tentar a ponte. NÃO é detalhe de estilo: o token velho morre no
+// instante da troca, então qualquer falha daqui para frente (ponte fora do ar,
+// processo reiniciado) perderia o token novo e deixaria a automação com um valor
+// já queimado. Foi o que aconteceu em 26/08/2026: a ponte falhou, o erro subiu, e
+// o refresh rotacionado se perdeu — obrigando a recapturar no navegador.
 async function sessaoViaSSO(opts = {}) {
   const { accessToken, refreshToken, rotacionou } = await renovarAccessToken(opts.refreshToken)
+  if (rotacionou && typeof opts.aoRotacionar === 'function') {
+    try { await opts.aoRotacionar(refreshToken) } catch (e) { /* gravação é do chamador */ }
+  }
 
   const body = new URLSearchParams({
     url:        PONTE_DESTINO,
@@ -474,19 +516,46 @@ async function sessaoViaSSO(opts = {}) {
   }
 
   let cookie = mesclarCookies('', resp).cookie
+  let r = resp
+  let etapas = 0 // quantas vezes a tela de espera se reenviou
 
-  // A ponte responde 302 para o destino; cada salto ainda reemite CFID/CFTOKEN,
-  // então todos são mesclados (mesma razão de o keep-alive existir).
-  let r = resp, saltos = 0
-  while (r.status >= 300 && r.status < 400 && saltos < 4) {
-    const local = r.headers.get('location')
-    if (!local) break
-    r = await fetch(new URL(local, HOST).toString(), {
-      headers: { 'user-agent': UA, 'cookie': cookie, 'referer': URL_PONTE },
-      redirect: 'manual'
-    })
+  // A travessia é uma SEQUÊNCIA: POST → tela "Aguarde..." → POST de novo (com
+  // waitScreenLoaded=S) → redirects → sessão firmada. Cada volta pode reemitir
+  // CFID/CFTOKEN, então todos são mesclados (mesma razão de o keep-alive existir).
+  for (;;) {
+    let saltos = 0
+    while (r.status >= 300 && r.status < 400 && saltos < 5) {
+      const local = r.headers.get('location')
+      if (!local) break
+      r = await fetch(new URL(local, HOST).toString(), {
+        headers: { 'user-agent': UA, 'cookie': cookie, 'referer': URL_PONTE },
+        redirect: 'manual'
+      })
+      cookie = mesclarCookies(cookie, r).cookie
+      saltos++
+    }
+
+    if (r.status !== 200 || etapas >= 3) break
+    const campos = camposDaTelaDeEspera(await r.text())
+    if (!campos) break // já é a página final: quem decide se valeu é o ping
+    etapas++
+    try {
+      r = await fetch(URL_PONTE, {
+        method:   'POST',
+        redirect: 'manual',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          'user-agent':   UA,
+          'origin':       'https://plataforma.ticketlog.com.br',
+          'referer':      URL_PONTE,
+          'cookie':       cookie
+        },
+        body: campos.toString()
+      })
+    } catch (e) {
+      const err = new Error('falha_rede: ' + e.message); err.status = 502; throw err
+    }
     cookie = mesclarCookies(cookie, r).cookie
-    saltos++
   }
 
   if (!cookie) {
@@ -496,20 +565,21 @@ async function sessaoViaSSO(opts = {}) {
   }
 
   // Não basta ter cookie: só vale se ele ABRE o formulário do relatório. Sem esta
-  // conferência, um cookie inútil seria gravado como "sessão ok" e o sync só
-  // falharia horas depois, longe da causa.
+  // conferência, um cookie de sessão anônima seria gravado como "sessão ok" e o
+  // sync só falharia horas depois, longe da causa.
   const ping = await pingSessao({ cookie })
   if (ping.estado !== 'viva') {
     const e = new Error('ponte_nao_firmou'); e.status = 401
-    e.detalhe = 'a ponte respondeu ' + resp.status + ' mas a sessão não abriu o relatório (ping ' + ping.status + ')'
+    e.detalhe = 'a ponte respondeu ' + resp.status + ', tela de espera reenviada ' + etapas +
+                'x, mas a sessão não abriu o relatório (ping ' + ping.status + ')'
     throw e
   }
 
-  return { cookie: ping.cookie || cookie, refreshToken, rotacionou }
+  return { cookie: ping.cookie || cookie, refreshToken, rotacionou, etapas }
 }
 
 module.exports = {
   baixarRelatorioKm, pingSessao, extrairCookie, ddmmyyyy,
   loginPortal, credenciaisPortal, mesclarCookies,
-  renovarAccessToken, sessaoViaSSO
+  renovarAccessToken, sessaoViaSSO, camposDaTelaDeEspera
 }
