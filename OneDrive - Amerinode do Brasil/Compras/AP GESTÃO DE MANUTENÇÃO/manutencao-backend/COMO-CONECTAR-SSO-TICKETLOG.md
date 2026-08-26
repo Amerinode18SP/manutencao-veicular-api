@@ -26,11 +26,18 @@ senha:
 
 ## Passo a passo
 
-### 1. Entre no portal, normalmente
+### 1. Entre no portal — numa JANELA ANÔNIMA
 
-No Chrome, acesse **https://plataforma.ticketlog.com.br** e faça login com a sua
-Conta Edenred, como você já faz. Resolva o "não sou um robô" e o código do celular
-se aparecerem — **é esta a única vez** que alguém precisa fazer isso.
+Aperte **Ctrl + Shift + N** para abrir uma janela anônima do Chrome. Nela, acesse
+**https://plataforma.ticketlog.com.br** e faça login com a sua Conta Edenred, como
+você já faz. Resolva o "não sou um robô" e o código do celular se aparecerem — **é
+esta a única vez** que alguém precisa fazer isso.
+
+> ⚠️ **Por que anônima, e não a janela normal?** Enquanto a aba do portal fica
+> aberta, o próprio site troca esse código de tempos em tempos — e a troca **mata
+> a cópia que você acabou de fazer**. Foi o que aconteceu nas duas primeiras
+> tentativas em 26/08/2026. Na janela anônima, fechada logo em seguida, ninguém
+> fica trocando o código por trás.
 
 ### 2. Abra o painel de desenvolvedor
 
@@ -73,6 +80,11 @@ sem o nome do campo. É um texto longo, de letras e números.
 1. Entre no **Railway** → projeto **manutencao-veicular-api** → aba **Variables**.
 2. Crie (ou edite) a variável **`TICKETLOG_SSO_REFRESH`**.
 3. Cole o código copiado e salve.
+4. **Feche a janela anônima — mas NÃO clique em "Sair"/"Logout".**
+
+> Fechar a janela só descarta a cópia local e o código segue valendo. Clicar em
+> "Sair" **cancela** o código no servidor da Edenred — é a única ação que
+> estragaria a captura de propósito.
 
 O Railway republica sozinho. Espere ~2 minutos.
 
@@ -88,7 +100,9 @@ curl.exe -s -X POST https://manutencao-veicular-api-production.up.railway.app/ap
   o sistema se reconecta sem ninguém por perto pelos próximos ~90 dias.
 - **`"refresh_expirado":true`** → o código copiado já não vale. Refaça do passo 1.
 - **`"ponte_nao_firmou"`** → o código foi aceito pela Edenred, mas o portal antigo
-  não abriu a sessão. Chame o suporte técnico com essa mensagem.
+  não abriu a sessão. A resposta traz um bloco `diagnostico` (só metadados — nomes
+  de cookie, título da página, endereço sem a parte secreta) dizendo onde a
+  travessia parou. Mande a resposta inteira para quem cuida do sistema.
 
 ## Quando refazer
 

@@ -352,6 +352,32 @@ renovação devolve um novo e mata o anterior. Por isso ele mora em
 `TICKETLOG_SSO_REFRESH` é só **semente**. Guardado só na env, o valor envelhece na primeira
 rotação e a automação para ~1h depois, **sem erro nenhum na tela**.
 
+**✅ FUNCIONANDO EM PRODUÇÃO desde 26/08/2026** (`{"ok":true,"conectado":true}`,
+`ultimo_status` voltou de `expirado` para `ok`). Três armadilhas tiveram de cair antes,
+e as três falhavam **em silêncio** — nenhuma aparecia como erro:
+
+1. **A ponte precisa de DOIS POSTs.** O primeiro devolve 200 com a tela "Aguarde..." e
+   um `<form id="formWaitScreen">` que se submete sozinho no `window.onload`, agora com
+   **`waitScreenLoaded=S`**. É o SEGUNDO envio que autentica. Sem ele o cookie era de
+   sessão anônima — 200 na cara e login depois. Os campos são lidos do HTML porque a
+   tela renomeia `tipocartao` → `tipoCartao` e acrescenta `produto`.
+2. **O `Location` do portal é RELATIVO.** Resolver contra a raiz do site montava
+   `/SelCliente.cfm` (404) em vez de `/GoodManagerSSL/sso/SelCliente.cfm`. A travessia
+   morria no meio e o único sintoma era o ping levando 302 depois. Resolver sempre
+   contra a **URL atual**.
+3. **O refresh rotacionado se perdia quando a ponte falhava** — o SSO mata o antigo na
+   troca, então cada tentativa frustrada queimava a captura e obrigava a refazer no
+   navegador. Por isso `sessaoViaSSO` recebe `aoRotacionar` e grava ANTES de tentar a ponte.
+
+**Captura: use JANELA ANÔNIMA.** Com o portal aberto na janela normal, o próprio site
+rotaciona o refresh e mata a cópia recém-feita (aconteceu duas vezes). Capturar em aba
+anônima e **fechar sem clicar em "Sair"** (o logout revoga o token no servidor).
+
+**Diagnóstico:** `ponte_nao_firmou` carrega `diagnostico` com metadados (etapas, status e
+título da última página, `url_final`, NOMES dos cookies, `ping_destino` sem query string).
+Foi ele que revelou o `CFSSOST` + o desvio para `SelCliente.cfm` — a prova de que a sessão
+autenticava e o problema era de percurso, não de credencial.
+
 **Arquivos:** `sessaoViaSSO()` + `renovarAccessToken()` em `src/services/ticketlog.js`;
 `getRefreshSSO`/`salvarRefreshSSO`/`renovarSessaoPorSSO` em `controllers/importarKm.js`.
 `renovarSessao()` tenta **primeiro** o SSO e só depois o login próprio do SouLog (que segue
