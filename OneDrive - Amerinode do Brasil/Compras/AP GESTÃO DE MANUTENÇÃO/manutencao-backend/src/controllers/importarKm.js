@@ -625,7 +625,9 @@ async function loginSSO(_req, res) {
       error: err.message,
       detalhe: err.detalhe || null,
       // true = uma PESSOA precisa refazer a captura no navegador (os ~90 dias venceram)
-      refresh_expirado: !!err.expirado
+      refresh_expirado: !!err.expirado,
+      // Retrato da travessia da ponte (só metadados) — ver sessaoViaSSO.
+      diagnostico: err.diagnostico || null
     })
   }
 }

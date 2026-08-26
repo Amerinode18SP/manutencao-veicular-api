@@ -87,6 +87,19 @@ function mesclarCookies(cookieAtual, resp) {
   return { cookie: [...mapa].map(([k, v]) => `${k}=${v}`).join('; '), mudou: true }
 }
 
+// Endereço sem a query string — para poder registrar PARA ONDE o portal mandou
+// sem arrastar token junto para o log/diagnóstico.
+function semQuery(u) {
+  if (!u) return null
+  try { const x = new URL(u, HOST); return x.origin + x.pathname } catch (e) { return String(u).split('?')[0] }
+}
+
+// Título da página, só para diagnóstico ("Aguarde...", "Login", etc.).
+function tituloDaPagina(html) {
+  const m = /<title[^>]*>([\s\S]{0,120}?)<\/title>/i.exec(html || '')
+  return m ? m[1].replace(/\s+/g, ' ').trim() : null
+}
+
 // Heurística: o corpo é mesmo o relatório? (vs página de login/redirect do SSO)
 function pareceRelatorio(text) {
   return /Linha(?:Impar|Par)/.test(text) ||
@@ -134,7 +147,12 @@ async function pingSessao(opts = {}) {
 
   // Cookie rotacionado pelo portal → devolve pro chamador regravar.
   const { cookie: atualizado, mudou } = mesclarCookies(cookie, resp)
-  return { estado, status: resp.status, cookie: atualizado, cookieMudou: mudou }
+  // `destino` só existe para diagnóstico: para ONDE o portal manda quando recusa.
+  // Guardado sem a query string, que pode carregar token.
+  return {
+    estado, status: resp.status, cookie: atualizado, cookieMudou: mudou,
+    destino: semQuery(resp.headers.get('location'))
+  }
 }
 
 // ── Login automático no portal legado ────────────────────────────────────────
@@ -517,7 +535,8 @@ async function sessaoViaSSO(opts = {}) {
 
   let cookie = mesclarCookies('', resp).cookie
   let r = resp
-  let etapas = 0 // quantas vezes a tela de espera se reenviou
+  let etapas = 0        // quantas vezes a tela de espera se reenviou
+  let ultimoCorpo = ''  // só para diagnóstico quando a travessia não firma
 
   // A travessia é uma SEQUÊNCIA: POST → tela "Aguarde..." → POST de novo (com
   // waitScreenLoaded=S) → redirects → sessão firmada. Cada volta pode reemitir
@@ -536,7 +555,8 @@ async function sessaoViaSSO(opts = {}) {
     }
 
     if (r.status !== 200 || etapas >= 3) break
-    const campos = camposDaTelaDeEspera(await r.text())
+    ultimoCorpo = await r.text()
+    const campos = camposDaTelaDeEspera(ultimoCorpo)
     if (!campos) break // já é a página final: quem decide se valeu é o ping
     etapas++
     try {
@@ -572,6 +592,18 @@ async function sessaoViaSSO(opts = {}) {
     const e = new Error('ponte_nao_firmou'); e.status = 401
     e.detalhe = 'a ponte respondeu ' + resp.status + ', tela de espera reenviada ' + etapas +
                 'x, mas a sessão não abriu o relatório (ping ' + ping.status + ')'
+    // Retrato da travessia para achar ONDE ela para. Só metadados: nomes de
+    // cookie (nunca valores), título da página e endereço sem query string.
+    e.diagnostico = {
+      etapas,
+      status_ultima_resposta: r.status,
+      titulo_ultima_pagina:   tituloDaPagina(ultimoCorpo),
+      ultima_parece_relatorio: pareceRelatorio(ultimoCorpo),
+      ultima_parece_login:    /senha|password|autenticacao|login/i.test(ultimoCorpo || ''),
+      cookies_recebidos:      [...paraMapa(cookie).keys()],
+      ping_status:            ping.status,
+      ping_destino:           ping.destino
+    }
     throw e
   }
 
