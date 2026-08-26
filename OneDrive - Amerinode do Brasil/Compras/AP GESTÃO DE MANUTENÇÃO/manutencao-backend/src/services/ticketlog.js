@@ -535,8 +535,9 @@ async function sessaoViaSSO(opts = {}) {
 
   let cookie = mesclarCookies('', resp).cookie
   let r = resp
-  let etapas = 0        // quantas vezes a tela de espera se reenviou
-  let ultimoCorpo = ''  // só para diagnóstico quando a travessia não firma
+  let etapas = 0             // quantas vezes a tela de espera se reenviou
+  let ultimoCorpo = ''       // só para diagnóstico quando a travessia não firma
+  let urlAtual = URL_PONTE   // base para resolver redirect relativo (ver aviso abaixo)
 
   // A travessia é uma SEQUÊNCIA: POST → tela "Aguarde..." → POST de novo (com
   // waitScreenLoaded=S) → redirects → sessão firmada. Cada volta pode reemitir
@@ -546,10 +547,17 @@ async function sessaoViaSSO(opts = {}) {
     while (r.status >= 300 && r.status < 400 && saltos < 5) {
       const local = r.headers.get('location')
       if (!local) break
-      r = await fetch(new URL(local, HOST).toString(), {
-        headers: { 'user-agent': UA, 'cookie': cookie, 'referer': URL_PONTE },
+      // ⚠️ Resolver contra a URL ATUAL, nunca contra a raiz do site. O portal
+      // responde caminho RELATIVO (ex.: "SelCliente.cfm" a partir de
+      // /GoodManagerSSL/sso/); resolvido contra a raiz vira "/SelCliente.cfm",
+      // que não existe — era o 404 no meio da travessia em 26/08/2026, e ele não
+      // aparecia como erro: a travessia só terminava sem sessão.
+      const destino = new URL(local, urlAtual).toString()
+      r = await fetch(destino, {
+        headers: { 'user-agent': UA, 'cookie': cookie, 'referer': urlAtual },
         redirect: 'manual'
       })
+      urlAtual = destino
       cookie = mesclarCookies(cookie, r).cookie
       saltos++
     }
@@ -575,6 +583,7 @@ async function sessaoViaSSO(opts = {}) {
     } catch (e) {
       const err = new Error('falha_rede: ' + e.message); err.status = 502; throw err
     }
+    urlAtual = URL_PONTE // o form da tela de espera não tem action: volta na mesma URL
     cookie = mesclarCookies(cookie, r).cookie
   }
 
@@ -597,6 +606,7 @@ async function sessaoViaSSO(opts = {}) {
     e.diagnostico = {
       etapas,
       status_ultima_resposta: r.status,
+      url_final:              semQuery(urlAtual),
       titulo_ultima_pagina:   tituloDaPagina(ultimoCorpo),
       ultima_parece_relatorio: pareceRelatorio(ultimoCorpo),
       ultima_parece_login:    /senha|password|autenticacao|login/i.test(ultimoCorpo || ''),
