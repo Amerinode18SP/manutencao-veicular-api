@@ -1,5 +1,10 @@
 # Como reconectar a sessão do TicketLog (atualização automática de KM)
 
+> 🆕 **Desde 26/08/2026 existe um jeito melhor.** Conectando pela Conta Edenred, o
+> sistema se reconecta sozinho por **~90 dias** e este passo a passo deixa de ser
+> necessário no dia a dia — veja **`COMO-CONECTAR-SSO-TICKETLOG.md`**.
+> O guia abaixo continua valendo como **plano B**, para destravar na hora.
+
 O sistema atualiza a quilometragem dos veículos **sozinho, todo dia**, baixando o
 relatório direto do portal TicketLog. Para isso ele usa uma "sessão" (um código de
 acesso) que **expira de tempos em tempos**. Quando isso acontece, a atualização

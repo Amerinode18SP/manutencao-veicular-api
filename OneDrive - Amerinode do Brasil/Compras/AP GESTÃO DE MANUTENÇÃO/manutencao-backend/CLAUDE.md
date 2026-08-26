@@ -316,10 +316,49 @@ entra pela Conta Edenred (SSO), então provavelmente não existe senha própria 
   `R29vZE1hbmFnZXJTU0wvRnVlbC9GdWVsUmVsVWx0aW1hc0ttRm9ybS5jZm0=`; o do relatório
   (`...FuelRelUltimasKmLista.cfm`) é `R29vZE1hbmFnZXJTU0wvRnVlbC9GdWVsUmVsVWx0aW1hc0ttTGlzdGEuY2Zt`.
   Essa rota da plataforma cria a sessão no legado e carrega o portal antigo num **iframe**.
-- **PEÇA QUE FALTA:** qual requisição a rota `/legacy` dispara para criar a sessão (provável
-  chamada a `plataformaapi.ticketlog.com.br/soulog/...` com Bearer, devolvendo um token/URL
-  que o legado aceita). Capturar com F12 → Network → botão **Doc** ao abrir a URL da ponte.
-  A API não expõe swagger (`/swagger/*` → 404).
+- ~~**PEÇA QUE FALTA:** qual requisição a rota `/legacy` dispara para criar a sessão~~
+  **RESOLVIDO em 26/08/2026 — ver a seção abaixo.**
+
+#### ✅ A ponte foi decifrada (26/08/2026) — o KM se reconecta sozinho por ~90 dias
+
+**A suposição anterior estava errada** e por isso a investigação de julho não achou: não
+existe API que emita um token do legado. A rota `/legacy` é um app **Angular** que faz um
+**POST de FORMULÁRIO** para o ColdFusion levando o **próprio access token do SSO**:
+
+```
+POST https://legacy-soulog.ticketlog.com.br/GoodManagerSSL/sso/redirect.cfm
+content-type: application/x-www-form-urlencoded
+url=/GoodManagerSSL/Fuel/FuelRelUltimasKmForm.cfm & cliente=244457
+& tipocartao=4 & accessToken=<JWT de sso.sa.edenred.io>
+```
+
+Capturado no F12 com a usuária logada. Dois detalhes que fecham a prova: a requisição vai
+**sem cookie de sessão** (só analytics) — é ela que **cria** a sessão; e o `accessToken` é o
+JWT do próprio SSO (`iss=https://sso.sa.edenred.io`, mesmo `client_id`). O
+`soulog/shortcut/reports` que aparece perto **é pista falsa** — só lista relatórios.
+
+**Por que isso dispensa captcha/MFA/e-mail:** o access token dura ~1h, mas o **refresh token**
+(o scope já pede `offline_access`) vale ~90 dias. O login humano acontece **uma vez** no
+navegador; o servidor nunca vê a tela de login. Confirmado no
+`.well-known/openid-configuration`: `token_endpoint=https://sso.sa.edenred.io/connect/token`
+e o grant `refresh_token` **está liberado** (o `password` continua bloqueado).
+
+⚠️ **CORS não é obstáculo.** O `Access-Control-Allow-Origin` visto no preflight vale só para
+navegador; chamada server-side ignora. Foi a dúvida que quase descartou esta via.
+
+⚠️ **ARMADILHA QUE MATA A AUTOMAÇÃO EM SILÊNCIO:** o refresh token **rotaciona** — cada
+renovação devolve um novo e mata o anterior. Por isso ele mora em
+**`config_sistema.ticketlog_sso_refresh`** (`scripts/km-sso.sql`), e a env
+`TICKETLOG_SSO_REFRESH` é só **semente**. Guardado só na env, o valor envelhece na primeira
+rotação e a automação para ~1h depois, **sem erro nenhum na tela**.
+
+**Arquivos:** `sessaoViaSSO()` + `renovarAccessToken()` em `src/services/ticketlog.js`;
+`getRefreshSSO`/`salvarRefreshSSO`/`renovarSessaoPorSSO` em `controllers/importarKm.js`.
+`renovarSessao()` tenta **primeiro** o SSO e só depois o login próprio do SouLog (que segue
+recusado, e fica como plano B para o dia do usuário dedicado). Rota nova: **`POST /api/km/sso`**;
+`GET /api/km/sessao/status` passou a devolver `sso_configurado`.
+**Passo a passo para a usuária:** `COMO-CONECTAR-SSO-TICKETLOG.md`.
+**AÇÃO MANUAL UMA VEZ:** rodar `scripts/km-sso.sql` e preencher `TICKETLOG_SSO_REFRESH`.
 
 **Ideia da usuária a validar antes de tudo isso:** a correção do cookie rotacionado subiu hoje
 **depois** da sessão já ter expirado (15:20), então **nunca foi testada**. Reconectar pelo cURL

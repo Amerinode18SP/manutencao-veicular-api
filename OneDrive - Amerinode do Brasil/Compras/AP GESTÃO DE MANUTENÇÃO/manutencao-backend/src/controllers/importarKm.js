@@ -280,9 +280,68 @@ async function salvarCookieSessao(cookie) {
   }
 }
 
-// Faz login no portal com as credenciais do ambiente e guarda a sessão nova.
-// Devolve o cookie, ou null quando não há credenciais / o portal recusou.
+// ── Refresh token da Conta Edenred ───────────────────────────────────────────
+// Ele mora no BANCO, e não só no ambiente, por um motivo que não perdoa: o SSO
+// ROTACIONA o refresh token a cada renovação. Guardado apenas na variável do
+// Railway, o valor de lá ficaria velho logo na primeira renovação e a automação
+// pararia ~1h depois — sem erro nenhum na tela, só a sessão caindo e não
+// levantando mais. A env TICKETLOG_SSO_REFRESH é só a SEMENTE: vale enquanto o
+// banco estiver vazio; a partir da primeira gravação, quem manda é o banco.
+async function getRefreshSSO() {
+  try {
+    const { data, error } = await supabase
+      .from('config_sistema').select('ticketlog_sso_refresh').eq('id', 1).single()
+    if (!error && data && data.ticketlog_sso_refresh) return data.ticketlog_sso_refresh
+  } catch (e) { /* coluna nova ainda não criada (scripts/km-sso.sql) */ }
+  return (process.env.TICKETLOG_SSO_REFRESH || '').trim() || null
+}
+
+async function salvarRefreshSSO(token) {
+  if (!token) return
+  try {
+    await supabase.from('config_sistema').update({ ticketlog_sso_refresh: token }).eq('id', 1)
+  } catch (e) {
+    // Se cair aqui, a próxima renovação vai usar um refresh já queimado. Grita no
+    // log porque o sintoma (sessão que não levanta mais) aparece longe da causa.
+    console.warn('[km] NÃO gravou o refresh token novo — rodar scripts/km-sso.sql:', e.message)
+  }
+}
+
+// Cria a sessão pela Conta Edenred (ponte /sso/redirect.cfm). É a via preferida:
+// não passa por tela de login, então não esbarra em captcha nem MFA.
+// Devolve o cookie, ou null quando não há refresh guardado / o SSO recusou.
+async function renovarSessaoPorSSO(motivo) {
+  const refresh = await getRefreshSSO()
+  if (!refresh) return null
+  try {
+    const r = await ticketlog.sessaoViaSSO({ refreshToken: refresh })
+    if (r.rotacionou) await salvarRefreshSSO(r.refreshToken)
+    await salvarCookieSessao(r.cookie)
+    await marcarKeepalive('ok')
+    try { await supabase.from('config_sistema').update({ km_sync_ultimo_status: 'ok' }).eq('id', 1) } catch {}
+    console.log(`🔑  [km] sessão criada pela Conta Edenred (${motivo})`)
+    return r.cookie
+  } catch (e) {
+    // NÃO manda e-mail daqui de propósito: o keep-alive roda a cada 15 min e quem
+    // avisa só na TRANSIÇÃO para expirado é o manterSessaoViva. Avisar aqui seria
+    // um e-mail a cada 15 minutos enquanto o refresh estivesse vencido.
+    console.warn(`[km] via Conta Edenred falhou (${motivo}):`, e.message, e.detalhe || '')
+    if (e.expirado) console.warn('[km] ⚠️  refazer a captura do refresh token — ver COMO-CONECTAR-SSO-TICKETLOG.md')
+    return null
+  }
+}
+
+// Renova a sessão do portal. Tenta as duas vias, nesta ordem:
+//   1) Conta Edenred (refresh token, ~90 dias) — sem captcha, é a que funciona;
+//   2) login próprio do SouLog (código/usuário/senha) — só serve se existir um
+//      usuário no legado. Hoje ele é recusado ("Senha ou usuário inválido"),
+//      porque o acesso da equipe é pelo SSO; fica como plano B para o dia em que
+//      a TicketLog liberar um usuário dedicado de integração.
+// Devolve o cookie, ou null quando nenhuma das duas resolveu.
 async function renovarSessao(motivo) {
+  const porSSO = await renovarSessaoPorSSO(motivo)
+  if (porSSO) return porSSO
+
   if (!ticketlog.credenciaisPortal()) return null
   try {
     const { cookie } = await ticketlog.loginPortal()
@@ -543,6 +602,35 @@ async function loginAutomatico(_req, res) {
   }
 }
 
+// POST /api/km/sso — cria a sessão pela Conta Edenred, sem colar cURL e sem
+// passar por tela de login. Serve para testar a configuração e para reconectar
+// na hora. NUNCA devolve o token nem o cookie — só o resultado.
+async function loginSSO(_req, res) {
+  const refresh = await getRefreshSSO()
+  if (!refresh) {
+    return res.status(412).json({
+      error: 'refresh_ausente',
+      detalhe: 'Guarde o refresh token da Conta Edenred em TICKETLOG_SSO_REFRESH (Railway) ' +
+               'ou em config_sistema.ticketlog_sso_refresh. Como capturar: COMO-CONECTAR-SSO-TICKETLOG.md'
+    })
+  }
+  try {
+    const r = await ticketlog.sessaoViaSSO({ refreshToken: refresh })
+    if (r.rotacionou) await salvarRefreshSSO(r.refreshToken)
+    await salvarCookieSessao(r.cookie)
+    await marcarKeepalive('ok')
+    try { await supabase.from('config_sistema').update({ km_sync_ultimo_status: 'ok' }).eq('id', 1) } catch {}
+    res.json({ ok: true, conectado: true, refresh_rotacionado: !!r.rotacionou })
+  } catch (err) {
+    res.status(err.status || 500).json({
+      error: err.message,
+      detalhe: err.detalhe || null,
+      // true = uma PESSOA precisa refazer a captura no navegador (os ~90 dias venceram)
+      refresh_expirado: !!err.expirado
+    })
+  }
+}
+
 // GET /api/km/sessao/status — a tela usa pra saber se pode oferecer "reconectar
 // sozinho". Devolve também um diagnóstico das credenciais: só PRESENÇA (nunca
 // valores) e os nomes de env que começam com TICKETLOG_, pra pegar erro de
@@ -553,12 +641,15 @@ async function statusSessao(_req, res) {
     const preenchida = n => !!(process.env[n] || '').trim()
     res.json({
       sessao_configurada: !!cookie,
+      // A via que realmente sustenta a automação hoje (Conta Edenred, ~90 dias).
+      sso_configurado: !!(await getRefreshSSO()),
       login_automatico: !!ticketlog.credenciaisPortal(),
       ultimo_status: await statusSessaoAnterior(),
       credenciais: {
-        TICKETLOG_CODIGO:  preenchida('TICKETLOG_CODIGO'),
-        TICKETLOG_USUARIO: preenchida('TICKETLOG_USUARIO'),
-        TICKETLOG_SENHA:   preenchida('TICKETLOG_SENHA')
+        TICKETLOG_CODIGO:      preenchida('TICKETLOG_CODIGO'),
+        TICKETLOG_USUARIO:     preenchida('TICKETLOG_USUARIO'),
+        TICKETLOG_SENHA:       preenchida('TICKETLOG_SENHA'),
+        TICKETLOG_SSO_REFRESH: preenchida('TICKETLOG_SSO_REFRESH')
       },
       variaveis_ticketlog_no_ambiente: Object.keys(process.env).filter(k => /^TICKETLOG/i.test(k)).sort()
     })
@@ -569,5 +660,5 @@ async function statusSessao(_req, res) {
 
 module.exports = {
   preview, aplicar, gravarKm, listarTicketlog, sync, salvarSessao, manterSessaoViva,
-  parseRelatorio, loginAutomatico, statusSessao
+  parseRelatorio, loginAutomatico, statusSessao, loginSSO
 }

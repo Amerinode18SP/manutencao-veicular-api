@@ -358,7 +358,158 @@ async function baixarRelatorioKm(opts = {}) {
   return buf
 }
 
+// ── Sessão pela Conta Edenred (SSO) — a via SEM captcha ──────────────────────
+// Descoberta em 26/08/2026 capturando o F12 da "ponte" `/legacy` da plataforma
+// nova. A investigação de jul/2026 procurou uma chamada de API que EMITISSE um
+// token do legado e não achou — porque ela não existe. O que a ponte faz é um
+// POST de FORMULÁRIO para o ColdFusion levando o PRÓPRIO access token do SSO:
+//
+//   POST https://legacy-soulog.ticketlog.com.br/GoodManagerSSL/sso/redirect.cfm
+//   content-type: application/x-www-form-urlencoded
+//   url=/GoodManagerSSL/Fuel/FuelRelUltimasKmForm.cfm & cliente=244457
+//   & tipocartao=4 & accessToken=<JWT emitido por sso.sa.edenred.io>
+//
+// Essa requisição vai SEM cookie de sessão (no F12 só iam cookies de analytics):
+// é ELA que CRIA a sessão, devolvendo os Set-Cookie do ColdFusion.
+//
+// POR QUE ISSO DISPENSA CAPTCHA, MFA E LEITURA DE E-MAIL: o access token dura ~1h,
+// mas quem sustenta a automação é o REFRESH TOKEN — o portal já pede o escopo
+// `offline_access`, então ele existe e vale ~90 dias. O login humano acontece UMA
+// vez no navegador (onde o captcha e o MFA são resolvidos por uma pessoa) e só se
+// repete a cada ~90 dias. O servidor nunca vê a tela de login.
+//
+// ⚠️ ARMADILHA SILENCIOSA: o refresh token ROTACIONA. Cada renovação pode devolver
+// um novo, e o anterior MORRE na hora. Quem chama é OBRIGADO a gravar o que voltar
+// em `refreshToken` — senão a automação para sozinha na renovação seguinte, e nada
+// falha na tela: a sessão só cai e não levanta mais.
+const SSO_TOKEN_URL  = process.env.TICKETLOG_SSO_TOKEN_URL || 'https://sso.sa.edenred.io/connect/token'
+const SSO_CLIENT_ID  = process.env.TICKETLOG_SSO_CLIENT_ID || 'fcfc49a2ff3b45ef9c5f245b37b4d567'
+const URL_PONTE      = HOST + '/GoodManagerSSL/sso/redirect.cfm'
+const PONTE_DESTINO  = process.env.TICKETLOG_PONTE_DESTINO || '/GoodManagerSSL/Fuel/FuelRelUltimasKmForm.cfm'
+const PONTE_CLIENTE  = process.env.TICKETLOG_CLIENTE       || '244457'
+const PONTE_TIPOCART = process.env.TICKETLOG_TIPOCARTAO    || '4'
+
+// Troca o refresh token por um access token novo no SSO da Edenred.
+// Confirmado no `.well-known/openid-configuration` de 26/08/2026: o endpoint é
+// /connect/token e o grant `refresh_token` está liberado (o `password` NÃO está —
+// por isso automatizar a tela de login continua descartado).
+// Devolve { accessToken, refreshToken, rotacionou, expiraEm }.
+async function renovarAccessToken(refreshToken) {
+  const rt = String(refreshToken || '').trim()
+  if (!rt) { const e = new Error('refresh_ausente'); e.status = 412; throw e }
+
+  const body = new URLSearchParams({
+    grant_type:    'refresh_token',
+    client_id:     SSO_CLIENT_ID,
+    refresh_token: rt
+  }).toString()
+
+  let resp
+  try {
+    resp = await fetch(SSO_TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        'accept':       'application/json',
+        'user-agent':   UA
+      },
+      body
+    })
+  } catch (e) {
+    const err = new Error('falha_rede: ' + e.message); err.status = 502; throw err
+  }
+
+  const texto = await resp.text()
+  let dados = {}
+  try { dados = JSON.parse(texto) } catch (e) { /* SSO instável devolve HTML */ }
+
+  if (!resp.ok || !dados.access_token) {
+    const e = new Error('refresh_recusado')
+    e.status = (resp.status === 400 || resp.status === 401) ? 401 : (resp.status || 502)
+    // `invalid_grant` = o refresh expirou OU já foi usado (rotação perdida).
+    // É o único caso em que uma PESSOA precisa agir: refazer a captura.
+    e.expirado = dados.error === 'invalid_grant'
+    e.detalhe  = e.expirado
+      ? 'o acesso de ~90 dias expirou ou o refresh token já tinha sido usado — refazer a captura no navegador'
+      : (dados.error_description || dados.error || 'HTTP ' + resp.status)
+    throw e
+  }
+
+  return {
+    accessToken:  dados.access_token,
+    refreshToken: dados.refresh_token || rt,
+    rotacionou:   !!(dados.refresh_token && dados.refresh_token !== rt),
+    expiraEm:     Number(dados.expires_in) || null
+  }
+}
+
+// Cria uma sessão no portal legado usando a Conta Edenred e devolve o cookie
+// pronto para o `baixarRelatorioKm`. Devolve também o refresh token que precisa
+// ser gravado (pode ter rotacionado — ver o aviso acima).
+async function sessaoViaSSO(opts = {}) {
+  const { accessToken, refreshToken, rotacionou } = await renovarAccessToken(opts.refreshToken)
+
+  const body = new URLSearchParams({
+    url:        PONTE_DESTINO,
+    cliente:    PONTE_CLIENTE,
+    tipocartao: PONTE_TIPOCART,
+    accessToken
+  }).toString()
+
+  let resp
+  try {
+    resp = await fetch(URL_PONTE, {
+      method:   'POST',
+      redirect: 'manual', // o Set-Cookie vem na PRIMEIRA resposta; seguir sozinho o perderia
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        'user-agent':   UA,
+        'origin':       'https://plataforma.ticketlog.com.br',
+        'referer':      'https://plataforma.ticketlog.com.br/'
+      },
+      body
+    })
+  } catch (e) {
+    const err = new Error('falha_rede: ' + e.message); err.status = 502; throw err
+  }
+
+  let cookie = mesclarCookies('', resp).cookie
+
+  // A ponte responde 302 para o destino; cada salto ainda reemite CFID/CFTOKEN,
+  // então todos são mesclados (mesma razão de o keep-alive existir).
+  let r = resp, saltos = 0
+  while (r.status >= 300 && r.status < 400 && saltos < 4) {
+    const local = r.headers.get('location')
+    if (!local) break
+    r = await fetch(new URL(local, HOST).toString(), {
+      headers: { 'user-agent': UA, 'cookie': cookie, 'referer': URL_PONTE },
+      redirect: 'manual'
+    })
+    cookie = mesclarCookies(cookie, r).cookie
+    saltos++
+  }
+
+  if (!cookie) {
+    const e = new Error('ponte_sem_cookie'); e.status = 502
+    e.detalhe = 'a ponte respondeu ' + resp.status + ' e não devolveu Set-Cookie'
+    throw e
+  }
+
+  // Não basta ter cookie: só vale se ele ABRE o formulário do relatório. Sem esta
+  // conferência, um cookie inútil seria gravado como "sessão ok" e o sync só
+  // falharia horas depois, longe da causa.
+  const ping = await pingSessao({ cookie })
+  if (ping.estado !== 'viva') {
+    const e = new Error('ponte_nao_firmou'); e.status = 401
+    e.detalhe = 'a ponte respondeu ' + resp.status + ' mas a sessão não abriu o relatório (ping ' + ping.status + ')'
+    throw e
+  }
+
+  return { cookie: ping.cookie || cookie, refreshToken, rotacionou }
+}
+
 module.exports = {
   baixarRelatorioKm, pingSessao, extrairCookie, ddmmyyyy,
-  loginPortal, credenciaisPortal, mesclarCookies
+  loginPortal, credenciaisPortal, mesclarCookies,
+  renovarAccessToken, sessaoViaSSO
 }
