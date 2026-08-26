@@ -638,11 +638,23 @@ async function loginSSO(_req, res) {
 async function statusSessao(_req, res) {
   try {
     const cookie = await getSessaoCookie()
+    const refresh = await getRefreshSSO()
     const preenchida = n => !!(process.env[n] || '').trim()
     res.json({
       sessao_configurada: !!cookie,
       // A via que realmente sustenta a automação hoje (Conta Edenred, ~90 dias).
-      sso_configurado: !!(await getRefreshSSO()),
+      sso_configurado: !!refresh,
+      // Diagnóstico do QUE foi colado — NUNCA o valor. Existe porque o SSO
+      // responde `invalid_grant` tanto para "token já rotacionado" quanto para
+      // "colaram o campo errado", e sem isto os dois casos ficam iguais na tela.
+      // O erro mais provável é colar o access_token/id_token (começam com "ey")
+      // em vez do refresh_token, ou trazer junto as aspas do JSON.
+      sso_refresh_formato: refresh ? {
+        tamanho:    refresh.length,
+        parece_jwt: /^ey[A-Za-z0-9_-]/.test(refresh),  // colou access_token/id_token por engano
+        tem_aspas:  /["']/.test(refresh),              // veio com as aspas do JSON
+        tem_espaco: /\s/.test(refresh)                 // veio quebrado/com espaço
+      } : null,
       login_automatico: !!ticketlog.credenciaisPortal(),
       ultimo_status: await statusSessaoAnterior(),
       credenciais: {
