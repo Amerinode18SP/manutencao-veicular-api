@@ -112,9 +112,30 @@ function numBR(v) {
 }
 
 // Resolve a janela de datas a partir de query string flexível.
-// Aceita: ?ano=YYYY, ?ano=todos, ?meses=1,2,3 (precisa de ano),
+// Aceita: ?data_ini=YYYY-MM-DD&data_fim=YYYY-MM-DD (intervalo exato, tem prioridade),
+// ?ano=YYYY, ?ano=todos, ?meses=1,2,3 (precisa de ano),
 // e cai pra ?periodo=mes|tri|sem|ano se nada vier.
+const DATA_RE = /^\d{4}-\d{2}-\d{2}$/
+const PERIODO_MAX_DIAS = 366
+
 function queryToRange(q = {}) {
+  if (q.data_ini || q.data_fim) {
+    const ini = String(q.data_ini || ''), fimPedido = String(q.data_fim || '')
+    if (!DATA_RE.test(ini) || !DATA_RE.test(fimPedido)) {
+      const e = new Error('Informe data inicial e data final (AAAA-MM-DD).'); e.status = 400; throw e
+    }
+    // Não pede o futuro à Cobli: o fim é travado em hoje.
+    const hoje = new Date().toISOString().slice(0, 10)
+    const fim = fimPedido > hoje ? hoje : fimPedido
+    if (ini > fim) {
+      const e = new Error('A data inicial é depois da data final.'); e.status = 400; throw e
+    }
+    const dias = (new Date(fim) - new Date(ini)) / 86400000 + 1
+    if (dias > PERIODO_MAX_DIAS) {
+      const e = new Error(`Período máximo de ${PERIODO_MAX_DIAS} dias.`); e.status = 400; throw e
+    }
+    return { start_date: ini, end_date: fim, months: null, personalizado: true }
+  }
   if (q.ano === 'todos') {
     return { start_date: '2020-01-01', end_date: new Date().toISOString().slice(0, 10), months: null }
   }
@@ -145,25 +166,146 @@ function inSelectedMonths(ano_mes, monthList) {
   return monthList.includes(ano_mes)
 }
 
+// ── Intervalo de datas exato (data inicial / data final) ──────────────────
+// O cache do banco (cobli_distance / cobli_fuel_mensal) é MENSAL. Um período
+// como 10/08 a 25/08 não sai dele sem inventar número — "rateio por dia" daria
+// km que o carro não rodou. Então, quando a tela manda data_ini/data_fim, os
+// números vêm DIRETO da Cobli, que aceita qualquer intervalo: um pedido de
+// distância e um relatório de combustível por FATIA MENSAL do período (a fatia
+// é o que mantém o gráfico mês a mês). Os filtros por ano/mês seguem no cache.
+//
+// A tela dispara resumo + top + modelo + rodízio ao mesmo tempo. Sem o cache
+// abaixo seriam 4 viagens idênticas à Cobli; guardar a PROMESSA (e não só o
+// resultado) é o que junta as 4 numa só enquanto a primeira ainda está no ar.
+const CACHE_PERIODO_MS = 10 * 60 * 1000
+const cachePeriodo = new Map() // "ini|fim" → { em, promessa }
+
+function fatiasMensais(ini, fim) {
+  return monthsInRange(ini, fim).map(ym => {
+    const { start, end } = monthBounds(ym)
+    return { ym, start: start < ini ? ini : start, end: end > fim ? fim : end }
+  })
+}
+
+// Soma o relatório de combustível da Cobli por veículo. É a MESMA regra do sync
+// (usada pelos dois): uma linha por (placa, combustível) → soma gasto e litros;
+// o km é o total do veículo no período, então fica o maior, não a soma.
+function agregarRelatorioCombustivel(rowsRaw, placaToId, ym) {
+  const byKey = new Map()
+  for (const r of (rowsRaw || [])) {
+    const placa = pickColumn(r, ['Placa'])
+    const cobli_id = placaToId.get(placa)
+    if (!cobli_id) continue
+    const key = `${cobli_id}|${ym}`
+    const gasto = numBR(pickColumn(r, ['Gasto total', 'Total no per']))
+    const litros = numBR(pickColumn(r, ['Quantidade consumida', 'Litros']))
+    const km = numBR(pickColumn(r, ['metros rodados', 'Km']))
+    const comb = pickColumn(r, ['Combust'])
+    if (byKey.has(key)) {
+      const ex = byKey.get(key)
+      ex.gasto_brl += gasto
+      ex.litros += litros
+      ex.km_cobli = Math.max(ex.km_cobli, km)
+      if (comb && !ex.combustivel.includes(comb)) ex.combustivel += '+' + comb
+    } else {
+      byKey.set(key, {
+        cobli_id, ano_mes: ym, placa,
+        gasto_brl: gasto, litros, km_cobli: km,
+        custo_km: 0, custo_litro: 0, consumo_km_l: 0,
+        combustivel: comb || '',
+        atualizado_em: new Date().toISOString(),
+      })
+    }
+  }
+  for (const r of byKey.values()) {
+    r.custo_km     = r.km_cobli > 0 ? r.gasto_brl / r.km_cobli : 0
+    r.custo_litro  = r.litros   > 0 ? r.gasto_brl / r.litros   : 0
+    r.consumo_km_l = r.litros   > 0 ? r.km_cobli  / r.litros   : 0
+  }
+  return [...byKey.values()]
+}
+
+async function buscarPeriodoNaCobli(ini, fim) {
+  const vehicles = await loadVehiclesEnriched()
+  const ids = vehicles.map(v => v.cobli_id)
+  const placaToId = new Map(vehicles.filter(v => v.placa).map(v => [v.placa, v.cobli_id]))
+  const dist = [], fuel = []
+
+  for (const f of fatiasMensais(ini, fim)) {
+    for (let i = 0; i < ids.length; i += 2000) {
+      const chunk = ids.slice(i, i + 2000)
+      let page = 1
+      while (page <= 50) {
+        const resp = await cobli.getDistanceDriven({ start_date: f.start, end_date: f.end, vehicle_ids: chunk, page })
+        const items = (resp && resp.data) || []
+        if (!items.length) break
+        for (const it of items) {
+          const id = String(it.vehicle_id)
+          if (id && id !== 'undefined') dist.push({ cobli_id: id, ano_mes: f.ym, km: Number(it.distance_driven_in_km || 0) })
+        }
+        if (!resp.pagination || !resp.pagination.next) break
+        page++
+      }
+    }
+    const begin = new Date(`${f.start}T00:00:00-03:00`).getTime()
+    const endMs = new Date(`${f.end}T23:59:59-03:00`).getTime()
+    fuel.push(...agregarRelatorioCombustivel(await cobli.getFuelReport({ begin, end: endMs }), placaToId, f.ym))
+  }
+  return { dist, fuel }
+}
+
+function periodoDaCobli(ini, fim) {
+  const chave = `${ini}|${fim}`
+  const achado = cachePeriodo.get(chave)
+  if (achado && Date.now() - achado.em < CACHE_PERIODO_MS) return achado.promessa
+  const promessa = buscarPeriodoNaCobli(ini, fim)
+  cachePeriodo.set(chave, { em: Date.now(), promessa })
+  // Falhou? Tira do cache, senão o erro ficaria servido por 10 minutos.
+  promessa.catch(() => cachePeriodo.delete(chave))
+  for (const [k, v] of cachePeriodo) if (Date.now() - v.em >= CACHE_PERIODO_MS) cachePeriodo.delete(k)
+  return promessa
+}
+
+// Ponto ÚNICO de leitura dos números da tela: resumo, top, modelo e rodízio
+// passam por aqui, para os quatro nunca divergirem sobre o período.
+async function lerPeriodo(faixa, ids) {
+  const idSet = new Set(ids)
+  if (faixa.personalizado) {
+    const { dist, fuel } = await periodoDaCobli(faixa.start_date, faixa.end_date)
+    return {
+      dist: dist.filter(r => idSet.has(r.cobli_id)),
+      fuel: fuel.filter(r => idSet.has(r.cobli_id)),
+    }
+  }
+  const [{ data: dist }, { data: fuel }] = await Promise.all([
+    supabase.from('cobli_distance').select('cobli_id, ano_mes, km')
+      .gte('ano_mes', faixa.start_date.slice(0, 7)).lte('ano_mes', faixa.end_date.slice(0, 7))
+      .in('cobli_id', safeIn(ids)),
+    supabase.from('cobli_fuel_mensal').select('cobli_id, ano_mes, gasto_brl, litros')
+      .gte('ano_mes', faixa.start_date.slice(0, 7)).lte('ano_mes', faixa.end_date.slice(0, 7))
+      .in('cobli_id', safeIn(ids)),
+  ])
+  return {
+    dist: (dist || []).filter(r => inSelectedMonths(r.ano_mes, faixa.months)),
+    fuel: (fuel || []).filter(r => inSelectedMonths(r.ano_mes, faixa.months)),
+  }
+}
+
+// Erro de validação do período (400) vira mensagem para a tela, não 500.
+function responderErro(e, res, next) {
+  if (e && e.status === 400) return res.status(400).json({ error: e.message })
+  next(e)
+}
+
 // ── handlers ─────────────────────────────────────────────────────────────
 async function resumo(req, res, next) {
   try {
     const { regiao, modelo, placa } = req.query
-    const { start_date, end_date, months } = queryToRange(req.query)
+    const faixa = queryToRange(req.query)
     const vehicles = applyFilters(await loadVehiclesEnriched(), { regiao, modelo, placa })
     const ids = vehicles.map(v => v.cobli_id)
 
-    const [{ data: dist }, { data: fuel }] = await Promise.all([
-      supabase.from('cobli_distance').select('cobli_id, ano_mes, km')
-        .gte('ano_mes', start_date.slice(0, 7)).lte('ano_mes', end_date.slice(0, 7))
-        .in('cobli_id', safeIn(ids)),
-      supabase.from('cobli_fuel_mensal').select('cobli_id, ano_mes, gasto_brl, litros')
-        .gte('ano_mes', start_date.slice(0, 7)).lte('ano_mes', end_date.slice(0, 7))
-        .in('cobli_id', safeIn(ids)),
-    ])
-
-    const distFiltered = (dist || []).filter(r => inSelectedMonths(r.ano_mes, months))
-    const fuelFiltered = (fuel || []).filter(r => inSelectedMonths(r.ano_mes, months))
+    const { dist: distFiltered, fuel: fuelFiltered } = await lerPeriodo(faixa, ids)
 
     const km     = distFiltered.reduce((s, r) => s + Number(r.km || 0), 0)
     const gasto  = fuelFiltered.reduce((s, r) => s + Number(r.gasto_brl || 0), 0)
@@ -197,34 +339,27 @@ async function resumo(req, res, next) {
         consumo_km_l: litros > 0 ? km / litros : 0,
       },
       serie,
+      // A tela usa para escrever o período real (o fim pode ter sido travado em hoje).
+      periodo: { inicio: faixa.start_date, fim: faixa.end_date, personalizado: !!faixa.personalizado },
     })
-  } catch (e) { next(e) }
+  } catch (e) { responderErro(e, res, next) }
 }
 
 async function top(req, res, next) {
   try {
     const { regiao, modelo, placa } = req.query
-    const { start_date, end_date, months } = queryToRange(req.query)
+    const faixa = queryToRange(req.query)
     const vehicles = applyFilters(await loadVehiclesEnriched(), { regiao, modelo, placa })
     const vMap = new Map(vehicles.map(v => [v.cobli_id, v]))
     const ids = vehicles.map(v => v.cobli_id)
 
-    const [{ data: dist }, { data: fuel }] = await Promise.all([
-      supabase.from('cobli_distance').select('cobli_id, ano_mes, km')
-        .gte('ano_mes', start_date.slice(0, 7)).lte('ano_mes', end_date.slice(0, 7))
-        .in('cobli_id', safeIn(ids)),
-      supabase.from('cobli_fuel_mensal').select('cobli_id, ano_mes, gasto_brl')
-        .gte('ano_mes', start_date.slice(0, 7)).lte('ano_mes', end_date.slice(0, 7))
-        .in('cobli_id', safeIn(ids)),
-    ])
+    const { dist, fuel } = await lerPeriodo(faixa, ids)
 
     const agg = new Map()
-    for (const r of (dist || [])) {
-      if (!inSelectedMonths(r.ano_mes, months)) continue
+    for (const r of dist) {
       const a = agg.get(r.cobli_id) || { km: 0, rs: 0 }; a.km += Number(r.km || 0); agg.set(r.cobli_id, a)
     }
-    for (const r of (fuel || [])) {
-      if (!inSelectedMonths(r.ano_mes, months)) continue
+    for (const r of fuel) {
       const a = agg.get(r.cobli_id) || { km: 0, rs: 0 }; a.rs += Number(r.gasto_brl || 0); agg.set(r.cobli_id, a)
     }
 
@@ -237,33 +372,24 @@ async function top(req, res, next) {
       .slice(0, 10)
 
     res.json(arr)
-  } catch (e) { next(e) }
+  } catch (e) { responderErro(e, res, next) }
 }
 
 async function modelo(req, res, next) {
   try {
     const { regiao, modelo, placa, limiar = 20 } = req.query
-    const { start_date, end_date, months } = queryToRange(req.query)
+    const faixa = queryToRange(req.query)
     const vehicles = applyFilters(await loadVehiclesEnriched(), { regiao, modelo, placa })
     const vMap = new Map(vehicles.map(v => [v.cobli_id, v]))
     const ids = vehicles.map(v => v.cobli_id)
 
-    const [{ data: dist }, { data: fuel }] = await Promise.all([
-      supabase.from('cobli_distance').select('cobli_id, ano_mes, km')
-        .gte('ano_mes', start_date.slice(0, 7)).lte('ano_mes', end_date.slice(0, 7))
-        .in('cobli_id', safeIn(ids)),
-      supabase.from('cobli_fuel_mensal').select('cobli_id, ano_mes, gasto_brl')
-        .gte('ano_mes', start_date.slice(0, 7)).lte('ano_mes', end_date.slice(0, 7))
-        .in('cobli_id', safeIn(ids)),
-    ])
+    const { dist, fuel } = await lerPeriodo(faixa, ids)
 
     const perVehicle = new Map()
-    for (const r of (dist || [])) {
-      if (!inSelectedMonths(r.ano_mes, months)) continue
+    for (const r of dist) {
       const a = perVehicle.get(r.cobli_id) || { km: 0, rs: 0 }; a.km += Number(r.km || 0); perVehicle.set(r.cobli_id, a)
     }
-    for (const r of (fuel || [])) {
-      if (!inSelectedMonths(r.ano_mes, months)) continue
+    for (const r of fuel) {
       const a = perVehicle.get(r.cobli_id) || { km: 0, rs: 0 }; a.rs += Number(r.gasto_brl || 0); perVehicle.set(r.cobli_id, a)
     }
 
@@ -298,7 +424,7 @@ async function modelo(req, res, next) {
     }
     alertas.sort((a, b) => b.desvio - a.desvio)
     res.json({ mediaModelo, alertas })
-  } catch (e) { next(e) }
+  } catch (e) { responderErro(e, res, next) }
 }
 
 async function regioes(req, res, next) {
@@ -341,19 +467,16 @@ async function modelos(req, res, next) {
 async function rodizio(req, res, next) {
   try {
     const { regiao, modelo } = req.query
-    const { start_date, end_date, months } = queryToRange(req.query)
+    const faixa = queryToRange(req.query)
     const vehicles = applyFilters(await loadVehiclesEnriched(), { regiao, modelo })
     const vMap = new Map(vehicles.map(v => [v.cobli_id, v]))
     const ids = vehicles.map(v => v.cobli_id)
 
-    const { data: dist } = await supabase.from('cobli_distance').select('cobli_id, ano_mes, km')
-      .gte('ano_mes', start_date.slice(0, 7)).lte('ano_mes', end_date.slice(0, 7))
-      .in('cobli_id', safeIn(ids))
+    const { dist } = await lerPeriodo(faixa, ids)
 
     // km total por veículo no período
     const kmPorVeic = new Map()
-    for (const r of (dist || [])) {
-      if (!inSelectedMonths(r.ano_mes, months)) continue
+    for (const r of dist) {
       kmPorVeic.set(r.cobli_id, (kmPorVeic.get(r.cobli_id) || 0) + Number(r.km || 0))
     }
 
@@ -406,7 +529,7 @@ async function rodizio(req, res, next) {
     }
     sugestoes.sort((a, b) => b.razao_max_min - a.razao_max_min)
     res.json(sugestoes)
-  } catch (e) { next(e) }
+  } catch (e) { responderErro(e, res, next) }
 }
 
 async function salvarRegiao(req, res, next) {
@@ -548,41 +671,9 @@ async function sync(req, res) {
         const rowsRaw = await cobli.getFuelReport({ begin, end: endMs })
         if (!rowsRaw || !rowsRaw.length) continue
 
-        // 1 linha por (placa, combustível). Dedupe por (cobli_id, ano_mes)
-        // somando gasto/litros e mantendo km (que é o mesmo em todas as linhas do veículo).
-        const byKey = new Map()
-        for (const r of rowsRaw) {
-          const placa = pickColumn(r, ['Placa'])
-          const cobli_id = placaToId.get(placa)
-          if (!cobli_id) continue
-          const key = `${cobli_id}|${ym}`
-          const gasto = numBR(pickColumn(r, ['Gasto total', 'Total no per']))
-          const litros = numBR(pickColumn(r, ['Quantidade consumida', 'Litros']))
-          const km = numBR(pickColumn(r, ['metros rodados', 'Km']))
-          const comb = pickColumn(r, ['Combust'])
-          if (byKey.has(key)) {
-            const ex = byKey.get(key)
-            ex.gasto_brl += gasto
-            ex.litros += litros
-            ex.km_cobli = Math.max(ex.km_cobli, km) // mesmo veículo, mesmo período → km é total
-            if (comb && !ex.combustivel.includes(comb)) ex.combustivel += '+' + comb
-          } else {
-            byKey.set(key, {
-              cobli_id, ano_mes: ym, placa,
-              gasto_brl: gasto, litros, km_cobli: km,
-              custo_km: 0, custo_litro: 0, consumo_km_l: 0,  // calculados abaixo
-              combustivel: comb || '',
-              atualizado_em: new Date().toISOString(),
-            })
-          }
-        }
-        // ratios calculados após somar
-        for (const r of byKey.values()) {
-          r.custo_km    = r.km_cobli > 0 ? r.gasto_brl / r.km_cobli : 0
-          r.custo_litro = r.litros   > 0 ? r.gasto_brl / r.litros   : 0
-          r.consumo_km_l= r.litros   > 0 ? r.km_cobli  / r.litros   : 0
-        }
-        const rows = [...byKey.values()]
+        // Mesma soma usada pelo filtro de datas — uma regra só, para o número do
+        // cache mensal e o do intervalo exato nunca divergirem.
+        const rows = agregarRelatorioCombustivel(rowsRaw, placaToId, ym)
 
         if (rows.length) {
           const { error: upErr } = await supabase.from('cobli_fuel_mensal').upsert(rows, { onConflict: 'cobli_id,ano_mes' })

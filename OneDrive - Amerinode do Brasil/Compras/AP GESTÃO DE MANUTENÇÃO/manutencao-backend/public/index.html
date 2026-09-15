@@ -1339,6 +1339,13 @@ tr:hover td{background:#F9F9F9}
             <option value="30">+30%</option><option value="40">+40%</option>
           </select>
         </label>
+        <label>Data inicial
+          <input type="date" id="dist-data-ini" onchange="distOnDatasChange()">
+        </label>
+        <label>Data final
+          <input type="date" id="dist-data-fim" onchange="distOnDatasChange()">
+        </label>
+        <button type="button" class="btn" id="dist-datas-limpar" onclick="distLimparDatas()" style="display:none;padding:4px 10px;font-size:12px">✕ Limpar datas</button>
         <span style="flex:1"></span>
         <button class="btn btn-primary" id="btn-dist-sync" onclick="distSync()" style="display:none">🔄 Atualizar agora</button>
         <button class="btn" id="btn-dist-xlsx" onclick="distExportXLSX()" style="display:none">⬇️ Excel</button>
@@ -5874,12 +5881,26 @@ const distFmtR = n => 'R$ ' + Number(n||0).toLocaleString('pt-BR',{minimumFracti
 // estado de meses selecionados (1..12)
 let distMesesSel = new Set([1,2,3,4,5,6,7,8,9,10,11,12])
 
+// Intervalo de datas: só vale com AS DUAS preenchidas. Com as duas, ele MANDA —
+// Ano e chips de meses ficam desligados, senão a tela mostraria um filtro que o
+// servidor está ignorando (quem decide é data_ini/data_fim, ver queryToRange).
+function distDatas(){
+  const ini = document.getElementById('dist-data-ini').value
+  const fim = document.getElementById('dist-data-fim').value
+  return (ini && fim) ? { ini, fim } : null
+}
+
 function distQuery(){
   const p = new URLSearchParams()
+  const datas = distDatas()
   const ano = document.getElementById('dist-ano').value
-  p.set('ano', ano)
-  if(ano !== 'todos' && distMesesSel.size > 0 && distMesesSel.size < 12){
-    p.set('meses', [...distMesesSel].sort((a,b)=>a-b).join(','))
+  if(datas){
+    p.set('data_ini', datas.ini); p.set('data_fim', datas.fim)
+  } else {
+    p.set('ano', ano)
+    if(ano !== 'todos' && distMesesSel.size > 0 && distMesesSel.size < 12){
+      p.set('meses', [...distMesesSel].sort((a,b)=>a-b).join(','))
+    }
   }
   const r = document.getElementById('dist-regiao').value; if(r) p.set('regiao', r)
   const m = document.getElementById('dist-modelo').value; if(m) p.set('modelo', m)
@@ -5904,9 +5925,30 @@ function distMesesTodos(){
   distMesesSel = new Set([1,2,3,4,5,6,7,8,9,10,11,12])
   distRenderMesesChips(); distCarregar()
 }
-function distOnAnoChange(){
+function distAplicarModoDatas(){
+  const ativo = !!distDatas()
   const ano = document.getElementById('dist-ano').value
-  document.getElementById('dist-meses-row').style.display = ano === 'todos' ? 'none' : 'flex'
+  document.getElementById('dist-ano').disabled = ativo
+  document.getElementById('dist-meses-row').style.display = (ativo || ano === 'todos') ? 'none' : 'flex'
+  document.getElementById('dist-datas-limpar').style.display = ativo ? '' : 'none'
+}
+function distOnAnoChange(){
+  distAplicarModoDatas()
+  distCarregar()
+}
+function distOnDatasChange(){
+  const ini = document.getElementById('dist-data-ini').value
+  const fim = document.getElementById('dist-data-fim').value
+  document.getElementById('dist-datas-limpar').style.display = (ini || fim) ? '' : 'none'
+  if(!ini || !fim) return // espera a segunda data antes de buscar
+  if(ini > fim){ alert('A data inicial é depois da data final.'); return }
+  distAplicarModoDatas()
+  distCarregar()
+}
+function distLimparDatas(){
+  document.getElementById('dist-data-ini').value = ''
+  document.getElementById('dist-data-fim').value = ''
+  distAplicarModoDatas()
   distCarregar()
 }
 function distOnFilterChange(){
@@ -5919,20 +5961,32 @@ function distOnFilterChange(){
 async function distCarregar(){
   if(!window.FEATURES || !window.FEATURES.distanciaCobli) return
   if(typeof distReaplicarPermissoes === 'function') distReaplicarPermissoes()
+  const status = document.getElementById('dist-atualizado')
+  const datas = distDatas()
+  const textoAnterior = status ? status.textContent : ''
   try{
     const base = distQuery()
     const limiar = document.getElementById('dist-limiar').value
+    // Com datas, os números vêm direto da Cobli (o banco só tem mês fechado):
+    // demora alguns segundos a mais, então a tela avisa em vez de parecer travada.
+    if(datas && status) status.textContent = '⏳ Buscando o período na Cobli…'
     const [resumo, top, modelo, rodizio] = await Promise.all([
       fetch(`${API}/api/distancia/resumo?${base}`).then(r=>r.json()),
       fetch(`${API}/api/distancia/top?${base}`).then(r=>r.json()),
       fetch(`${API}/api/distancia/modelo?${base}&limiar=${limiar}`).then(r=>r.json()),
       fetch(`${API}/api/distancia/rodizio?${base}`).then(r=>r.json()),
     ])
+    if(datas && status) status.textContent = textoAnterior
+    const erro = [resumo, top, modelo, rodizio].find(x => x && !Array.isArray(x) && x.error)
+    if(erro){ alert(erro.error); return }
     distCache = { resumo, top, modelos: modelo.mediaModelo||[], alertas: modelo.alertas||[], rodizio: rodizio||[] }
     distRenderKpis(resumo.kpis||{}); distRenderChart(resumo.serie||[])
     distRenderTop(top||[]); distRenderModelos(distCache.modelos); distRenderAlertas(distCache.alertas)
     distRenderRodizio(distCache.rodizio)
-  }catch(e){ console.error('distancia', e) }
+  }catch(e){
+    if(datas && status) status.textContent = textoAnterior
+    console.error('distancia', e)
+  }
 }
 
 async function distSync(){
@@ -6099,7 +6153,16 @@ async function distSalvarRegiao(grupo){
   distCarregarRegioes(); distCarregar()
 }
 
+const distDataBR = iso => iso.split('-').reverse().join('/')
 function distPeriodoLabel(){
+  const datas = distDatas()
+  if(datas){
+    // Usa o período que o servidor realmente aplicou (o fim é travado em hoje).
+    const p = distCache && distCache.resumo && distCache.resumo.periodo
+    const ini = (p && p.personalizado) ? p.inicio : datas.ini
+    const fim = (p && p.personalizado) ? p.fim : datas.fim
+    return `${distDataBR(ini)} a ${distDataBR(fim)}`
+  }
   const ano = document.getElementById('dist-ano').value
   if(ano === 'todos') return 'Todos os anos'
   const total = distMesesSel.size
@@ -6109,6 +6172,8 @@ function distPeriodoLabel(){
   return `${ano} · ${sel}`
 }
 function distFileSuffix(){
+  const datas = distDatas()
+  if(datas) return `${datas.ini}_a_${datas.fim}`
   const ano = document.getElementById('dist-ano').value
   if(ano === 'todos') return 'todos'
   if(distMesesSel.size === 12) return ano
