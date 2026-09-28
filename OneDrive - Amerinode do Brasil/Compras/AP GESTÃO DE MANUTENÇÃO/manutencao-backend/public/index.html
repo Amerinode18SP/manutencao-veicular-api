@@ -1248,6 +1248,22 @@ tr:hover td{background:#F9F9F9}
           </div>
         </div>
 
+        <!-- Alugados: vêm de TODAS as manutenções, inclusive as de perda total -->
+        <div class="card" id="sit-alug-card" style="display:none">
+          <div class="card-header">
+            <span class="card-title">🚗 Carros alugados em uso</span>
+            <span style="color:#666;font-size:12px">Inclui os que cobrem veículo com perda total</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Alugado (placa)</th><th>Substituindo</th><th>Modelo</th><th>Localidade</th><th>Situação do veículo</th><th>Devolver até</th>
+              </tr></thead>
+              <tbody id="sit-alug-table"></tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- Saíram da frota: lista à parte, porque NÃO são carros parados -->
         <div class="card" id="sit-baixas-card" style="display:none">
           <div class="card-header">
@@ -2095,6 +2111,21 @@ async function iniciarSessao(user){
   popularPlacasDashboard()
   carregarDashboard()
   verificarAlertaSessaoKm() // aviso global se a sessão do TicketLog expirou (admin)
+  restaurarUltimaPagina()
+}
+
+// Ao apertar F5 a pessoa voltava SEMPRE para o Dashboard, mesmo tendo pedido
+// para atualizar a tela em que estava (28/09/2026). Guardamos a última página e
+// voltamos para ela. O Dashboard continua sendo o padrão de quem entra agora.
+// Se a página guardada não existir mais (ou a pessoa não tiver acesso a ela),
+// cai no Dashboard em silêncio — nunca deixa a tela em branco.
+function restaurarUltimaPagina(){
+  try{
+    const p = localStorage.getItem('ultimaPagina')
+    if(!p || p === 'dashboard') return
+    if(!document.getElementById('page-'+p)) return
+    showPage(p)
+  }catch(e){ /* navegador sem localStorage: segue no Dashboard */ }
 }
 
 // Verificar sessão ao carregar
@@ -2166,6 +2197,8 @@ function showPage(id){
   if(id==='analise') carregarAnalise()
   if(id==='cadastro' && cadastroItens.length===0){cadastroItens=[novoItemCadastro()];renderItensCadastro()}
   if(id==='manutencao') carregarManutencao()
+  // Guarda a página para o F5 não jogar a pessoa de volta no Dashboard.
+  try{ localStorage.setItem('ultimaPagina', id) }catch(e){}
 }
 
 // Atalho do menu lateral -> subaba de alertas (ficava escondida em 3 cliques).
@@ -5247,6 +5280,7 @@ async function carregarSituacao(){
     document.getElementById('sit-kpi-pt').textContent     = r.perda_total ?? '0'
     document.getElementById('sit-kpi-vend').textContent   = r.vendidos ?? '0'
     sitRenderBaixas(sitDados.baixas || [])
+    sitRenderAlugados(sitDados.alugados || [])
     document.getElementById('sit-kpi-media').textContent  = (r.media_dias ?? 0) + ''
     document.getElementById('sit-gerado').textContent =
       'Atualizado em ' + new Date(sitDados.gerado_em).toLocaleString('pt-BR')
@@ -5261,6 +5295,31 @@ async function carregarSituacao(){
   }catch(e){
     tb.innerHTML = `<tr><td colspan="13" class="empty">Não foi possível carregar: ${e.message}</td></tr>`
   }
+}
+
+function sitRenderAlugados(alug){
+  const card = document.getElementById('sit-alug-card')
+  const tb = document.getElementById('sit-alug-table')
+  if(!alug.length){ card.style.display='none'; return }
+  card.style.display=''
+  tb.innerHTML = alug.map(a=>{
+    // O aluguel de um carro com perda total é o que mais preocupa: o veículo
+    // não volta, então o substituto tende a ficar indefinidamente.
+    const sit = a.perda_total
+      ? '<strong style="color:#791F1F">💀 Perda total</strong>'
+      : esc(a.status||'-')
+    const dev = a.previsao_devolucao
+      ? `<span style="color:${a.devolucao_atrasada?'#791F1F':'#333'}">${fmtData(a.previsao_devolucao)}${a.devolucao_atrasada?' ⚠️ vencida':''}</span>`
+      : '<span style="color:#8A5A00">sem previsão</span>'
+    return `<tr style="${a.perda_total?'background:#FDF3F3':''}">
+      <td><strong>${a.placa_alugado?esc(a.placa_alugado):'<span style="color:#B9433E">não informada</span>'}</strong></td>
+      <td>${esc(a.placa_parada||'-')}</td>
+      <td>${esc(a.modelo||'-')}</td>
+      <td>${esc(a.localidade||'-')}</td>
+      <td>${sit}</td>
+      <td>${dev}</td>
+    </tr>`
+  }).join('')
 }
 
 function sitRenderBaixas(baixas){
@@ -5315,9 +5374,17 @@ function sitRenderTabela(itens){
       ? `<div style="font-size:11px"><strong>${u.data_saida?fmtData(u.data_saida):'—'}</strong>`
         + (u.tipo?` · ${esc(u.tipo)}`:'')
         + (u.oficina?` · ${esc(u.oficina)}`:'')
-        + (u.servico?`<div style="color:#555">${esc(u.servico)}</div>`:'<div style="color:#B9433E">serviço não descrito</div>')
+        + (u.servico?`<div style="color:#555">${esc(u.servico)}</div>`:'')
         + '</div>'
       : '<span style="color:#888;font-size:11px">primeira passagem</span>'
+    // O serviço em si costuma estar nas ORDENS DE COMPRA, não na manutenção —
+    // por isso os itens comprados aparecem junto (28/09/2026).
+    const srv = (m.ultimos_servicos||[])
+    const listaSrv = srv.length
+      ? `<div style="font-size:11px;margin-top:3px">${srv.map(s=>
+          `<div style="color:#1F4E79">• ${esc(s.item)}${s.data?` <span style="color:#888">(${fmtData(s.data)})</span>`:''}</div>`
+        ).join('')}</div>`
+      : ((u && u.servico) ? '' : '<div style="font-size:11px;color:#B9433E">serviço não descrito</div>')
     // Alugado fica NA FRENTE (3ª coluna): na última, de 13, saía da tela sem rolar
     // e a informação existia sem ninguém ver (28/09/2026).
     // "Devolvido" aparece à parte de "Não": são coisas diferentes — carro que
@@ -5343,7 +5410,7 @@ function sitRenderTabela(itens){
       <td>${atraso}</td>
       <td>${tipo}</td><td>${m.status||'-'}</td>
       <td>${m.oficina||'-'}</td><td>${m.num_os||'-'}</td>
-      <td style="max-width:260px;white-space:normal">${ultima}</td>
+      <td style="max-width:280px;white-space:normal">${ultima}${listaSrv}</td>
     </tr>`
   }).join('')
 }

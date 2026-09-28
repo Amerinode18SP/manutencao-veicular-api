@@ -454,6 +454,57 @@ async function resumoDash(req, res) {
 // inflando o "% da frota parada" todo mês.
 const STATUS_FECHADOS = ['Retornado', 'Cancelado', 'Perda total']
 
+// Lê o cadastro de veículos (régua da frota + baixas) e os SERVIÇOS.
+//
+// ⚠️ O QUE FOI FEITO NO CARRO ESTÁ NAS ORDENS DE COMPRA, não na manutenção.
+// Descoberto em 28/09/2026: o DOBLO aparecia como "serviço não descrito"
+// enquanto existia a ordem "ADITIVO DE RADIADOR" para a mesma placa. A
+// manutenção guarda datas e status; o serviço em si é o item comprado. Sem
+// juntar os dois, a coluna mente por omissão.
+async function lerCadastroEServicos() {
+  const vazio = { frotaAtiva: null, baixas: [], servicosPorPlaca: new Map() }
+  try {
+    const { veiculoAtivo } = require('./outros')
+    const { data: veics, error } = await supabase.from('veiculos').select('*')
+    if (error) return vazio
+
+    const porId = new Map((veics || []).map(v => [v.id, v]))
+    const servicosPorPlaca = new Map()
+    try {
+      const { data: ords } = await supabase.from('ordens')
+        .select('item, categoria, data_ordem, veiculo_id')
+        .order('data_ordem', { ascending: false })
+        .limit(3000)
+      for (const o of (ords || [])) {
+        const v = porId.get(o.veiculo_id)
+        if (!v || !o.item) continue
+        const chave = normPlaca(v.placa)
+        const lista = servicosPorPlaca.get(chave) || []
+        if (lista.length < 3) {   // as 3 mais recentes bastam para a tela
+          lista.push({ item: o.item, categoria: o.categoria || null, data: o.data_ordem || null })
+          servicosPorPlaca.set(chave, lista)
+        }
+      }
+    } catch (e) { /* sem ordens: a coluna cai no texto da manutenção */ }
+
+    const baixas = (veics || [])
+      .filter(v => v.motivo_baixa)
+      .map(v => {
+        const s = v.substituido_por_id ? porId.get(v.substituido_por_id) : null
+        return {
+          placa: v.placa, modelo: v.modelo, localidade: v.localidade,
+          motivo: v.motivo_baixa, data_baixa: v.data_baixa,
+          substituido_por: s ? { placa: s.placa, modelo: s.modelo } : null,
+        }
+      })
+      .sort((a, b) => String(b.data_baixa || '').localeCompare(String(a.data_baixa || '')))
+
+    return { frotaAtiva: (veics || []).filter(veiculoAtivo).length, baixas, servicosPorPlaca }
+  } catch (e) {
+    return vazio // cadastro indisponível: o painel funciona sem a régua
+  }
+}
+
 async function situacaoAtual(req, res) {
   try {
     const hoje = new Date().toISOString().split('T')[0]
@@ -482,6 +533,10 @@ async function situacaoAtual(req, res) {
         ultimaPorPlaca.set(chave, m)
       }
     }
+
+    // ⚠️ O cadastro e as ordens são lidos ANTES da lista: `itens` usa os dois
+    // (serviço das ordens). Deixar para depois deixava a coluna vazia sem erro.
+    const { frotaAtiva, baixas, servicosPorPlaca } = await lerCadastroEServicos()
 
     const data = abertas
     const itens = (data || []).map(m => {
@@ -514,33 +569,30 @@ async function situacaoAtual(req, res) {
         // segue correndo enquanto ninguém devolve.
         devolucao_atrasada: !!m.veiculo_alugado && !m.veiculo_devolvido &&
           !!m.previsao_devolucao && m.previsao_devolucao < hoje,
+        // Serviços das ordens de compra — onde a descrição realmente está.
+        ultimos_servicos: servicosPorPlaca.get(normPlaca(m.placa)) || [],
       }
     }).sort((a, b) => b.dias_parado - a.dias_parado) // mais parado primeiro
 
-    // Frota ativa vem do CADASTRO de veículos, não das manutenções: é ela que
-    // dá a régua "X de Y carros estão parados". Sem isso, 5 parados não diz nada
-    // — 5 de 30 é rotina, 5 de 8 é a operação travando.
-    let frotaAtiva = null
-    let baixas = []          // o que saiu da frota: perda total, vendido, devolvido
-    try {
-      const { veiculoAtivo } = require('./outros')
-      const { data: veics, error: ev } = await supabase.from('veiculos').select('*')
-      if (!ev) {
-        frotaAtiva = (veics || []).filter(veiculoAtivo).length
-        const porId = new Map((veics || []).map(v => [v.id, v]))
-        baixas = (veics || [])
-          .filter(v => v.motivo_baixa)
-          .map(v => {
-            const s = v.substituido_por_id ? porId.get(v.substituido_por_id) : null
-            return {
-              placa: v.placa, modelo: v.modelo, localidade: v.localidade,
-              motivo: v.motivo_baixa, data_baixa: v.data_baixa,
-              substituido_por: s ? { placa: s.placa, modelo: s.modelo } : null,
-            }
-          })
-          .sort((a, b) => String(b.data_baixa || '').localeCompare(String(a.data_baixa || '')))
-      }
-    } catch (e) { /* cadastro indisponível: o painel funciona sem a régua */ }
+    // ALUGADOS saem de TODAS as manutenções, não só das abertas.
+    // ⚠️ O carro alugado continua com a empresa depois que a manutenção fecha —
+    // inclusive quando ela fecha como PERDA TOTAL, que é justamente quando o
+    // substituto fica por mais tempo. Contar só as abertas fazia dois alugados
+    // sumirem do painel no instante em que o carro virava perda total, e o
+    // aluguel seguia correndo sem aparecer para ninguém (28/09/2026).
+    const alugados = (todas || [])
+      .filter(m => m.veiculo_alugado && !m.veiculo_devolvido)
+      .map(m => ({
+        placa_parada: m.placa,
+        modelo: m.modelo,
+        localidade: m.localidade,
+        status: m.status,
+        placa_alugado: m.placa_alugado || null,
+        previsao_devolucao: m.previsao_devolucao || null,
+        devolucao_atrasada: !!m.previsao_devolucao && m.previsao_devolucao < hoje,
+        perda_total: m.status === 'Perda total',
+      }))
+      .sort((a, b) => String(a.previsao_devolucao || '9999').localeCompare(String(b.previsao_devolucao || '9999')))
 
     const soma = (f) => itens.filter(f).length
     const parados = itens.length
@@ -558,11 +610,13 @@ async function situacaoAtual(req, res) {
           ? Math.round((parados / frotaAtiva) * 100) : null,
         atrasados: soma(i => i.atrasado),
         sem_previsao: soma(i => i.sem_previsao),
-        alugados_ativos: soma(i => i.alugado_ativo),
+        // Conta a lista completa de alugados, não só os das manutenções abertas.
+        alugados_ativos: alugados.length,
+        alugados_em_perda_total: alugados.filter(a => a.perda_total).length,
         // Alugado sem placa registrada: a direção quer saber QUAL carro está
         // substituindo, e essa contagem mostra quanto ainda falta preencher.
-        alugados_sem_placa: soma(i => i.alugado_ativo && !i.placa_alugado),
-        devolucoes_atrasadas: soma(i => i.devolucao_atrasada),
+        alugados_sem_placa: alugados.filter(a => !a.placa_alugado).length,
+        devolucoes_atrasadas: alugados.filter(a => a.devolucao_atrasada).length,
         // Seguro é marcação à parte (decisão da Luciana): corre em paralelo e
         // pode continuar depois de o carro voltar da oficina.
         em_seguro: (todas || []).filter(m => m.em_seguro).length,
@@ -582,6 +636,7 @@ async function situacaoAtual(req, res) {
       // Lista separada: são veículos que JÁ SAÍRAM, não carros parados. Misturar
       // com `itens` faria o "% da frota parada" contar carro que não existe mais.
       baixas,
+      alugados,
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
