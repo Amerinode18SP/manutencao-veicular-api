@@ -6992,9 +6992,18 @@ function veicFecharModal(){ document.getElementById('veic-modal').style.display 
 
 async function veicSalvar(){
   const btn = document.getElementById('veic-btn-salvar')
-  const placa = document.getElementById('veic-placa').value.trim().toUpperCase()
+  // Placa: só os dois formatos que existem no Brasil — Mercosul (ABC1D23) e o
+  // antigo (ABC1234). Aqui é BLOQUEIO, não aviso: placa é a chave do veículo em
+  // todo o sistema, e uma errada cria um carro fantasma que ninguém percebe.
+  // Foi assim que entraram "OS260107" (nº de OS) e "QN0ZH31" (dígito e letra
+  // trocados de lugar).
+  const placa = document.getElementById('veic-placa').value.toUpperCase().replace(/[^A-Z0-9]/g,'')
   const localidade = document.getElementById('veic-localidade').value.trim()
   if(!placa){ alert('Informe a placa.'); return }
+  if(!/^[A-Z]{3}\d[A-Z]\d{2}$/.test(placa) && !/^[A-Z]{3}\d{4}$/.test(placa)){
+    alert(`"${placa}" não é uma placa válida.\n\nUse um destes formatos:\n• ABC1D23 (Mercosul)\n• ABC1234 (antigo)`)
+    return
+  }
   if(!localidade){ alert('Informe a localidade.'); return }
 
   const renavam = document.getElementById('veic-renavam').value.replace(/\D/g,'')
