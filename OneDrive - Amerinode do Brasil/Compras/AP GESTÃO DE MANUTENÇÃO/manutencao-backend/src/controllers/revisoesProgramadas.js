@@ -137,7 +137,7 @@ async function garantirRevisaoDaData(veiculoId, placa, data) {
 // km_atual vem do cadastro (alimentado pelo sync/import TicketLog) — a tela mostra
 // junto do km_previsto para dar contexto de quanto falta rodar.
 async function mapaVeiculos() {
-  const { data, error } = await supabase.from('veiculos').select('id, placa, localidade, km_atual')
+  const { data, error } = await supabase.from('veiculos').select('id, placa, localidade, km_atual, ativo')
   if (error) throw error
   const mapa = new Map()
   for (const v of (data || [])) mapa.set(normPlaca(v.placa), v)
@@ -167,10 +167,16 @@ async function listar(req, res) {
     // anexa localidade e km atual do veículo (a tela mostra as duas)
     const veics = await mapaVeiculos()
     const porId = new Map([...veics.values()].map(v => [v.id, v]))
-    res.json((data || []).map(r => {
-      const v = porId.get(r.veiculo_id) || {}
-      return { ...r, localidade: v.localidade || '', km_atual: v.km_atual != null ? v.km_atual : null }
-    }))
+    const { veiculoAtivo } = require('./outros')
+    res.json((data || [])
+      // Veículo inativo sai das telas de controle (decisão da Luciana, 28/09/2026).
+      // Revisão SEM veículo casado continua aparecendo: sumir dela esconderia um
+      // agendamento órfão, que é problema para resolver, não para ocultar.
+      .filter(r => { const v = porId.get(r.veiculo_id); return !v || veiculoAtivo(v) })
+      .map(r => {
+        const v = porId.get(r.veiculo_id) || {}
+        return { ...r, localidade: v.localidade || '', km_atual: v.km_atual != null ? v.km_atual : null }
+      }))
   } catch (err) {
     if (tabelaAusente(err)) return res.json([])
     res.status(500).json({ error: err.message })

@@ -167,10 +167,15 @@ async function lerAgenda() {
     if (error) throw error
 
     // localidade/km atual vêm do cadastro do veículo
-    const { data: veics } = await supabase.from('veiculos').select('id, localidade, km_atual')
+    const { data: veics } = await supabase.from('veiculos').select('id, localidade, km_atual, ativo')
     const porId = new Map((veics || []).map(v => [v.id, v]))
+    const { veiculoAtivo } = require('./outros')
 
-    return (data || []).map(r => {
+    return (data || [])
+      // Veículo inativo não gera mais aviso por e-mail (28/09/2026). Revisão sem
+      // veículo casado continua avisando: é pendência real, não ruído.
+      .filter(r => { const v = porId.get(r.veiculo_id); return !v || veiculoAtivo(v) })
+      .map(r => {
       const v = porId.get(r.veiculo_id) || {}
       return {
         revisao_id: r.id,

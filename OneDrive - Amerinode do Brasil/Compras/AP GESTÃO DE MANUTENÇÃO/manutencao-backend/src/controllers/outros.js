@@ -2,16 +2,75 @@ const supabase = require('../supabase')
 
 // ── VEÍCULOS ─────────────────────────────────────────────────────────────────
 
+// ⚠️ "Ativo" é lido como `ativo !== false`, NUNCA como `ativo === true`.
+// A coluna nasce com scripts/veiculos-cadastro.sql; enquanto ele não roda, o
+// campo vem undefined — e `=== true` faria a frota inteira virar inativa de uma
+// vez, sumindo das Próximas Revisões sem erro nenhum na tela.
+const veiculoAtivo = v => v && v.ativo !== false
+
+const limpo = v => {
+  const s = String(v == null ? '' : v).trim()
+  return s === '' ? null : s
+}
+// 23505 = violação de índice único (placa, renavam ou chassi repetidos).
+const erroDeDuplicidade = err => String((err && (err.code || err.message)) || '').includes('23505')
+function mensagemVeiculo(err) {
+  const m = String((err && err.message) || '')
+  if (!erroDeDuplicidade(err)) return m
+  if (m.includes('renavam')) return 'Já existe um veículo com esse RENAVAM.'
+  if (m.includes('chassi'))  return 'Já existe um veículo com esse chassi.'
+  return 'Já existe um veículo com essa placa.'
+}
+
 async function listarVeiculos(req, res) {
   try {
+    const { busca, localidade, supervisor, status } = req.query
     const { data, error } = await supabase
       .from('veiculos')
       .select('*')
       .order('placa')
     if (error) throw error
-    res.json(data)
+
+    const txt = (v, t) => String(v || '').toLowerCase().includes(String(t).toLowerCase())
+    let lista = data || []
+    // O filtro roda aqui, e não no banco, porque a tela de cadastro procura o
+    // mesmo termo em placa, modelo, renavam e chassi ao mesmo tempo.
+    if (busca)      lista = lista.filter(v => txt(v.placa, busca) || txt(v.modelo, busca) ||
+                                              txt(v.renavam, busca) || txt(v.chassi, busca))
+    if (localidade) lista = lista.filter(v => txt(v.localidade, localidade))
+    if (supervisor) lista = lista.filter(v => txt(v.supervisor, supervisor))
+    if (status === 'ativo')   lista = lista.filter(veiculoAtivo)
+    if (status === 'inativo') lista = lista.filter(v => !veiculoAtivo(v))
+
+    res.json(lista)
   } catch (err) {
     res.status(500).json({ error: err.message })
+  }
+}
+
+// POST /api/veiculos — cadastro novo, pela tela de Veículos.
+async function criarVeiculo(req, res) {
+  try {
+    const b = req.body || {}
+    const placa = String(b.placa || '').trim().toUpperCase()
+    if (!placa) return res.status(400).json({ error: 'Informe a placa.' })
+    if (!String(b.localidade || '').trim()) return res.status(400).json({ error: 'Informe a localidade.' })
+
+    const chassi = limpo(b.chassi)
+    const { data, error } = await supabase.from('veiculos').insert({
+      placa,
+      localidade: String(b.localidade).trim(),
+      modelo:     limpo(b.modelo),
+      supervisor: limpo(b.supervisor),
+      renavam:    limpo(b.renavam),
+      chassi:     chassi ? chassi.toUpperCase() : null,
+      observacao: limpo(b.observacao),
+      ativo:      b.ativo === false ? false : true,
+    }).select().single()
+    if (error) throw error
+    res.status(201).json(data)
+  } catch (err) {
+    res.status(erroDeDuplicidade(err) ? 409 : 500).json({ error: mensagemVeiculo(err) })
   }
 }
 
@@ -31,7 +90,8 @@ async function revisoesPendentes(req, res) {
       .order('proxima_revisao')
 
     if (error) throw error
-    res.json(data)
+    // Veículo inativo sai das telas de controle (decisão da Luciana, 28/09/2026).
+    res.json((data || []).filter(veiculoAtivo))
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -432,7 +492,7 @@ async function serie(req, res) {
 }
 
 module.exports = {
-  listarVeiculos, revisoesPendentes, atualizarVeiculo,
+  listarVeiculos, revisoesPendentes, atualizarVeiculo, criarVeiculo, veiculoAtivo,
   listarFornecedores, criarFornecedor, atualizarFornecedor, deletarFornecedor,
   resumo, rankings, serie
 }

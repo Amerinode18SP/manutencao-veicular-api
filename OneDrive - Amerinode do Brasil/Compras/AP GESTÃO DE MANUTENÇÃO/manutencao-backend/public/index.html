@@ -336,6 +336,7 @@ tr:hover td{background:#F9F9F9}
   <div class="nav-item" onclick="showPage('analise')">💰 Análise de Gastos</div>
   <div class="nav-item" onclick="showPage('manutencao')">🔧 Em Manutenção</div>
   <div class="nav-item" id="nav-distancia" onclick="showPage('distancia')" style="display:none">🚗 Distância &amp; Combustível</div>
+  <div class="nav-item" onclick="showPage('veiculos')">🚗 Veículos</div>
   <div class="nav-item" onclick="showPage('fornecedores')">🏢 Fornecedores</div>
   <div class="nav-sep"></div>
   <div class="nav-item" id="nav-usuarios" onclick="showPage('usuarios')">👥 Usuários</div>
@@ -1525,6 +1526,89 @@ tr:hover td{background:#F9F9F9}
       </div>
     </div><!-- /page-fornecedores -->
 
+    <!-- ══ CADASTRO DE VEÍCULOS ══ -->
+    <div class="page" id="page-veiculos">
+      <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h2>🚗 Cadastro de Veículos</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="veicExportarXLSX()">⬇ Excel</button>
+          <button class="btn-primary" onclick="veicAbrirModal()">+ Novo Veículo</button>
+        </div>
+      </div>
+
+      <div class="stats-grid" style="margin-bottom:14px">
+        <div class="stat-card"><div class="stat-label">🚗 Total</div><div class="stat-value" id="veic-kpi-total">—</div><div class="stat-sub">Veículos cadastrados</div></div>
+        <div class="stat-card"><div class="stat-label">✅ Ativos</div><div class="stat-value" id="veic-kpi-ativos" style="color:#27500A">—</div><div class="stat-sub">Entram nas revisões</div></div>
+        <div class="stat-card"><div class="stat-label">🚫 Inativos</div><div class="stat-value" id="veic-kpi-inativos" style="color:#8A5A00">—</div><div class="stat-sub">Fora das telas de controle</div></div>
+        <div class="stat-card"><div class="stat-label">📄 Sem RENAVAM/chassi</div><div class="stat-value" id="veic-kpi-semdoc" style="color:#791F1F">—</div><div class="stat-sub">Falta preencher</div></div>
+      </div>
+
+      <div class="table-wrap" style="padding:14px;margin-bottom:14px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+          <div>
+            <label style="font-size:12px;color:#666">Busca (placa / modelo / renavam / chassi)</label>
+            <input id="veic-f-busca" oninput="veicCarregar()" placeholder="Digite pra filtrar" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#666">Localidade</label>
+            <input id="veic-f-localidade" oninput="veicCarregar()" placeholder="Ex: Sorocaba" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#666">Supervisor</label>
+            <input id="veic-f-supervisor" oninput="veicCarregar()" placeholder="Filtrar..." style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#666">Status</label>
+            <select id="veic-f-status" onchange="veicCarregar()" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px;background:#fff">
+              <option value="">Todos</option>
+              <option value="ativo">Só ativos</option>
+              <option value="inativo">Só inativos</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Placa</th><th>Modelo</th><th>Localidade</th><th>Supervisor</th>
+            <th>RENAVAM</th><th>Chassi</th><th>Status</th><th>Observação</th><th style="width:90px"></th>
+          </tr></thead>
+          <tbody id="veic-tbody"><tr><td colspan="9" style="color:#666">Carregando...</td></tr></tbody>
+        </table>
+      </div>
+    </div><!-- /page-veiculos -->
+
+    <!-- MODAL CADASTRO/EDIÇÃO DE VEÍCULO -->
+    <div class="modal-overlay" id="veic-modal" style="display:none">
+      <div class="modal" style="width:620px;max-width:95vw">
+        <div class="modal-header">
+          <span class="card-title" id="veic-modal-titulo">Novo Veículo</span>
+          <button class="btn" onclick="veicFecharModal()">✕</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="form-group"><label>Placa *</label><input id="veic-placa" placeholder="ABC1D23" style="text-transform:uppercase"></div>
+          <div class="form-group"><label>Modelo</label><input id="veic-modelo" placeholder="Ex: Renault Kwid"></div>
+          <div class="form-group"><label>Localidade *</label><input id="veic-localidade" placeholder="Ex: Sorocaba"></div>
+          <div class="form-group"><label>Supervisor</label><input id="veic-supervisor" placeholder="Nome do supervisor"></div>
+          <div class="form-group"><label>RENAVAM</label><input id="veic-renavam" placeholder="11 dígitos" inputmode="numeric"></div>
+          <div class="form-group"><label>Chassi</label><input id="veic-chassi" placeholder="17 caracteres" style="text-transform:uppercase"></div>
+          <div class="form-group"><label>Status</label>
+            <select id="veic-ativo">
+              <option value="true">Ativo</option>
+              <option value="false">Inativo</option>
+            </select>
+            <div style="font-size:11px;color:#8A5A00;margin-top:3px">Inativo sai das Próximas Revisões e dos alertas.</div>
+          </div>
+          <div class="form-group" style="grid-column:1/-1"><label>Observação</label><textarea id="veic-obs" rows="2" placeholder="Anotações sobre o veículo"></textarea></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+          <button class="btn" onclick="veicFecharModal()">Cancelar</button>
+          <button class="btn-primary" id="veic-btn-salvar" onclick="veicSalvar()">Salvar</button>
+        </div>
+      </div>
+    </div>
+
     <!-- MODAL CADASTRO/EDIÇÃO DE FORNECEDOR -->
     <div class="modal-overlay" id="forne-modal" style="display:none">
       <div class="modal" style="max-width:880px">
@@ -2017,7 +2101,7 @@ function showPage(id){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'))
   document.getElementById('page-'+id).classList.add('active')
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'))
-  const titles={dashboard:'Dashboard',ordens:'Ordens de Compra',cadastro:'Novo Cadastro',importar:'Importar Excel',revisoes:'Próximas Revisões',relatorios:'Relatórios',analise:'Análise de Gastos',manutencao:'Controle em Manutenção',usuarios:'Gerenciar Usuários'}
+  const titles={dashboard:'Dashboard',ordens:'Ordens de Compra',cadastro:'Novo Cadastro',importar:'Importar Excel',revisoes:'Próximas Revisões',relatorios:'Relatórios',analise:'Análise de Gastos',manutencao:'Controle em Manutenção',veiculos:'Cadastro de Veículos',usuarios:'Gerenciar Usuários'}
   document.getElementById('page-title').textContent=titles[id]||''
   // Destaca pelo proprio onclick. Antes era por INDICE do .nav-item, o que quebrava
   // o realce de todo mundo abaixo assim que um item novo entrava no meio do menu.
@@ -6823,9 +6907,140 @@ async function forneDeletar(id, nome){
     window.showPage = function(p){
       orig.apply(this, arguments)
       if(p === 'fornecedores'){ forneCarregar(); forneCarregarConfig() }
+      if(p === 'veiculos'){ veicCarregar() }
     }
   }
 })()
+
+// ════════════════════════════════════════════════════════════
+// CADASTRO DE VEÍCULOS (28/09/2026)
+// Campos: placa, modelo, localidade, supervisor, renavam, chassi,
+// status (ativo/inativo) e observação.
+// ⚠️ "ativo" é lido como `!== false`: enquanto o scripts/veiculos-cadastro.sql
+// não roda, a coluna vem indefinida — tratar como inativo faria a frota inteira
+// sumir das Próximas Revisões de uma vez (mesma regra do servidor).
+// ════════════════════════════════════════════════════════════
+let veicLista = []
+let veicEditId = null
+const veicEhAtivo = v => v && v.ativo !== false
+
+async function veicCarregar(){
+  const tb = document.getElementById('veic-tbody')
+  try{
+    const p = new URLSearchParams()
+    const b = document.getElementById('veic-f-busca').value.trim();        if(b) p.set('busca', b)
+    const l = document.getElementById('veic-f-localidade').value.trim();   if(l) p.set('localidade', l)
+    const s = document.getElementById('veic-f-supervisor').value.trim();   if(s) p.set('supervisor', s)
+    const st = document.getElementById('veic-f-status').value;             if(st) p.set('status', st)
+
+    const r = await fetch(`${API}/api/veiculos?${p}`)
+    veicLista = await r.json()
+    if(!Array.isArray(veicLista)) throw new Error(veicLista.error || 'resposta inesperada')
+
+    document.getElementById('veic-kpi-total').textContent    = veicLista.length
+    document.getElementById('veic-kpi-ativos').textContent   = veicLista.filter(veicEhAtivo).length
+    document.getElementById('veic-kpi-inativos').textContent = veicLista.filter(v=>!veicEhAtivo(v)).length
+    document.getElementById('veic-kpi-semdoc').textContent   =
+      veicLista.filter(v=>!String(v.renavam||'').trim() || !String(v.chassi||'').trim()).length
+
+    if(!veicLista.length){
+      tb.innerHTML = '<tr><td colspan="9" style="color:#666">Nenhum veículo com esse filtro.</td></tr>'
+      return
+    }
+    tb.innerHTML = veicLista.map(v=>{
+      const ativo = veicEhAtivo(v)
+      const selo = ativo
+        ? '<span style="padding:2px 8px;border-radius:10px;background:#EAF3DE;color:#27500A;font-size:11px">Ativo</span>'
+        : '<span style="padding:2px 8px;border-radius:10px;background:#F5F1E6;color:#8A5A00;font-size:11px">Inativo</span>'
+      const falta = t => String(t||'').trim() ? esc(String(t)) : '<span style="color:#B9433E">—</span>'
+      return `<tr style="${ativo?'':'opacity:.65'}">
+        <td><strong>${esc(v.placa||'-')}</strong></td>
+        <td>${esc(v.modelo||'-')}</td>
+        <td>${esc(v.localidade||'-')}</td>
+        <td>${esc(v.supervisor||'-')}</td>
+        <td>${falta(v.renavam)}</td>
+        <td>${falta(v.chassi)}</td>
+        <td>${selo}</td>
+        <td style="max-width:220px;white-space:normal">${esc(v.observacao||'')}</td>
+        <td><button class="btn" onclick="veicAbrirModal('${v.id}')">✏️ Editar</button></td>
+      </tr>`
+    }).join('')
+  }catch(e){
+    tb.innerHTML = `<tr><td colspan="9" style="color:#A32D2D">Erro ao carregar: ${esc(e.message)}</td></tr>`
+  }
+}
+
+function veicAbrirModal(id){
+  veicEditId = id || null
+  const v = id ? (veicLista.find(x=>String(x.id)===String(id)) || {}) : {}
+  document.getElementById('veic-modal-titulo').textContent = id ? `Editar ${v.placa||'veículo'}` : 'Novo Veículo'
+  document.getElementById('veic-placa').value      = v.placa || ''
+  document.getElementById('veic-placa').disabled   = !!id   // placa é a chave: não se troca depois
+  document.getElementById('veic-modelo').value     = v.modelo || ''
+  document.getElementById('veic-localidade').value = v.localidade || ''
+  document.getElementById('veic-supervisor').value = v.supervisor || ''
+  document.getElementById('veic-renavam').value    = v.renavam || ''
+  document.getElementById('veic-chassi').value     = v.chassi || ''
+  document.getElementById('veic-obs').value        = v.observacao || ''
+  document.getElementById('veic-ativo').value      = (id && !veicEhAtivo(v)) ? 'false' : 'true'
+  document.getElementById('veic-modal').style.display = 'flex'
+}
+function veicFecharModal(){ document.getElementById('veic-modal').style.display = 'none'; veicEditId = null }
+
+async function veicSalvar(){
+  const btn = document.getElementById('veic-btn-salvar')
+  const placa = document.getElementById('veic-placa').value.trim().toUpperCase()
+  const localidade = document.getElementById('veic-localidade').value.trim()
+  if(!placa){ alert('Informe a placa.'); return }
+  if(!localidade){ alert('Informe a localidade.'); return }
+
+  const renavam = document.getElementById('veic-renavam').value.replace(/\D/g,'')
+  const chassi  = document.getElementById('veic-chassi').value.trim().toUpperCase()
+  // Avisa, mas não impede: documento antigo pode fugir do formato, e travar o
+  // cadastro por causa disso deixaria o veículo de fora do sistema.
+  if(renavam && renavam.length !== 11 &&
+     !confirm(`O RENAVAM tem ${renavam.length} dígitos (o normal são 11). Salvar assim mesmo?`)) return
+  if(chassi && chassi.length !== 17 &&
+     !confirm(`O chassi tem ${chassi.length} caracteres (o normal são 17). Salvar assim mesmo?`)) return
+
+  const payload = {
+    placa, localidade,
+    modelo:     document.getElementById('veic-modelo').value.trim(),
+    supervisor: document.getElementById('veic-supervisor').value.trim(),
+    renavam, chassi,
+    observacao: document.getElementById('veic-obs').value.trim(),
+    ativo:      document.getElementById('veic-ativo').value === 'true',
+  }
+  btn.disabled = true
+  try{
+    const url = veicEditId ? `${API}/api/veiculos/${veicEditId}` : `${API}/api/veiculos`
+    const r = await fetch(url, {
+      method: veicEditId ? 'PUT' : 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(payload)
+    })
+    const d = await r.json()
+    if(!r.ok) throw new Error(d.error || 'falha ao salvar')
+    veicFecharModal()
+    veicCarregar()
+  }catch(e){ alert('Não foi possível salvar: '+e.message) }
+  finally{ btn.disabled = false }
+}
+
+function veicExportarXLSX(){
+  try{
+    const head=[['Placa','Modelo','Localidade','Supervisor','RENAVAM','Chassi','Status','Observação']]
+    const rows=veicLista.map(v=>[
+      v.placa||'', v.modelo||'', v.localidade||'', v.supervisor||'',
+      v.renavam||'', v.chassi||'', veicEhAtivo(v)?'Ativo':'Inativo', v.observacao||''
+    ])
+    const ws=XLSX.utils.aoa_to_sheet([...head,...rows])
+    ws['!cols']=[{wch:10},{wch:20},{wch:16},{wch:18},{wch:14},{wch:20},{wch:10},{wch:34}]
+    const wb=XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb,ws,'Veículos')
+    XLSX.writeFile(wb,`veiculos_${new Date().toISOString().slice(0,10)}.xlsx`)
+  }catch(e){ alert('Não foi possível gerar o Excel: '+e.message) }
+}
 
 // ════════════════════════════════════════════════════════════
 // FASE 2 — Config global + autocompletar fornecedor em OC
