@@ -24,6 +24,8 @@ const uploadAnexo = multer({
 })
 
 router.get('/',                   c.listar)
+// ⚠️ Antes de '/:id', senão o Express trataria "situacao" como um id de registro.
+router.get('/situacao',           c.situacaoAtual)
 router.get('/dashboard/resumo',   c.resumoDash)
 router.get('/dashboard/rankings', c.rankingsDash)
 router.get('/dashboard/serie',    c.serieDash)

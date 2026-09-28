@@ -173,6 +173,8 @@ tr:hover td{background:#F9F9F9}
 .chart-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 .chart-toolbar h4{font-size:13px;font-weight:500;color:#1E3A5F}
 .chart-controls{display:flex;gap:6px;flex-wrap:wrap}
+.man-aba-btn{border:none;background:transparent;padding:8px 16px;font-size:14px;color:#666;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
+.man-aba-btn.active{color:#1E3A5F;font-weight:600;border-bottom-color:#185FA5}
 .chart-controls .seg{display:flex;background:#F0F4F9;border-radius:8px;padding:3px}
 .chart-controls .seg button{border:none;background:transparent;padding:5px 10px;border-radius:6px;font-size:11px;color:#666;cursor:pointer}
 .chart-controls .seg button.active{background:#fff;color:#1E3A5F;font-weight:500;box-shadow:0 1px 3px rgba(0,0,0,.08)}
@@ -1201,6 +1203,48 @@ tr:hover td{background:#F9F9F9}
     <!-- EM MANUTENÇÃO -->
     <div id="page-manutencao" class="page">
 
+      <!-- abas da própria página (não é menu novo: mesma tela, dois olhares) -->
+      <div style="display:flex;gap:4px;border-bottom:2px solid #E3EAF2;margin-bottom:16px">
+        <button type="button" class="man-aba-btn" id="man-aba-btn-geral" onclick="manAbrirAba('geral')">📊 Visão Geral</button>
+        <button type="button" class="man-aba-btn" id="man-aba-btn-situacao" onclick="manAbrirAba('situacao')">📌 Situação Atual</button>
+      </div>
+
+      <!-- ABA: SITUAÇÃO ATUAL (o que está parado agora) -->
+      <div id="man-aba-situacao" style="display:none">
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-label">🔧 Em aberto agora</div><div class="stat-value" id="sit-kpi-total">—</div><div class="stat-sub">Ainda não retornaram</div></div>
+          <div class="stat-card"><div class="stat-label">⚠️ Em atraso</div><div class="stat-value" id="sit-kpi-atraso" style="color:#791F1F">—</div><div class="stat-sub">Passaram da previsão</div></div>
+          <div class="stat-card"><div class="stat-label">❓ Sem previsão</div><div class="stat-value" id="sit-kpi-sprev" style="color:#8A5A00">—</div><div class="stat-sub">Não dá para cobrar prazo</div></div>
+          <div class="stat-card"><div class="stat-label">⏳ Parados +30 dias</div><div class="stat-value" id="sit-kpi-30">—</div><div class="stat-sub">Média <span id="sit-kpi-media">—</span> dias parados</div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">📌 Situação atual — do mais parado para o menos</span>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span id="sit-gerado" style="color:#666;font-size:12px"></span>
+              <button class="btn" onclick="carregarSituacao()">🔄 Atualizar</button>
+              <button class="btn" onclick="exportarSituacaoXLSX()">⬇ XLSX</button>
+              <button class="btn" onclick="exportarSituacaoPDF()">⬇ PDF</button>
+            </div>
+          </div>
+          <div id="sit-status-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Placa</th><th>Modelo</th><th>Localidade</th><th>Supervisor</th>
+                <th>Entrada</th><th>Dias parado</th><th>Previsão</th><th>Atraso</th>
+                <th>Tipo</th><th>Status</th><th>Oficina</th><th>Nº OS</th><th>Alugado</th>
+              </tr></thead>
+              <tbody id="sit-table"><tr><td colspan="13" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ABA: VISÃO GERAL (o que a tela já mostrava) -->
+      <div id="man-aba-geral">
+
       <!-- KPIs -->
       <div class="stats-grid" id="man-stats-grid">
         <div class="stat-card"><div class="stat-label">🔧 Em Andamento</div><div class="stat-value" id="man-kpi-andamento">—</div><div class="stat-sub">Veículos na oficina agora</div></div>
@@ -1305,6 +1349,8 @@ tr:hover td{background:#F9F9F9}
           </table>
         </div>
       </div>
+
+      </div><!-- /man-aba-geral -->
 
     </div><!-- /page-manutencao -->
 
@@ -5024,10 +5070,170 @@ function handleDrop(e){e.preventDefault();const file=e.dataTransfer.files[0];if(
 let manPage=1, manEditId=null, manChartObj=null, manGran='mes', manRankTipo='localidade'
 
 async function carregarManutencao(){
-  carregarManDashboard()
-  carregarManLista()
-  carregarManChart()
-  carregarManRanking()
+  manAbrirAba(manAbaAtual)
+}
+
+// ── Abas da tela Em Manutenção ───────────────────────────────
+// Duas leituras da MESMA tela: "Visão Geral" (histórico, gráficos, lista com
+// filtros) e "Situação Atual" (o que está parado agora). Cada aba só busca os
+// próprios dados ao ser aberta — abrir a tela não dispara as duas.
+let manAbaAtual = 'geral'
+let sitDados = null
+
+function manAbrirAba(aba){
+  manAbaAtual = aba
+  const ehSituacao = aba === 'situacao'
+  document.getElementById('man-aba-geral').style.display = ehSituacao ? 'none' : ''
+  document.getElementById('man-aba-situacao').style.display = ehSituacao ? '' : 'none'
+  document.getElementById('man-aba-btn-geral').classList.toggle('active', !ehSituacao)
+  document.getElementById('man-aba-btn-situacao').classList.toggle('active', ehSituacao)
+  if(ehSituacao){ if(!sitDados) carregarSituacao() }
+  else { carregarManDashboard(); carregarManLista(); carregarManChart(); carregarManRanking() }
+}
+
+async function carregarSituacao(){
+  const tb = document.getElementById('sit-table')
+  tb.innerHTML = '<tr><td colspan="13" class="loading"><span class="spinner"></span>Carregando...</td></tr>'
+  try{
+    sitDados = await apiCall('/api/manutencao/situacao')
+    const r = sitDados.resumo || {}
+    document.getElementById('sit-kpi-total').textContent  = r.total ?? '0'
+    document.getElementById('sit-kpi-atraso').textContent = r.atrasados ?? '0'
+    document.getElementById('sit-kpi-sprev').textContent  = r.sem_previsao ?? '0'
+    document.getElementById('sit-kpi-30').textContent     = r.parados_mais_30 ?? '0'
+    document.getElementById('sit-kpi-media').textContent  = (r.media_dias ?? 0) + ''
+    document.getElementById('sit-gerado').textContent =
+      'Atualizado em ' + new Date(sitDados.gerado_em).toLocaleString('pt-BR')
+
+    // Quantos em cada etapa (Em Andamento / Orçamento / Aprovado)
+    document.getElementById('sit-status-chips').innerHTML =
+      Object.entries(r.por_status||{}).sort((a,b)=>b[1]-a[1]).map(([s,q])=>
+        `<span style="padding:3px 10px;border-radius:12px;background:#F0F4F9;color:#1E3A5F;font-size:12px">${s}: <strong>${q}</strong></span>`
+      ).join('')
+
+    sitRenderTabela(sitDados.itens||[])
+  }catch(e){
+    tb.innerHTML = `<tr><td colspan="13" class="empty">Não foi possível carregar: ${e.message}</td></tr>`
+  }
+}
+
+function sitRenderTabela(itens){
+  const tb = document.getElementById('sit-table')
+  if(!itens.length){
+    tb.innerHTML = '<tr><td colspan="13" class="empty">🎉 Nenhum veículo em aberto — todos retornaram.</td></tr>'
+    return
+  }
+  tb.innerHTML = itens.map(m=>{
+    // Sem previsão NÃO é "no prazo": é uma lacuna, e aparece como tal.
+    const atraso = m.sem_previsao
+      ? '<span style="color:#8A5A00">sem previsão</span>'
+      : (m.dias_atraso > 0 ? `<strong style="color:#791F1F">${m.dias_atraso} d</strong>` : '<span style="color:#27500A">no prazo</span>')
+    const fundo = m.atrasado ? 'background:#FDF3F3' : (m.sem_previsao ? 'background:#FFFBF2' : '')
+    return `<tr style="${fundo}">
+      <td><strong>${m.placa||'-'}</strong></td><td>${m.modelo||'-'}</td>
+      <td>${m.localidade||'-'}</td><td>${m.supervisor||'-'}</td>
+      <td>${fmtData(m.data_entrada)}</td>
+      <td><strong>${m.dias_parado} d</strong></td>
+      <td>${fmtData(m.previsao_retorno)}</td>
+      <td>${atraso}</td>
+      <td>${m.tipo_manutencao||'-'}</td><td>${m.status||'-'}</td>
+      <td>${m.oficina||'-'}</td><td>${m.num_os||'-'}</td>
+      <td>${m.alugado_ativo?'Sim':'Não'}</td>
+    </tr>`
+  }).join('')
+}
+
+async function exportarSituacaoXLSX(){
+  try{
+    if(!sitDados) await carregarSituacao()
+    const r = sitDados.resumo||{}, stamp = new Date().toLocaleString('pt-BR')
+    const wb = XLSX.utils.book_new()
+    const wsRes = XLSX.utils.aoa_to_sheet([
+      ['SITUAÇÃO ATUAL — veículos em aberto'],[`Gerado em: ${stamp}`],[''],
+      ['Indicador','Valor'],
+      ['Em aberto agora',r.total||0],['Em atraso',r.atrasados||0],
+      ['Sem previsão',r.sem_previsao||0],['Parados há mais de 30 dias',r.parados_mais_30||0],
+      ['Média de dias parados',r.media_dias||0],[''],
+      ['Por etapa','Qtd'],
+      ...Object.entries(r.por_status||{}).map(([s,q])=>[s,q]),
+    ])
+    wsRes['!cols']=[{wch:32},{wch:14}]
+    XLSX.utils.book_append_sheet(wb,wsRes,'Resumo')
+
+    const head=[['Placa','Modelo','Localidade','Supervisor','Entrada','Dias parado','Previsão','Atraso (dias)','Tipo','Status','Oficina','Nº OS','Alugado ativo']]
+    const rows=(sitDados.itens||[]).map(m=>[
+      m.placa,m.modelo||'',m.localidade||'',m.supervisor||'',
+      m.data_entrada||'',m.dias_parado,
+      m.previsao_retorno||'SEM PREVISÃO',
+      m.sem_previsao?'':(m.dias_atraso||0),
+      m.tipo_manutencao||'',m.status||'',m.oficina||'',m.num_os||'',
+      m.alugado_ativo?'Sim':'Não'
+    ])
+    const ws=XLSX.utils.aoa_to_sheet([...head,...rows])
+    ws['!cols']=[{wch:10},{wch:14},{wch:16},{wch:16},{wch:12},{wch:12},{wch:14},{wch:13},{wch:12},{wch:14},{wch:18},{wch:14},{wch:12}]
+    XLSX.utils.book_append_sheet(wb,ws,'Em aberto')
+    XLSX.writeFile(wb,`situacao_atual_${new Date().toISOString().slice(0,10)}.xlsx`)
+  }catch(e){ alert('Não foi possível gerar o Excel: '+e.message) }
+}
+
+async function exportarSituacaoPDF(){
+  try{
+    if(!sitDados) await carregarSituacao()
+    const {jsPDF}=window.jspdf
+    const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'})
+    const W=doc.internal.pageSize.getWidth(), M=12
+    const r=sitDados.resumo||{}, stamp=new Date().toLocaleString('pt-BR')
+
+    doc.setFillColor(30,58,95); doc.rect(0,0,W,18,'F')
+    doc.setTextColor(255,255,255); doc.setFontSize(12); doc.setFont(undefined,'bold')
+    doc.text('Situacao Atual - veiculos em aberto',M,12)
+    doc.setFontSize(8); doc.setFont(undefined,'normal')
+    doc.text(`Gerado em: ${stamp}`,W-M,12,{align:'right'})
+    doc.setTextColor(0,0,0)
+
+    let y=26
+    const kpis=[
+      {label:'Em aberto',val:r.total||0,cor:[230,241,251]},
+      {label:'Em atraso',val:r.atrasados||0,cor:[252,235,235]},
+      {label:'Sem previsao',val:r.sem_previsao||0,cor:[250,238,218]},
+      {label:'Parados +30d',val:r.parados_mais_30||0,cor:[241,239,232]},
+      {label:'Media dias',val:(r.media_dias||0)+' d',cor:[234,243,222]},
+    ]
+    const cW=(W-M*2)/kpis.length-3
+    kpis.forEach((k,i)=>{
+      const x=M+i*(cW+3)
+      doc.setFillColor(...k.cor); doc.roundedRect(x,y,cW,14,2,2,'F')
+      doc.setFontSize(7); doc.setTextColor(80,80,80)
+      doc.text(k.label,x+cW/2,y+5,{align:'center'})
+      doc.setFontSize(13); doc.setFont(undefined,'bold'); doc.setTextColor(30,58,95)
+      doc.text(String(k.val),x+cW/2,y+11,{align:'center'})
+      doc.setFont(undefined,'normal')
+    })
+    y+=20
+
+    const body=(sitDados.itens||[]).map(m=>[
+      m.placa||'', m.modelo||'', m.localidade||'', m.supervisor||'',
+      fmtData(m.data_entrada), String(m.dias_parado),
+      m.sem_previsao?'sem previsao':fmtData(m.previsao_retorno),
+      m.sem_previsao?'-':(m.dias_atraso>0?String(m.dias_atraso):'no prazo'),
+      m.status||'', m.oficina||'', m.num_os||''
+    ])
+    doc.autoTable({
+      startY:y, margin:{left:M,right:M},
+      head:[['Placa','Modelo','Localidade','Supervisor','Entrada','Dias','Previsao','Atraso','Status','Oficina','N OS']],
+      body,
+      headStyles:{fillColor:[30,58,95],textColor:255,fontSize:8},
+      bodyStyles:{fontSize:8}, alternateRowStyles:{fillColor:[245,247,250]},
+      // Linha do atrasado sai destacada também no papel — é o que se leva para a reunião.
+      didParseCell:(d)=>{
+        if(d.section==='body'){
+          const it=(sitDados.itens||[])[d.row.index]
+          if(it && it.atrasado) d.cell.styles.fillColor=[253,243,243]
+        }
+      }
+    })
+    doc.save(`situacao_atual_${new Date().toISOString().slice(0,10)}.pdf`)
+  }catch(e){ alert('Não foi possível gerar o PDF: '+e.message) }
 }
 
 // ── KPIs do dashboard de manutenção ──────────────────────────

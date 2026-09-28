@@ -364,6 +364,65 @@ async function resumoDash(req, res) {
   }
 }
 
+// ── Situação atual (painel "em aberto") ───────────────────────────────────────
+// Responde "o que está parado AGORA", numa lista só, do mais parado para o menos.
+//
+// "Em aberto" = tudo que ainda não voltou: Em Andamento, Orçamento e Aprovado
+// (decisão da Luciana, 28/09/2026). Ficam de fora apenas Retornado e Cancelado.
+// ⚠️ A lista é por EXCLUSÃO de propósito: um status novo no CHECK da tabela entra
+// aqui sozinho. Listar os abertos um a um faria o veículo do status novo sumir do
+// painel sem erro nenhum — parado na oficina e invisível para quem cobra.
+const STATUS_FECHADOS = ['Retornado', 'Cancelado']
+
+async function situacaoAtual(req, res) {
+  try {
+    const hoje = new Date().toISOString().split('T')[0]
+    const { data, error } = await supabase
+      .from('manutencoes')
+      .select('*')
+      .not('status', 'in', `(${STATUS_FECHADOS.map(s => `"${s}"`).join(',')})`)
+      .order('data_entrada', { ascending: true })
+      .limit(1000)
+    if (error) throw error
+
+    const itens = (data || []).map(m => {
+      const dias_parado = diasEntre(m.data_entrada, null)
+      // Atraso só existe quando há previsão. Sem previsão NÃO é 0 (isso viraria
+      // "no prazo" na tela): é null, e a coluna mostra "sem previsão".
+      const dias_atraso = m.previsao_retorno && m.previsao_retorno < hoje
+        ? diasEntre(m.previsao_retorno, null) : (m.previsao_retorno ? 0 : null)
+      return {
+        ...m,
+        dias_parado,
+        dias_atraso,
+        atrasado: dias_atraso != null && dias_atraso > 0,
+        sem_previsao: !m.previsao_retorno,
+        alugado_ativo: !!m.veiculo_alugado && !m.veiculo_devolvido,
+      }
+    }).sort((a, b) => b.dias_parado - a.dias_parado) // mais parado primeiro
+
+    const soma = (f) => itens.filter(f).length
+    res.json({
+      gerado_em: new Date().toISOString(),
+      resumo: {
+        total: itens.length,
+        atrasados: soma(i => i.atrasado),
+        sem_previsao: soma(i => i.sem_previsao),
+        alugados_ativos: soma(i => i.alugado_ativo),
+        parados_mais_30: soma(i => i.dias_parado > 30),
+        media_dias: itens.length
+          ? Math.round(itens.reduce((s, i) => s + i.dias_parado, 0) / itens.length) : 0,
+        por_status: itens.reduce((acc, i) => {
+          const k = i.status || '—'; acc[k] = (acc[k] || 0) + 1; return acc
+        }, {}),
+      },
+      itens,
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}
+
 // ── Dashboard: rankings ───────────────────────────────────────────────────────
 async function rankingsDash(req, res) {
   try {
@@ -633,6 +692,6 @@ async function excluirAnexo(req, res) {
 module.exports = {
   listar, buscarPorId, criar, atualizar, excluir,
   converterEmOrdem, importarManutencao,
-  resumoDash, rankingsDash, serieDash,
+  resumoDash, rankingsDash, serieDash, situacaoAtual,
   uploadAnexo, excluirAnexo
 }
