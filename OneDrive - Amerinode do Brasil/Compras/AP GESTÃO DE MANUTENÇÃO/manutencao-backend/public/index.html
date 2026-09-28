@@ -5825,7 +5825,9 @@ async function exportarManutencaoXLSX(){
     XLSX.utils.book_append_sheet(wb,wsRes,'Resumo')
 
     // ── Aba 2: Lista completa ──
-    const head=[['Placa','Modelo','Localidade','Supervisor','Entrada','Previsão Retorno','Saída','Dias','Tipo','Alugado','Devolvido','Status','Nº OS','Obs.','Convertido OC']]
+    // Oficina fica ao lado do Nº OS: as duas respondem "quem está com o carro"
+    // e sempre são lidas juntas. Estava na tela e faltava aqui (28/09/2026).
+    const head=[['Placa','Modelo','Localidade','Supervisor','Entrada','Previsão Retorno','Saída','Dias','Tipo','Alugado','Devolvido','Status','Oficina','Nº OS','Obs.','Convertido OC']]
     const rows2=(lista.data||[]).map(m=>[
       m.placa,m.modelo||'',m.localidade||'',m.supervisor||'',
       m.data_entrada||'',m.previsao_retorno||'',m.data_saida||'',
@@ -5833,11 +5835,11 @@ async function exportarManutencaoXLSX(){
       m.tipo_manutencao||'',
       m.veiculo_alugado?'Sim':'Não',
       m.veiculo_devolvido?'Sim':'Não',
-      m.status||'',m.num_os||'',m.observacoes||'',
+      m.status||'',m.oficina||'',m.num_os||'',m.observacoes||'',
       m.convertido_ordem?'Sim':'Não'
     ])
     const wsLista=XLSX.utils.aoa_to_sheet([...head,...rows2])
-    wsLista['!cols']=[{wch:10},{wch:12},{wch:15},{wch:15},{wch:12},{wch:16},{wch:12},{wch:6},{wch:12},{wch:8},{wch:10},{wch:14},{wch:14},{wch:30},{wch:14}]
+    wsLista['!cols']=[{wch:10},{wch:12},{wch:15},{wch:15},{wch:12},{wch:16},{wch:12},{wch:6},{wch:12},{wch:8},{wch:10},{wch:14},{wch:18},{wch:14},{wch:30},{wch:14}]
     XLSX.utils.book_append_sheet(wb,wsLista,'Lista completa')
 
     // ── Aba 3: Por Localidade ──
