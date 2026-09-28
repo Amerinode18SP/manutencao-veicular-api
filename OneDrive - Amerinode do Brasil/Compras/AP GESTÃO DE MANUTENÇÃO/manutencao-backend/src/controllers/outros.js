@@ -13,23 +13,9 @@ const limpo = v => {
   return s === '' ? null : s
 }
 
-// ── Placa: formato ──────────────────────────────────────────────────────────
-// Só existem dois no Brasil: Mercosul (ABC1D23 — 3 letras, número, letra, 2
-// números) e o antigo (ABC1234 — 3 letras e 4 números). Motos e reboques usam
-// os mesmos formatos.
-//
-// A conferência existe porque o campo aceitava QUALQUER texto, e foi assim que
-// entrou "OS260107" (um número de ordem de serviço) como se fosse veículo, além
-// de "QN0ZH31" — dígito e letra trocados de lugar. Cada um desses vira um carro
-// fantasma no cadastro, que ninguém percebe até alguém conferir na mão.
-const normPlacaVeic = p => String(p || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
-const PLACA_MERCOSUL = /^[A-Z]{3}\d[A-Z]\d{2}$/
-const PLACA_ANTIGA   = /^[A-Z]{3}\d{4}$/
-const placaValida = p => {
-  const n = normPlacaVeic(p)
-  return PLACA_MERCOSUL.test(n) || PLACA_ANTIGA.test(n)
-}
-const ERRO_PLACA = 'Placa fora do padrão. Use ABC1D23 (Mercosul) ou ABC1234 (antigo).'
+// A regra da placa mora em utils/placa.js — um lugar só, usado por todos os
+// caminhos que criam veículo. Ver o aviso lá sobre não duplicar.
+const { normPlaca: normPlacaVeic, placaValida, ERRO_PLACA } = require('../utils/placa')
 // 23505 = violação de índice único (placa, renavam ou chassi repetidos).
 const erroDeDuplicidade = err => String((err && (err.code || err.message)) || '').includes('23505')
 function mensagemVeiculo(err) {

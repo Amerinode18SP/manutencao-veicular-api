@@ -1,5 +1,7 @@
 const supabase = require('../supabase')
 const XLSX     = require('xlsx')
+// Regra da placa: um lugar só (ver o aviso em utils/placa.js).
+const { normPlaca, placaValida, erroPlacaCom } = require('../utils/placa')
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function parseData(valor) {
@@ -99,9 +101,13 @@ async function criar(req, res) {
 
     if (!placa || !data_entrada)
       return res.status(400).json({ error: 'Placa e data_entrada são obrigatórios.' })
+    // Registrar manutenção CRIA o veículo no cadastro (upsert por placa mais
+    // adiante). Sem esta conferência, uma placa digitada errada aqui nasce como
+    // veículo novo lá — foi assim que o cadastro ganhou carros fantasma.
+    if (!placaValida(placa)) return res.status(400).json({ error: erroPlacaCom(placa) })
 
     const payload = {
-      placa: placa.toString().toUpperCase().trim(),
+      placa: normPlaca(placa),
       modelo: modelo?.toString().trim() || null,
       localidade: localidade?.toString().trim() || null,
       supervisor: supervisor?.toString().trim() || null,
@@ -154,7 +160,10 @@ async function atualizar(req, res) {
       if (payload[d] !== undefined) payload[d] = parseData(payload[d])
     }
 
-    if (payload.placa) payload.placa = payload.placa.toString().toUpperCase().trim()
+    if (payload.placa) {
+      if (!placaValida(payload.placa)) return res.status(400).json({ error: erroPlacaCom(payload.placa) })
+      payload.placa = normPlaca(payload.placa)
+    }
 
     const { data, error } = await supabase
       .from('manutencoes')
@@ -563,6 +572,14 @@ async function importarManutencao(req, res) {
         erros.push({ linha: lin, erro: 'Campo obrigatório faltando: placa' })
         continue
       }
+      // Linha com placa fora do padrão é RECUSADA, não corrigida por conta
+      // própria: a planilha vira manutenção E veículo novo no cadastro, e um
+      // palpite errado aqui cria carro fantasma. A linha entra no relatório de
+      // erros com a placa escrita, para a pessoa achar e corrigir no arquivo.
+      if (!placaValida(r.placa)) {
+        erros.push({ linha: lin, erro: erroPlacaCom(r.placa) })
+        continue
+      }
 
       // Mapear colunas do Excel para o schema
       const dataEntrada = parseData(r.data_entrada_na_oficina || r.data_entrada)
@@ -577,7 +594,7 @@ async function importarManutencao(req, res) {
       if (!tiposValidos.includes(tipo)) tipo = 'Corretiva'
 
       const payload = {
-        placa:             r.placa.toString().toUpperCase().trim(),
+        placa:             normPlaca(r.placa),
         modelo:            r.modelo ? r.modelo.toString().trim() : null,
         localidade:        r.localidade ? r.localidade.toString().trim() : null,
         supervisor:        r.supervisor ? r.supervisor.toString().trim() : null,

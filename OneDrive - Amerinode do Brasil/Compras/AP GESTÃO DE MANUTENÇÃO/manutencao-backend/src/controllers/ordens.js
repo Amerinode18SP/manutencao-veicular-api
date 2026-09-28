@@ -1,4 +1,6 @@
 const supabase = require('../supabase')
+// Regra da placa: um lugar só (ver o aviso em utils/placa.js).
+const { normPlaca, placaValida, erroPlacaCom } = require('../utils/placa')
 
 // Tenta operação; se Postgres reportar coluna ausente, refaz sem ela.
 async function tentarSemColunaFaltante(payload, fn) {
@@ -82,7 +84,10 @@ async function criar(req, res) {
     } = req.body
 
     // 1. Upsert veículo
-    const veiculoPayload = { placa: placa.toUpperCase(), localidade, km_atual, proxima_revisao }
+    // Criar ordem CRIA o veículo (upsert por placa). Placa errada aqui nasce
+    // como veículo novo no cadastro — ver o aviso em utils/placa.js.
+    if (!placaValida(placa)) return res.status(400).json({ error: erroPlacaCom(placa) })
+    const veiculoPayload = { placa: normPlaca(placa), localidade, km_atual, proxima_revisao }
     if (observacao_veiculo !== undefined) veiculoPayload.observacao = observacao_veiculo
     const { data: veiculoData, error: veiculoErr } = await tentarSemColunaFaltante(
       veiculoPayload,
@@ -189,7 +194,9 @@ async function atualizar(req, res) {
     // Se a placa é a mesma (ou ausente), só atualiza dados do veículo existente.
     if (ordemAtual) {
       const placaAtual = (ordemAtual.veiculo?.placa || '').toUpperCase().trim()
-      const placaNova  = placa ? placa.toUpperCase().trim() : null
+      // Trocar a placa da ordem também CRIA veículo (upsert adiante).
+      if (placa && !placaValida(placa)) return res.status(400).json({ error: erroPlacaCom(placa) })
+      const placaNova  = placa ? normPlaca(placa) : null
       const trocouVeiculo = placaNova && placaNova !== placaAtual
 
       if (trocouVeiculo) {

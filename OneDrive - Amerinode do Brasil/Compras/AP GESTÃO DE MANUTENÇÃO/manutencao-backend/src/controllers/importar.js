@@ -1,5 +1,7 @@
 const XLSX     = require('xlsx')
 const supabase = require('../supabase')
+// Regra da placa: um lugar só (ver o aviso em utils/placa.js).
+const { normPlaca, placaValida, erroPlacaCom } = require('../utils/placa')
 
 // Normaliza nomes de colunas: remove acentos, espaços → underscore, lowercase
 function normalizarChave(str) {
@@ -78,6 +80,14 @@ async function importar(req, res) {
         continue
       }
 
+      // Linha com placa fora do padrão é RECUSADA, não adivinhada: a planilha
+      // cria veículo no cadastro (upsert adiante), e palpite errado aqui vira
+      // carro fantasma. A placa vai escrita no erro para achar a linha no arquivo.
+      if (!placaValida(r.placa)) {
+        erros.push({ linha: lin, erro: erroPlacaCom(r.placa) })
+        continue
+      }
+
       try {
         // Helper: tenta operação; se erro indicar coluna faltante, refaz sem ela
         async function tentarSemColunaFaltante(payload, fn) {
@@ -93,7 +103,7 @@ async function importar(req, res) {
 
         // Upsert veículo
         const veiculoPayload = {
-          placa:            r.placa.toString().toUpperCase().trim(),
+          placa:            normPlaca(r.placa),
           localidade:       r.localidade.toString().trim(),
           km_atual:         r.km_atual ? parseInt(r.km_atual) : null,
           proxima_revisao:  parseData(r.proxima_revisao)
