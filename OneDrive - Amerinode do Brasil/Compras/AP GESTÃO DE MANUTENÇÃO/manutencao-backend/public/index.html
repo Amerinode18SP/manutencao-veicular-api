@@ -1257,7 +1257,7 @@ tr:hover td{background:#F9F9F9}
           <div class="table-wrap">
             <table>
               <thead><tr>
-                <th>Alugado (placa)</th><th>Substituindo</th><th>Modelo</th><th>Localidade</th><th>Situação do veículo</th><th>Devolver até</th>
+                <th>Locadora</th><th>Substituindo</th><th>Modelo</th><th>Localidade</th><th>Situação do veículo</th><th>Devolver até</th>
               </tr></thead>
               <tbody id="sit-alug-table"></tbody>
             </table>
@@ -1789,9 +1789,9 @@ tr:hover td{background:#F9F9F9}
           <label for="man-devolvido" style="margin:0">Devolvido?</label>
         </div>
       </div>
-      <div class="form-group man-alug-wrap" style="display:none"><label>Placa do alugado</label>
-        <input id="man-placa-alugado" placeholder="Ex: ABC1D23" style="text-transform:uppercase">
-        <div style="font-size:11px;color:#666;margin-top:3px">Qual carro entrou no lugar deste.</div>
+      <div class="form-group man-alug-wrap" style="display:none"><label>Locadora</label>
+        <input id="man-locadora" placeholder="Ex: LOCALIZA, MOVIDA..." style="text-transform:uppercase">
+        <div style="font-size:11px;color:#666;margin-top:3px">De quem é o carro que entrou no lugar. A placa não serve: a locadora troca o veículo durante o contrato.</div>
       </div>
       <div class="form-group man-alug-wrap" style="display:none"><label>Previsão de devolução</label><input type="date" id="man-previsao-devolucao"></div>
       <div class="form-group" id="man-data-devol-wrap" style="display:none"><label>Data Devolução</label><input type="date" id="man-data-devolucao"></div>
@@ -5312,7 +5312,7 @@ function sitRenderAlugados(alug){
       ? `<span style="color:${a.devolucao_atrasada?'#791F1F':'#333'}">${fmtData(a.previsao_devolucao)}${a.devolucao_atrasada?' ⚠️ vencida':''}</span>`
       : '<span style="color:#8A5A00">sem previsão</span>'
     return `<tr style="${a.perda_total?'background:#FDF3F3':''}">
-      <td><strong>${a.placa_alugado?esc(a.placa_alugado):'<span style="color:#B9433E">não informada</span>'}</strong></td>
+      <td><strong>${a.locadora?esc(a.locadora):'<span style="color:#B9433E">não informada</span>'}</strong></td>
       <td>${esc(a.placa_parada||'-')}</td>
       <td>${esc(a.modelo||'-')}</td>
       <td>${esc(a.localidade||'-')}</td>
@@ -5394,8 +5394,8 @@ function sitRenderTabela(itens){
     const alugado = m.veiculo_alugado
       ? (m.veiculo_devolvido
           ? '<span style="color:#666">devolvido</span>'
-          : '<strong style="color:#1F4E79">🚗 ' + (m.placa_alugado ? esc(m.placa_alugado) : 'Sim') + '</strong>'
-            + (m.placa_alugado ? '' : '<div style="font-size:10px;color:#B9433E">placa não informada</div>')
+          : '<strong style="color:#1F4E79">🚗 ' + (m.locadora ? esc(m.locadora) : 'Sim') + '</strong>'
+            + (m.locadora ? '' : '<div style="font-size:10px;color:#B9433E">locadora não informada</div>')
             + (m.previsao_devolucao
                 ? `<div style="font-size:10px;color:${m.devolucao_atrasada?'#791F1F':'#666'}">devolver ${fmtData(m.previsao_devolucao)}${m.devolucao_atrasada?' ⚠️':''}</div>`
                 : '<div style="font-size:10px;color:#8A5A00">sem previsão</div>'))
@@ -5437,7 +5437,7 @@ async function exportarSituacaoXLSX(){
       ['Em processo de seguro',r.em_seguro||0],
       ['Alugados ativos',r.alugados_ativos||0],
       ['   destes, cobrindo perda total',r.alugados_em_perda_total||0],
-      ['   sem placa informada',r.alugados_sem_placa||0],
+      ['   sem locadora informada',r.alugados_sem_locadora||0],
       ['   com devolução vencida',r.devolucoes_atrasadas||0],
       ['Parados há mais de 30 dias',r.parados_mais_30||0],
       ['Média de dias parados',r.media_dias||0],[''],
@@ -5450,9 +5450,9 @@ async function exportarSituacaoXLSX(){
     XLSX.utils.book_append_sheet(wb,wsRes,'Resumo')
 
     const rotuloAlugado = m => m.veiculo_alugado ? (m.veiculo_devolvido ? 'Devolvido' : 'Sim') : 'Não'
-    const head=[['Placa','Modelo','Alugado','Placa do alugado','Prev. devolução','Localidade','Supervisor','Entrada','Dias parado','Previsão','Atraso (dias)','Tipo','Em seguro','Status','Oficina','Nº OS','Últ. manutenção','Serviço realizado','Itens comprados (ordens)']]
+    const head=[['Placa','Modelo','Alugado','Locadora','Prev. devolução','Localidade','Supervisor','Entrada','Dias parado','Previsão','Atraso (dias)','Tipo','Em seguro','Status','Oficina','Nº OS','Últ. manutenção','Serviço realizado','Itens comprados (ordens)']]
     const rows=(sitDados.itens||[]).map(m=>[
-      m.placa,m.modelo||'',rotuloAlugado(m),m.placa_alugado||'',m.previsao_devolucao||'',
+      m.placa,m.modelo||'',rotuloAlugado(m),m.locadora||'',m.previsao_devolucao||'',
       m.localidade||'',m.supervisor||'',
       m.data_entrada||'',m.dias_parado,
       m.previsao_retorno||'SEM PREVISÃO',
@@ -5471,9 +5471,9 @@ async function exportarSituacaoXLSX(){
     // obrigaria quem abre o arquivo a separar de novo na mão.
     const alug=(sitDados.alugados||[])
     if(alug.length){
-      const h2=[['Alugado (placa)','Substituindo','Modelo','Localidade','Situação do veículo','Devolver até','Devolução vencida']]
+      const h2=[['Locadora','Substituindo','Modelo','Localidade','Situação do veículo','Devolver até','Devolução vencida']]
       const r2=alug.map(a=>[
-        a.placa_alugado||'NÃO INFORMADA', a.placa_parada||'', a.modelo||'', a.localidade||'',
+        a.locadora||'NÃO INFORMADA', a.placa_parada||'', a.modelo||'', a.localidade||'',
         a.status||'', a.previsao_devolucao||'SEM PREVISÃO', a.devolucao_atrasada?'Sim':'Não'
       ])
       const ws2=XLSX.utils.aoa_to_sheet([...h2,...r2])
@@ -5574,7 +5574,7 @@ async function exportarSituacaoPDF(){
         startY:y, margin:{left:M,right:M},
         head:[['Alugado','Substituindo','Modelo','Localidade','Situacao do veiculo','Devolver ate']],
         body:alug.map(a=>[
-          a.placa_alugado||'NAO INFORMADA', a.placa_parada||'', a.modelo||'', a.localidade||'',
+          a.locadora||'NAO INFORMADA', a.placa_parada||'', a.modelo||'', a.localidade||'',
           a.perda_total?'PERDA TOTAL':(a.status||''),
           a.previsao_devolucao?(fmtData(a.previsao_devolucao)+(a.devolucao_atrasada?' (vencida)':'')):'sem previsao'
         ]),
@@ -5922,7 +5922,7 @@ function abrirNovaManutencao(){
   document.getElementById('man-devolvido').checked=false
   document.getElementById('man-em-seguro').checked=false
   document.getElementById('man-servico').value=''
-  document.getElementById('man-placa-alugado').value=''
+  document.getElementById('man-locadora').value=''
   document.getElementById('man-previsao-devolucao').value=''
   document.getElementById('man-devol-wrap').style.display='none'
   document.getElementById('man-data-devol-wrap').style.display='none'
@@ -5954,7 +5954,7 @@ async function editarManutencao(id){
     document.getElementById('man-oficina').value=m.oficina||''
     document.getElementById('man-servico').value=m.servico_realizado||''
     document.getElementById('man-em-seguro').checked=!!m.em_seguro
-    document.getElementById('man-placa-alugado').value=m.placa_alugado||''
+    document.getElementById('man-locadora').value=m.locadora||''
     document.getElementById('man-previsao-devolucao').value=(m.previsao_devolucao||'').slice(0,10)
     document.getElementById('man-observacoes').value=m.observacoes||''
     manAnexos = Array.isArray(m.anexos) ? m.anexos.map(a=>({
@@ -5997,8 +5997,8 @@ async function salvarManutencao(){
     em_seguro:     document.getElementById('man-em-seguro').checked,
     // Placa e previsão do alugado só vão quando HÁ alugado: sem isso ficaria
     // uma placa pendurada num registro que deixou de ter carro substituto.
-    placa_alugado: document.getElementById('man-alugado').checked
-      ? document.getElementById('man-placa-alugado').value.toUpperCase().replace(/[^A-Z0-9]/g,'') : null,
+    locadora: document.getElementById('man-alugado').checked
+      ? document.getElementById('man-locadora').value.trim() : null,
     previsao_devolucao: document.getElementById('man-alugado').checked
       ? (document.getElementById('man-previsao-devolucao').value||null) : null,
     observacoes:   document.getElementById('man-observacoes').value.trim(),
