@@ -1215,6 +1215,7 @@ tr:hover td{background:#F9F9F9}
           <div class="stat-card"><div class="stat-label">🔧 Em aberto agora</div><div class="stat-value" id="sit-kpi-total">—</div><div class="stat-sub">Ainda não retornaram</div></div>
           <div class="stat-card"><div class="stat-label">⚠️ Em atraso</div><div class="stat-value" id="sit-kpi-atraso" style="color:#791F1F">—</div><div class="stat-sub">Passaram da previsão</div></div>
           <div class="stat-card"><div class="stat-label">❓ Sem previsão</div><div class="stat-value" id="sit-kpi-sprev" style="color:#8A5A00">—</div><div class="stat-sub">Não dá para cobrar prazo</div></div>
+          <div class="stat-card"><div class="stat-label">🚗 Alugados ativos</div><div class="stat-value" id="sit-kpi-alugados" style="color:#1F4E79">—</div><div class="stat-sub">Substitutos ainda não devolvidos</div></div>
           <div class="stat-card"><div class="stat-label">⏳ Parados +30 dias</div><div class="stat-value" id="sit-kpi-30">—</div><div class="stat-sub">Média <span id="sit-kpi-media">—</span> dias parados</div></div>
         </div>
 
@@ -1232,9 +1233,9 @@ tr:hover td{background:#F9F9F9}
           <div class="table-wrap">
             <table>
               <thead><tr>
-                <th>Placa</th><th>Modelo</th><th>Localidade</th><th>Supervisor</th>
+                <th>Placa</th><th>Modelo</th><th>Alugado</th><th>Localidade</th><th>Supervisor</th>
                 <th>Entrada</th><th>Dias parado</th><th>Previsão</th><th>Atraso</th>
-                <th>Tipo</th><th>Status</th><th>Oficina</th><th>Nº OS</th><th>Alugado</th>
+                <th>Tipo</th><th>Status</th><th>Oficina</th><th>Nº OS</th>
               </tr></thead>
               <tbody id="sit-table"><tr><td colspan="13" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
             </table>
@@ -5100,6 +5101,7 @@ async function carregarSituacao(){
     document.getElementById('sit-kpi-total').textContent  = r.total ?? '0'
     document.getElementById('sit-kpi-atraso').textContent = r.atrasados ?? '0'
     document.getElementById('sit-kpi-sprev').textContent  = r.sem_previsao ?? '0'
+    document.getElementById('sit-kpi-alugados').textContent = r.alugados_ativos ?? '0'
     document.getElementById('sit-kpi-30').textContent     = r.parados_mais_30 ?? '0'
     document.getElementById('sit-kpi-media').textContent  = (r.media_dias ?? 0) + ''
     document.getElementById('sit-gerado').textContent =
@@ -5129,8 +5131,18 @@ function sitRenderTabela(itens){
       ? '<span style="color:#8A5A00">sem previsão</span>'
       : (m.dias_atraso > 0 ? `<strong style="color:#791F1F">${m.dias_atraso} d</strong>` : '<span style="color:#27500A">no prazo</span>')
     const fundo = m.atrasado ? 'background:#FDF3F3' : (m.sem_previsao ? 'background:#FFFBF2' : '')
+    // Alugado fica NA FRENTE (3ª coluna): na última, de 13, saía da tela sem rolar
+    // e a informação existia sem ninguém ver (28/09/2026).
+    // "Devolvido" aparece à parte de "Não": são coisas diferentes — carro que
+    // nunca teve substituto vs. carro que teve e já devolveu.
+    const alugado = m.veiculo_alugado
+      ? (m.veiculo_devolvido
+          ? '<span style="color:#666">devolvido</span>'
+          : '<strong style="color:#1F4E79">🚗 Sim</strong>')
+      : '<span style="color:#999">—</span>'
     return `<tr style="${fundo}">
       <td><strong>${m.placa||'-'}</strong></td><td>${m.modelo||'-'}</td>
+      <td>${alugado}</td>
       <td>${m.localidade||'-'}</td><td>${m.supervisor||'-'}</td>
       <td>${fmtData(m.data_entrada)}</td>
       <td><strong>${m.dias_parado} d</strong></td>
@@ -5138,7 +5150,6 @@ function sitRenderTabela(itens){
       <td>${atraso}</td>
       <td>${m.tipo_manutencao||'-'}</td><td>${m.status||'-'}</td>
       <td>${m.oficina||'-'}</td><td>${m.num_os||'-'}</td>
-      <td>${m.alugado_ativo?'Sim':'Não'}</td>
     </tr>`
   }).join('')
 }
@@ -5152,7 +5163,8 @@ async function exportarSituacaoXLSX(){
       ['SITUAÇÃO ATUAL — veículos em aberto'],[`Gerado em: ${stamp}`],[''],
       ['Indicador','Valor'],
       ['Em aberto agora',r.total||0],['Em atraso',r.atrasados||0],
-      ['Sem previsão',r.sem_previsao||0],['Parados há mais de 30 dias',r.parados_mais_30||0],
+      ['Sem previsão',r.sem_previsao||0],['Alugados ativos',r.alugados_ativos||0],
+      ['Parados há mais de 30 dias',r.parados_mais_30||0],
       ['Média de dias parados',r.media_dias||0],[''],
       ['Por etapa','Qtd'],
       ...Object.entries(r.por_status||{}).map(([s,q])=>[s,q]),
@@ -5160,17 +5172,17 @@ async function exportarSituacaoXLSX(){
     wsRes['!cols']=[{wch:32},{wch:14}]
     XLSX.utils.book_append_sheet(wb,wsRes,'Resumo')
 
-    const head=[['Placa','Modelo','Localidade','Supervisor','Entrada','Dias parado','Previsão','Atraso (dias)','Tipo','Status','Oficina','Nº OS','Alugado ativo']]
+    const rotuloAlugado = m => m.veiculo_alugado ? (m.veiculo_devolvido ? 'Devolvido' : 'Sim') : 'Não'
+    const head=[['Placa','Modelo','Alugado','Localidade','Supervisor','Entrada','Dias parado','Previsão','Atraso (dias)','Tipo','Status','Oficina','Nº OS']]
     const rows=(sitDados.itens||[]).map(m=>[
-      m.placa,m.modelo||'',m.localidade||'',m.supervisor||'',
+      m.placa,m.modelo||'',rotuloAlugado(m),m.localidade||'',m.supervisor||'',
       m.data_entrada||'',m.dias_parado,
       m.previsao_retorno||'SEM PREVISÃO',
       m.sem_previsao?'':(m.dias_atraso||0),
-      m.tipo_manutencao||'',m.status||'',m.oficina||'',m.num_os||'',
-      m.alugado_ativo?'Sim':'Não'
+      m.tipo_manutencao||'',m.status||'',m.oficina||'',m.num_os||''
     ])
     const ws=XLSX.utils.aoa_to_sheet([...head,...rows])
-    ws['!cols']=[{wch:10},{wch:14},{wch:16},{wch:16},{wch:12},{wch:12},{wch:14},{wch:13},{wch:12},{wch:14},{wch:18},{wch:14},{wch:12}]
+    ws['!cols']=[{wch:10},{wch:14},{wch:11},{wch:16},{wch:16},{wch:12},{wch:12},{wch:14},{wch:13},{wch:12},{wch:14},{wch:18},{wch:14}]
     XLSX.utils.book_append_sheet(wb,ws,'Em aberto')
     XLSX.writeFile(wb,`situacao_atual_${new Date().toISOString().slice(0,10)}.xlsx`)
   }catch(e){ alert('Não foi possível gerar o Excel: '+e.message) }
@@ -5196,6 +5208,7 @@ async function exportarSituacaoPDF(){
       {label:'Em aberto',val:r.total||0,cor:[230,241,251]},
       {label:'Em atraso',val:r.atrasados||0,cor:[252,235,235]},
       {label:'Sem previsao',val:r.sem_previsao||0,cor:[250,238,218]},
+      {label:'Alugados ativos',val:r.alugados_ativos||0,cor:[230,241,251]},
       {label:'Parados +30d',val:r.parados_mais_30||0,cor:[241,239,232]},
       {label:'Media dias',val:(r.media_dias||0)+' d',cor:[234,243,222]},
     ]
@@ -5212,7 +5225,9 @@ async function exportarSituacaoPDF(){
     y+=20
 
     const body=(sitDados.itens||[]).map(m=>[
-      m.placa||'', m.modelo||'', m.localidade||'', m.supervisor||'',
+      m.placa||'', m.modelo||'',
+      m.veiculo_alugado ? (m.veiculo_devolvido?'Devolvido':'Sim') : 'Nao',
+      m.localidade||'', m.supervisor||'',
       fmtData(m.data_entrada), String(m.dias_parado),
       m.sem_previsao?'sem previsao':fmtData(m.previsao_retorno),
       m.sem_previsao?'-':(m.dias_atraso>0?String(m.dias_atraso):'no prazo'),
@@ -5220,7 +5235,7 @@ async function exportarSituacaoPDF(){
     ])
     doc.autoTable({
       startY:y, margin:{left:M,right:M},
-      head:[['Placa','Modelo','Localidade','Supervisor','Entrada','Dias','Previsao','Atraso','Status','Oficina','N OS']],
+      head:[['Placa','Modelo','Alugado','Localidade','Supervisor','Entrada','Dias','Previsao','Atraso','Status','Oficina','N OS']],
       body,
       headStyles:{fillColor:[30,58,95],textColor:255,fontSize:8},
       bodyStyles:{fontSize:8}, alternateRowStyles:{fillColor:[245,247,250]},
