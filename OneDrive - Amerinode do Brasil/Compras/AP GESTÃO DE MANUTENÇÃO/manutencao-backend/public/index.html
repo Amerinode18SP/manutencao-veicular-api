@@ -950,6 +950,27 @@ tr:hover td{background:#F9F9F9}
 
     <!-- RELATÓRIOS -->
     <div id="page-relatorios" class="page">
+
+      <!-- Atalho para o painel da frota. NÃO é uma segunda cópia do painel:
+           ele mora na tela Em Manutenção e é reusado daqui — duas cópias da
+           mesma tela divergem com o tempo e ninguém percebe qual está certa.
+           Os botões de exportar funcionam direto, sem precisar navegar. -->
+      <div class="card" style="margin-bottom:16px;border-left:4px solid #185FA5">
+        <div class="card-header">
+          <span class="card-title">📌 Situação Atual da Frota</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn" onclick="exportarSituacaoXLSX()">⬇️ Excel</button>
+            <button class="btn" onclick="exportarSituacaoPDF()">⬇️ PDF</button>
+            <button class="btn btn-primary" onclick="abrirSituacaoFrota()">Abrir painel →</button>
+          </div>
+        </div>
+        <div style="padding:0 16px 16px;font-size:13px;color:#555">
+          Quantos veículos ativos, quantos na oficina e há quantos dias, alugados em uso
+          (com locadora e devolução), sinistros, processos de seguro e os que saíram da frota.
+          <span style="color:#888">Atualizado no momento em que você gera.</span>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header"><span class="card-title">Filtros do relatório</span></div>
         <div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
@@ -2207,6 +2228,14 @@ function showPage(id){
   if(id==='manutencao') carregarManutencao()
   // Guarda a página para o F5 não jogar a pessoa de volta no Dashboard.
   try{ localStorage.setItem('ultimaPagina', id) }catch(e){}
+}
+
+// Atalho de Relatórios -> painel da frota (que mora na tela Em Manutenção).
+// Mesma ideia do abrirAlertasEmail: leva para a tela certa em vez de recriar o
+// painel aqui, para não existirem duas versões da mesma informação.
+function abrirSituacaoFrota(){
+  showPage('manutencao')
+  manAbrirAba('situacao')
 }
 
 // Atalho do menu lateral -> subaba de alertas (ficava escondida em 3 cliques).
