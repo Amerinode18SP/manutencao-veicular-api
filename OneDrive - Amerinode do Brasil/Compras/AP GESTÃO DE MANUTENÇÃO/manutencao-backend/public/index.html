@@ -5956,14 +5956,16 @@ async function exportarManutencaoPDF(){
     doc.text('Lista de Manutenções',M,y); y+=4
     doc.setFont(undefined,'normal')
 
-    const mainHead=[['Placa','Modelo','Localidade','Supervisor','Entrada','Prev. Retorno','Dias','Tipo','Alugado','Status','Nº OS']]
+    // Oficina ao lado do Nº OS, igual ao Excel: as duas respondem "quem está
+    // com o carro" e são lidas juntas (28/09/2026).
+    const mainHead=[['Placa','Modelo','Localidade','Supervisor','Entrada','Prev. Retorno','Dias','Tipo','Alugado','Status','Oficina','Nº OS']]
     const mainRows=(lista.data||[]).map(m=>[
       m.placa||'', m.modelo||'', m.localidade||'', m.supervisor||'',
       fmtData(m.data_entrada), m.previsao_retorno?fmtData(m.previsao_retorno):'—',
       m.dias_efetivos!=null?m.dias_efetivos:'—',
       m.tipo_manutencao||'',
       m.veiculo_alugado?'Sim':'Não',
-      m.status||'', m.num_os||''
+      m.status||'', m.oficina||'', m.num_os||''
     ])
 
     doc.autoTable({
