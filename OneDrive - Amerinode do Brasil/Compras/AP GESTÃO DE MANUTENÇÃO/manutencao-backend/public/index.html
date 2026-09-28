@@ -1220,6 +1220,7 @@ tr:hover td{background:#F9F9F9}
           <div class="stat-card"><div class="stat-label">❓ Sem previsão</div><div class="stat-value" id="sit-kpi-sprev" style="color:#8A5A00">—</div><div class="stat-sub">Não dá para cobrar prazo</div></div>
           <div class="stat-card"><div class="stat-label">🚗 Alugados ativos</div><div class="stat-value" id="sit-kpi-alugados" style="color:#1F4E79">—</div><div class="stat-sub">Substitutos ainda não devolvidos</div></div>
           <div class="stat-card"><div class="stat-label">⏳ Parados +30 dias</div><div class="stat-value" id="sit-kpi-30">—</div><div class="stat-sub">Média <span id="sit-kpi-media">—</span> dias parados</div></div>
+          <div class="stat-card"><div class="stat-label">🛡️ Em seguro</div><div class="stat-value" id="sit-kpi-seguro" style="color:#1F4E79">—</div><div class="stat-sub"><span id="sit-kpi-seguro-sub">—</span> ainda na oficina</div></div>
           <div class="stat-card"><div class="stat-label">💀 Perda total</div><div class="stat-value" id="sit-kpi-pt" style="color:#791F1F">—</div><div class="stat-sub">Saíram da frota (acumulado)</div></div>
           <div class="stat-card"><div class="stat-label">💰 Vendidos</div><div class="stat-value" id="sit-kpi-vend">—</div><div class="stat-sub">Saíram da frota (acumulado)</div></div>
         </div>
@@ -1772,9 +1773,19 @@ tr:hover td{background:#F9F9F9}
           <label for="man-devolvido" style="margin:0">Devolvido?</label>
         </div>
       </div>
+      <div class="form-group man-alug-wrap" style="display:none"><label>Placa do alugado</label>
+        <input id="man-placa-alugado" placeholder="Ex: ABC1D23" style="text-transform:uppercase">
+        <div style="font-size:11px;color:#666;margin-top:3px">Qual carro entrou no lugar deste.</div>
+      </div>
+      <div class="form-group man-alug-wrap" style="display:none"><label>Previsão de devolução</label><input type="date" id="man-previsao-devolucao"></div>
       <div class="form-group" id="man-data-devol-wrap" style="display:none"><label>Data Devolução</label><input type="date" id="man-data-devolucao"></div>
       <div class="form-group"><label>Data Saída da Oficina</label><input type="date" id="man-data-saida"></div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+        <input type="checkbox" id="man-em-seguro">
+        <label for="man-em-seguro" style="margin:0">🛡️ Em processo de seguro</label>
+      </div>
     </div>
+    <div class="form-group" style="margin-top:12px"><label>Serviço realizado</label><textarea id="man-servico" rows="2" placeholder="O que foi feito no veículo..."></textarea></div>
     <div class="form-group" style="margin-top:12px"><label>Observações</label><textarea id="man-observacoes" rows="2" placeholder="Informações adicionais..."></textarea></div>
 
     <div style="margin-top:16px;padding-top:12px;border-top:1px solid #EEE">
@@ -5231,6 +5242,8 @@ async function carregarSituacao(){
     document.getElementById('sit-kpi-sprev').textContent  = r.sem_previsao ?? '0'
     document.getElementById('sit-kpi-alugados').textContent = r.alugados_ativos ?? '0'
     document.getElementById('sit-kpi-30').textContent     = r.parados_mais_30 ?? '0'
+    document.getElementById('sit-kpi-seguro').textContent = r.em_seguro ?? '0'
+    document.getElementById('sit-kpi-seguro-sub').textContent = r.em_seguro_abertos ?? '0'
     document.getElementById('sit-kpi-pt').textContent     = r.perda_total ?? '0'
     document.getElementById('sit-kpi-vend').textContent   = r.vendidos ?? '0'
     sitRenderBaixas(sitDados.baixas || [])
@@ -5291,9 +5304,10 @@ function sitRenderTabela(itens){
     // Sinistro sai marcado na linha: é o caso que costuma envolver terceiro e
     // seguro, e quem olha o painel precisa achar esses primeiro.
     const ehSinistro = String(m.tipo_manutencao||'').toUpperCase() === 'SINISTRO'
-    const tipo = ehSinistro
+    const tipo = (ehSinistro
       ? '<strong style="color:#791F1F">💥 Sinistro</strong>'
-      : (m.tipo_manutencao||'-')
+      : (m.tipo_manutencao||'-'))
+      + (m.em_seguro ? '<div style="font-size:10px;color:#1F4E79">🛡️ em seguro</div>' : '')
     // Última passagem pela oficina. O "serviço" sai das observações — o sistema
     // ainda não tem campo próprio para isso (pendência anotada em 28/09/2026).
     const u = m.ultima_manutencao
@@ -5308,10 +5322,16 @@ function sitRenderTabela(itens){
     // e a informação existia sem ninguém ver (28/09/2026).
     // "Devolvido" aparece à parte de "Não": são coisas diferentes — carro que
     // nunca teve substituto vs. carro que teve e já devolveu.
+    // A direção quer saber QUAL carro substitui e até quando — não só "sim".
+    // Sem placa registrada aparece a lacuna, para alguém preencher.
     const alugado = m.veiculo_alugado
       ? (m.veiculo_devolvido
           ? '<span style="color:#666">devolvido</span>'
-          : '<strong style="color:#1F4E79">🚗 Sim</strong>')
+          : '<strong style="color:#1F4E79">🚗 ' + (m.placa_alugado ? esc(m.placa_alugado) : 'Sim') + '</strong>'
+            + (m.placa_alugado ? '' : '<div style="font-size:10px;color:#B9433E">placa não informada</div>')
+            + (m.previsao_devolucao
+                ? `<div style="font-size:10px;color:${m.devolucao_atrasada?'#791F1F':'#666'}">devolver ${fmtData(m.previsao_devolucao)}${m.devolucao_atrasada?' ⚠️':''}</div>`
+                : '<div style="font-size:10px;color:#8A5A00">sem previsão</div>'))
       : '<span style="color:#999">—</span>'
     return `<tr style="${fundo}">
       <td><strong>${m.placa||'-'}</strong></td><td>${m.modelo||'-'}</td>
@@ -5350,16 +5370,19 @@ async function exportarSituacaoXLSX(){
     XLSX.utils.book_append_sheet(wb,wsRes,'Resumo')
 
     const rotuloAlugado = m => m.veiculo_alugado ? (m.veiculo_devolvido ? 'Devolvido' : 'Sim') : 'Não'
-    const head=[['Placa','Modelo','Alugado','Localidade','Supervisor','Entrada','Dias parado','Previsão','Atraso (dias)','Tipo','Status','Oficina','Nº OS']]
+    const head=[['Placa','Modelo','Alugado','Placa do alugado','Prev. devolução','Localidade','Supervisor','Entrada','Dias parado','Previsão','Atraso (dias)','Tipo','Em seguro','Status','Oficina','Nº OS','Últ. manutenção','Serviço realizado']]
     const rows=(sitDados.itens||[]).map(m=>[
-      m.placa,m.modelo||'',rotuloAlugado(m),m.localidade||'',m.supervisor||'',
+      m.placa,m.modelo||'',rotuloAlugado(m),m.placa_alugado||'',m.previsao_devolucao||'',
+      m.localidade||'',m.supervisor||'',
       m.data_entrada||'',m.dias_parado,
       m.previsao_retorno||'SEM PREVISÃO',
       m.sem_previsao?'':(m.dias_atraso||0),
-      m.tipo_manutencao||'',m.status||'',m.oficina||'',m.num_os||''
+      m.tipo_manutencao||'',m.em_seguro?'Sim':'Não',m.status||'',m.oficina||'',m.num_os||'',
+      (m.ultima_manutencao&&m.ultima_manutencao.data_saida)||'',
+      (m.ultima_manutencao&&m.ultima_manutencao.servico)||''
     ])
     const ws=XLSX.utils.aoa_to_sheet([...head,...rows])
-    ws['!cols']=[{wch:10},{wch:14},{wch:11},{wch:16},{wch:16},{wch:12},{wch:12},{wch:14},{wch:13},{wch:12},{wch:14},{wch:18},{wch:14}]
+    ws['!cols']=[{wch:10},{wch:14},{wch:11},{wch:14},{wch:14},{wch:16},{wch:16},{wch:12},{wch:12},{wch:14},{wch:13},{wch:12},{wch:10},{wch:14},{wch:18},{wch:14},{wch:14},{wch:40}]
     XLSX.utils.book_append_sheet(wb,ws,'Em aberto')
     XLSX.writeFile(wb,`situacao_atual_${new Date().toISOString().slice(0,10)}.xlsx`)
   }catch(e){ alert('Não foi possível gerar o Excel: '+e.message) }
@@ -5737,8 +5760,13 @@ function abrirNovaManutencao(){
   document.getElementById('man-status').value='Em Andamento'
   document.getElementById('man-alugado').checked=false
   document.getElementById('man-devolvido').checked=false
+  document.getElementById('man-em-seguro').checked=false
+  document.getElementById('man-servico').value=''
+  document.getElementById('man-placa-alugado').value=''
+  document.getElementById('man-previsao-devolucao').value=''
   document.getElementById('man-devol-wrap').style.display='none'
   document.getElementById('man-data-devol-wrap').style.display='none'
+  document.querySelectorAll('.man-alug-wrap').forEach(el=>el.style.display='none')
   manAnexos=[novoAnexoVazio(),novoAnexoVazio(),novoAnexoVazio()]
   renderAnexosManutencao()
   showModal('modal-nova-manutencao')
@@ -5764,6 +5792,10 @@ async function editarManutencao(id){
     document.getElementById('man-data-devolucao').value=m.data_devolucao||''
     document.getElementById('man-num-os').value=m.num_os||''
     document.getElementById('man-oficina').value=m.oficina||''
+    document.getElementById('man-servico').value=m.servico_realizado||''
+    document.getElementById('man-em-seguro').checked=!!m.em_seguro
+    document.getElementById('man-placa-alugado').value=m.placa_alugado||''
+    document.getElementById('man-previsao-devolucao').value=(m.previsao_devolucao||'').slice(0,10)
     document.getElementById('man-observacoes').value=m.observacoes||''
     manAnexos = Array.isArray(m.anexos) ? m.anexos.map(a=>({
       nome:a.nome||'', arquivo_nome:a.arquivo_nome||'', mime:a.mime||'',
@@ -5780,6 +5812,8 @@ function toggleDevolucao(){
   const al=document.getElementById('man-alugado').checked
   document.getElementById('man-devol-wrap').style.display=al?'block':'none'
   document.getElementById('man-data-devol-wrap').style.display=al?'block':'none'
+  // Placa e previsão de devolução do alugado só fazem sentido quando há alugado.
+  document.querySelectorAll('.man-alug-wrap').forEach(el=>el.style.display=al?'block':'none')
 }
 
 async function salvarManutencao(){
@@ -5799,6 +5833,14 @@ async function salvarManutencao(){
     data_devolucao: document.getElementById('man-data-devolucao').value||null,
     num_os:        document.getElementById('man-num-os').value.trim(),
     oficina:       document.getElementById('man-oficina').value.trim(),
+    servico_realizado: document.getElementById('man-servico').value.trim(),
+    em_seguro:     document.getElementById('man-em-seguro').checked,
+    // Placa e previsão do alugado só vão quando HÁ alugado: sem isso ficaria
+    // uma placa pendurada num registro que deixou de ter carro substituto.
+    placa_alugado: document.getElementById('man-alugado').checked
+      ? document.getElementById('man-placa-alugado').value.toUpperCase().replace(/[^A-Z0-9]/g,'') : null,
+    previsao_devolucao: document.getElementById('man-alugado').checked
+      ? (document.getElementById('man-previsao-devolucao').value||null) : null,
     observacoes:   document.getElementById('man-observacoes').value.trim(),
     anexos:        manAnexos.filter(a=>a.path).map(a=>({
       nome:a.nome||a.arquivo_nome||'', arquivo_nome:a.arquivo_nome,

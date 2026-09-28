@@ -64,6 +64,27 @@ async function darBaixaPorPerdaTotal(placa, dataSaida) {
   }
 }
 
+// Campos pedidos pela direção (28/09/2026). Trata só o que VEIO, para um update
+// parcial não apagar o resto.
+// A placa do alugado passa pela MESMA conferência de formato das outras: é uma
+// placa de verdade, e aceitar qualquer texto aqui recriaria o problema dos
+// carros fantasma num campo novo.
+function camposDirecao(b) {
+  const out = {}
+  if (b.placa_alugado !== undefined) {
+    const p = normPlaca(b.placa_alugado)
+    if (p && !placaValida(p)) { const e = new Error(erroPlacaCom(b.placa_alugado)); e.status = 400; throw e }
+    out.placa_alugado = p || null
+  }
+  if (b.previsao_devolucao !== undefined) out.previsao_devolucao = parseData(b.previsao_devolucao)
+  if (b.servico_realizado !== undefined) {
+    const s = String(b.servico_realizado ?? '').trim()
+    out.servico_realizado = s === '' ? null : s
+  }
+  if (b.em_seguro !== undefined) out.em_seguro = Boolean(b.em_seguro)
+  return out
+}
+
 function diasEntre(inicio, fim) {
   if (!inicio) return null
   const d1 = new Date(inicio + 'T00:00:00')
@@ -132,7 +153,8 @@ async function criar(req, res) {
       data_entrada, data_saida, previsao_retorno, dias_previstos,
       tipo_manutencao = 'Corretiva',
       veiculo_alugado = false, veiculo_devolvido = false, data_devolucao,
-      num_os, oficina, status = 'Em Andamento', observacoes, anexos
+      num_os, oficina, status = 'Em Andamento', observacoes, anexos,
+      placa_alugado, previsao_devolucao, servico_realizado, em_seguro = false
     } = req.body
 
     if (!placa || !data_entrada)
@@ -160,7 +182,8 @@ async function criar(req, res) {
       status,
       observacoes: observacoes?.toString().trim() || null,
       anexos: Array.isArray(anexos) ? anexos : [],
-      convertido_ordem: false
+      convertido_ordem: false,
+      ...camposDirecao({ placa_alugado, previsao_devolucao, servico_realizado, em_seguro }),
     }
 
     const { data, error } = await supabase
@@ -173,7 +196,7 @@ async function criar(req, res) {
     if (data && data.status === 'Perda total') await darBaixaPorPerdaTotal(data.placa, data.data_saida)
     res.status(201).json(data)
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    res.status(err.status === 400 ? 400 : 500).json({ error: err.message })
   }
 }
 
@@ -184,7 +207,8 @@ async function atualizar(req, res) {
       'placa','modelo','localidade','supervisor',
       'data_entrada','data_saida','previsao_retorno','dias_previstos',
       'tipo_manutencao','veiculo_alugado','veiculo_devolvido','data_devolucao',
-      'num_os','oficina','status','observacoes','anexos'
+      'num_os','oficina','status','observacoes','anexos',
+      'placa_alugado','previsao_devolucao','servico_realizado','em_seguro'
     ]
 
     const payload = {}
@@ -201,6 +225,7 @@ async function atualizar(req, res) {
     for (const c of ['modelo','localidade','supervisor','oficina']) {
       if (payload[c] !== undefined) payload[c] = caixaAlta(payload[c])
     }
+    Object.assign(payload, camposDirecao(payload))
 
     if (payload.placa) {
       if (!placaValida(payload.placa)) return res.status(400).json({ error: erroPlacaCom(payload.placa) })
@@ -218,7 +243,7 @@ async function atualizar(req, res) {
     if (data && data.status === 'Perda total') await darBaixaPorPerdaTotal(data.placa, data.data_saida)
     res.json(data)
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    res.status(err.status === 400 ? 400 : 500).json({ error: err.message })
   }
 }
 
@@ -480,8 +505,15 @@ async function situacaoAtual(req, res) {
           tipo: ult.tipo_manutencao || null,
           oficina: ult.oficina || null,
           num_os: ult.num_os || null,
-          servico: ult.observacoes || null,
+          // Campo próprio quando existe; cai nas observações no histórico
+          // antigo, que foi escrito antes de o campo nascer (28/09/2026).
+          servico: ult.servico_realizado || ult.observacoes || null,
+          servico_do_campo: !!ult.servico_realizado,
         } : null,
+        // Devolução do alugado em ATRASO conta igual ao carro parado: o aluguel
+        // segue correndo enquanto ninguém devolve.
+        devolucao_atrasada: !!m.veiculo_alugado && !m.veiculo_devolvido &&
+          !!m.previsao_devolucao && m.previsao_devolucao < hoje,
       }
     }).sort((a, b) => b.dias_parado - a.dias_parado) // mais parado primeiro
 
@@ -527,6 +559,14 @@ async function situacaoAtual(req, res) {
         atrasados: soma(i => i.atrasado),
         sem_previsao: soma(i => i.sem_previsao),
         alugados_ativos: soma(i => i.alugado_ativo),
+        // Alugado sem placa registrada: a direção quer saber QUAL carro está
+        // substituindo, e essa contagem mostra quanto ainda falta preencher.
+        alugados_sem_placa: soma(i => i.alugado_ativo && !i.placa_alugado),
+        devolucoes_atrasadas: soma(i => i.devolucao_atrasada),
+        // Seguro é marcação à parte (decisão da Luciana): corre em paralelo e
+        // pode continuar depois de o carro voltar da oficina.
+        em_seguro: (todas || []).filter(m => m.em_seguro).length,
+        em_seguro_abertos: soma(i => !!i.em_seguro),
         parados_mais_30: soma(i => i.dias_parado > 30),
         media_dias: itens.length
           ? Math.round(itens.reduce((s, i) => s + i.dias_parado, 0) / itens.length) : 0,
