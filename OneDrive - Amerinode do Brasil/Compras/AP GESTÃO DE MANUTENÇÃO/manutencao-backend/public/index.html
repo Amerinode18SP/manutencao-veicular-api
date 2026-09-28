@@ -1214,8 +1214,8 @@ tr:hover td{background:#F9F9F9}
       <div id="man-aba-situacao" style="display:none">
         <div class="stats-grid">
           <div class="stat-card"><div class="stat-label">🚗 Frota ativa</div><div class="stat-value" id="sit-kpi-frota" style="color:#1F4E79">—</div><div class="stat-sub"><span id="sit-kpi-pct">—</span> parada agora</div></div>
-          <div class="stat-card"><div class="stat-label">💥 Sinistros pendentes</div><div class="stat-value" id="sit-kpi-sinistros" style="color:#791F1F">—</div><div class="stat-sub">Em aberto, envolvem seguro</div></div>
-          <div class="stat-card"><div class="stat-label">🔧 Em aberto agora</div><div class="stat-value" id="sit-kpi-total">—</div><div class="stat-sub">Ainda não retornaram</div></div>
+          <div class="stat-card"><div class="stat-label">💥 Sinistros pendentes</div><div class="stat-value" id="sit-kpi-sinistros" style="color:#791F1F">—</div><div class="stat-sub">Envolvem seguro</div></div>
+          <div class="stat-card"><div class="stat-label">🔧 Manutenção em aberto</div><div class="stat-value" id="sit-kpi-total">—</div><div class="stat-sub">Ainda não retornaram</div></div>
           <div class="stat-card"><div class="stat-label">⚠️ Em atraso</div><div class="stat-value" id="sit-kpi-atraso" style="color:#791F1F">—</div><div class="stat-sub">Passaram da previsão</div></div>
           <div class="stat-card"><div class="stat-label">❓ Sem previsão</div><div class="stat-value" id="sit-kpi-sprev" style="color:#8A5A00">—</div><div class="stat-sub">Não dá para cobrar prazo</div></div>
           <div class="stat-card"><div class="stat-label">🚗 Alugados ativos</div><div class="stat-value" id="sit-kpi-alugados" style="color:#1F4E79">—</div><div class="stat-sub">Substitutos ainda não devolvidos</div></div>
@@ -1286,7 +1286,7 @@ tr:hover td{background:#F9F9F9}
 
       <!-- KPIs -->
       <div class="stats-grid" id="man-stats-grid">
-        <div class="stat-card"><div class="stat-label">🔧 Em Andamento</div><div class="stat-value" id="man-kpi-andamento">—</div><div class="stat-sub">Veículos na oficina agora</div></div>
+        <div class="stat-card"><div class="stat-label">🔧 Manutenção em andamento</div><div class="stat-value" id="man-kpi-andamento">—</div><div class="stat-sub">Veículos na oficina agora</div></div>
         <div class="stat-card"><div class="stat-label">🚗 Alugados Ativos</div><div class="stat-value" id="man-kpi-alugados">—</div><div class="stat-sub">Veículos alugados em uso</div></div>
         <div class="stat-card"><div class="stat-label">⚠️ Em Atraso</div><div class="stat-value" id="man-kpi-atraso" style="color:#791F1F">—</div><div class="stat-sub">Prazo vencido, não retornado</div></div>
         <div class="stat-card"><div class="stat-label">✅ Retornados no Mês</div><div class="stat-value" id="man-kpi-retornados">—</div><div class="stat-sub">Média <span id="man-kpi-media">—</span> dias na oficina</div></div>
@@ -1339,7 +1339,7 @@ tr:hover td{background:#F9F9F9}
           <div class="form-group"><label>Status</label>
             <select id="man-f-status" onchange="carregarManLista(1)">
               <option value="">Todos</option>
-              <option value="Em Andamento">Em Andamento</option>
+              <option value="Em Andamento">Manutenção em andamento</option>
               <option value="Retornado">Retornado</option>
               <option value="Cancelado">Cancelado</option>
               <option value="Perda total">Perda total</option>
@@ -1770,7 +1770,7 @@ tr:hover td{background:#F9F9F9}
       <div class="form-group"><label>Oficina</label><input id="man-oficina" placeholder="Nome da oficina"></div>
       <div class="form-group"><label>Status</label>
         <select id="man-status">
-          <option value="Em Andamento">Em Andamento</option>
+          <option value="Em Andamento">Manutenção em andamento</option>
           <option value="Orçamento">Orçamento</option>
           <option value="Aprovado">Aprovado</option>
           <option value="Retornado">Retornado</option>
@@ -1929,6 +1929,14 @@ let ordens = [], currentPeriod = 'ano', editId = null, importBuffer = []
 
 // Utilitário global de escape HTML
 const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+
+// ⚠️ O VALOR GRAVADO no banco continua 'Em Andamento'. Aqui só se traduz o que
+// a pessoa LÊ (pedido da Luciana em 28/09/2026: "Manutenção em andamento").
+// Renomear o valor obrigaria a acertar 6 consultas que filtram por ele, e
+// esquecer uma zeraria o indicador SEM ERRO NENHUM na tela — o cartão mostraria
+// 0 veículo na oficina com a oficina cheia.
+const STATUS_MAN_ROTULO = { 'Em Andamento': 'Manutenção em andamento' }
+const rotuloStatusMan = s => STATUS_MAN_ROTULO[s] || s || '-'
 
 // ── AUTH ──────────────────────────────────────────────────────
 function switchTab(tab){
@@ -5288,7 +5296,7 @@ async function carregarSituacao(){
     // Quantos em cada etapa (Em Andamento / Orçamento / Aprovado)
     document.getElementById('sit-status-chips').innerHTML =
       Object.entries(r.por_status||{}).sort((a,b)=>b[1]-a[1]).map(([s,q])=>
-        `<span style="padding:3px 10px;border-radius:12px;background:#F0F4F9;color:#1E3A5F;font-size:12px">${s}: <strong>${q}</strong></span>`
+        `<span style="padding:3px 10px;border-radius:12px;background:#F0F4F9;color:#1E3A5F;font-size:12px">${esc(rotuloStatusMan(s))}: <strong>${q}</strong></span>`
       ).join('')
 
     sitRenderTabela(sitDados.itens||[])
@@ -5351,7 +5359,7 @@ function sitRenderBaixas(baixas){
 function sitRenderTabela(itens){
   const tb = document.getElementById('sit-table')
   if(!itens.length){
-    tb.innerHTML = '<tr><td colspan="14" class="empty">🎉 Nenhum veículo em aberto — todos retornaram.</td></tr>'
+    tb.innerHTML = '<tr><td colspan="14" class="empty">🎉 Nenhuma manutenção em aberto — todos retornaram.</td></tr>'
     return
   }
   tb.innerHTML = itens.map(m=>{
@@ -5408,7 +5416,7 @@ function sitRenderTabela(itens){
       <td><strong>${m.dias_parado} d</strong></td>
       <td>${fmtData(m.previsao_retorno)}</td>
       <td>${atraso}</td>
-      <td>${tipo}</td><td>${m.status||'-'}</td>
+      <td>${tipo}</td><td>${esc(rotuloStatusMan(m.status))}</td>
       <td>${m.oficina||'-'}</td><td>${m.num_os||'-'}</td>
       <td style="max-width:280px;white-space:normal">${ultima}${listaSrv}</td>
     </tr>`
@@ -5427,12 +5435,12 @@ async function exportarSituacaoXLSX(){
     const r = sitDados.resumo||{}, stamp = new Date().toLocaleString('pt-BR')
     const wb = XLSX.utils.book_new()
     const wsRes = XLSX.utils.aoa_to_sheet([
-      ['SITUAÇÃO ATUAL — veículos em aberto'],[`Gerado em: ${stamp}`],[''],
+      ['SITUAÇÃO ATUAL — manutenções em aberto'],[`Gerado em: ${stamp}`],[''],
       ['Indicador','Valor'],
       ['Frota ativa',r.frota_ativa!=null?r.frota_ativa:'—'],
       ['% da frota parada',r.percentual_parado!=null?r.percentual_parado+'%':'—'],
       ['Sinistros pendentes',r.sinistros||0],
-      ['Em aberto agora',r.total||0],['Em atraso',r.atrasados||0],
+      ['Manutenção em aberto',r.total||0],['Em atraso',r.atrasados||0],
       ['Sem previsão',r.sem_previsao||0],
       ['Em processo de seguro',r.em_seguro||0],
       ['Alugados ativos',r.alugados_ativos||0],
@@ -5464,7 +5472,7 @@ async function exportarSituacaoXLSX(){
     ])
     const ws=XLSX.utils.aoa_to_sheet([...head,...rows])
     ws['!cols']=[{wch:10},{wch:14},{wch:11},{wch:14},{wch:14},{wch:16},{wch:16},{wch:12},{wch:12},{wch:14},{wch:13},{wch:12},{wch:10},{wch:14},{wch:18},{wch:14},{wch:14},{wch:40},{wch:52}]
-    XLSX.utils.book_append_sheet(wb,ws,'Em aberto')
+    XLSX.utils.book_append_sheet(wb,ws,'Manutenção em aberto')
 
     // Alugados e baixas em ABAS PRÓPRIAS: são listas de coisas diferentes
     // (carro emprestado x carro que saiu da frota). Empilhar tudo numa aba só
@@ -5506,7 +5514,7 @@ async function exportarSituacaoPDF(){
 
     doc.setFillColor(30,58,95); doc.rect(0,0,W,18,'F')
     doc.setTextColor(255,255,255); doc.setFontSize(12); doc.setFont(undefined,'bold')
-    doc.text('Situacao Atual - veiculos em aberto',M,12)
+    doc.text('Situacao Atual - manutencoes em aberto',M,12)
     doc.setFontSize(8); doc.setFont(undefined,'normal')
     doc.text(`Gerado em: ${stamp}`,W-M,12,{align:'right'})
     doc.setTextColor(0,0,0)
@@ -5515,7 +5523,7 @@ async function exportarSituacaoPDF(){
     const kpis=[
       {label:'Frota ativa',val:r.frota_ativa!=null?r.frota_ativa:'-',cor:[230,241,251]},
       {label:'Sinistros',val:r.sinistros||0,cor:[252,235,235]},
-      {label:'Em aberto',val:r.total||0,cor:[230,241,251]},
+      {label:'Manut. em aberto',val:r.total||0,cor:[230,241,251]},
       {label:'Em atraso',val:r.atrasados||0,cor:[252,235,235]},
       {label:'Sem previsao',val:r.sem_previsao||0,cor:[250,238,218]},
       {label:'Alugados ativos',val:r.alugados_ativos||0,cor:[230,241,251]},
@@ -5716,7 +5724,7 @@ async function carregarManLista(pg){
       tb.innerHTML=rows.map(m=>{
         const atraso=m.status==='Em Andamento'&&m.previsao_retorno&&m.previsao_retorno<hoje()
         const stBadge=m.status==='Em Andamento'
-          ?`<span class="badge badge-amber">🔧 Em Andamento</span>`
+          ?`<span class="badge badge-amber">🔧 Manutenção em andamento</span>`
           :m.status==='Perda total'
             ?`<span class="badge badge-red">💀 Perda total</span>`
           :m.status==='Retornado'
@@ -6131,7 +6139,7 @@ async function verHistorico(placa){
     const rows=r.data||[]
     if(!rows.length){tb.innerHTML=`<tr><td colspan="12" class="empty">Nenhum registro encontrado.</td></tr>`;return}
     tb.innerHTML=rows.map(m=>{
-      const stBadge=m.status==='Em Andamento'?`<span class="badge badge-amber">🔧 Em Andamento</span>`
+      const stBadge=m.status==='Em Andamento'?`<span class="badge badge-amber">🔧 Manutenção em andamento</span>`
         :m.status==='Perda total'?`<span class="badge badge-red">💀 Perda total</span>`
         :m.status==='Retornado'?`<span class="badge badge-green">✅ Retornado</span>`
         :m.status==='Orçamento'?`<span class="badge badge-blue">💰 Orçamento</span>`
@@ -6198,7 +6206,7 @@ async function exportarManutencaoXLSX(){
       ['CONTROLE EM MANUTENÇÃO — Resumo'],
       [`Gerado em: ${stamp}`],[''],
       ['Indicador','Valor'],
-      ['Em Andamento',kpi.emAndamento||0],
+      ['Manutenção em andamento',kpi.emAndamento||0],
       ['Alugados Ativos',kpi.alugadosAtivos||0],
       ['Em Atraso',kpi.emAtraso||0],
       ['Retornados no Mês',kpi.retornadosMes||0],
@@ -6293,7 +6301,7 @@ async function exportarManutencaoPDF(){
 
     // ── KPI Cards ──
     const kpis=[
-      {label:'Em Andamento',val:kpi.emAndamento||0,cor:[250,238,218]},
+      {label:'Manut. em andamento',val:kpi.emAndamento||0,cor:[250,238,218]},
       {label:'Alugados Ativos',val:kpi.alugadosAtivos||0,cor:[230,241,251]},
       {label:'Em Atraso',val:kpi.emAtraso||0,cor:[252,235,235]},
       {label:'Retornados/Mês',val:kpi.retornadosMes||0,cor:[234,243,222]},
