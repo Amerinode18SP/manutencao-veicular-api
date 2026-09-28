@@ -504,8 +504,11 @@ async function lerCadastroEServicos() {
   }
 }
 
-async function situacaoAtual(req, res) {
-  try {
+// Monta os DADOS do painel. Separado do handler de propósito: a tela, o download
+// do Excel/PDF e o envio por e-mail (manual e agendado) usam todos esta função —
+// assim os quatro mostram exatamente os mesmos números.
+async function montarDadosSituacao() {
+  {
     const hoje = new Date().toISOString().split('T')[0]
     // Traz TODAS as manutenções, não só as abertas: a direção pediu também a
     // ÚLTIMA manutenção de cada carro que está parado agora, e ela está no
@@ -595,7 +598,7 @@ async function situacaoAtual(req, res) {
 
     const soma = (f) => itens.filter(f).length
     const parados = itens.length
-    res.json({
+    return ({
       gerado_em: new Date().toISOString(),
       resumo: {
         total: parados,
@@ -637,17 +640,43 @@ async function situacaoAtual(req, res) {
       baixas,
       alugados,
     })
+  }
+}
+
+async function situacaoAtual(req, res) {
+  try {
+    res.json(await montarDadosSituacao())
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 }
 
+// GET /api/manutencao/situacao/excel e /pdf — baixar o relatório.
+// Montado no SERVIDOR (services/relatorioSituacao) para existir uma versão só,
+// usada pelo botão de baixar, pelo e-mail manual e pelo agendado.
+// Fábrica: NÃO pode ser async — `baixarSituacao('excel')` é chamada na hora de
+// exportar, e uma fábrica async devolveria uma Promise no lugar do handler. O
+// Express aceitaria sem reclamar e a rota responderia 500 em toda chamada.
+function baixarSituacao(formato) {
+  return async function (req, res) {
+    try {
+      const rel = require('../services/relatorioSituacao')
+      const dados = await montarDadosSituacao()
+      const buf = formato === 'pdf' ? rel.montarPDF(dados) : rel.montarExcel(dados)
+      const nome = rel.nomeArquivo(formato === 'pdf' ? 'pdf' : 'xlsx')
+      res.setHeader('Content-Type', formato === 'pdf'
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      res.setHeader('Content-Disposition', `attachment; filename="${nome}"`)
+      res.send(buf)
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  }
+}
+
 // POST /api/manutencao/situacao/email — manda o relatório por e-mail.
-//
-// Os arquivos chegam PRONTOS da tela (base64): o Excel e o PDF já são montados
-// lá, e refazê-los aqui criaria uma segunda versão do mesmo relatório — que
-// divergiria da que a pessoa vê e exporta. O servidor confere, monta o corpo
-// com os números e envia.
+// Os arquivos são montados AQUI, pela mesma função do botão de baixar.
 async function enviarSituacaoEmail(req, res) {
   try {
     const { enviarEmail, statusEmail } = require('../services/email')
@@ -662,10 +691,24 @@ async function enviarSituacaoEmail(req, res) {
     const para = brutos.map(e => String(e || '').trim()).filter(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))
     if (!para.length) return res.status(400).json({ error: 'Informe ao menos um e-mail válido.' })
 
-    const anexos = (Array.isArray(b.anexos) ? b.anexos : []).filter(a => a && a.nome && a.base64)
-    if (!anexos.length) return res.status(400).json({ error: 'Nenhum arquivo para anexar.' })
+    // Quais arquivos anexar (padrão: os dois).
+    const rel = require('../services/relatorioSituacao')
+    const dados = await montarDadosSituacao()
+    const quer = a => b[a] === undefined ? true : !!b[a]
+    const anexos = []
+    if (quer('excel')) anexos.push({
+      nome: rel.nomeArquivo('xlsx'), base64: rel.montarExcel(dados).toString('base64'),
+      tipo: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    if (quer('pdf')) anexos.push({
+      nome: rel.nomeArquivo('pdf'), base64: rel.montarPDF(dados).toString('base64'),
+      tipo: 'application/pdf',
+    })
+    if (!anexos.length) return res.status(400).json({ error: 'Escolha ao menos um arquivo para anexar.' })
 
-    const r = (b.resumo || {})
+    // Os números do corpo saem dos MESMOS dados dos anexos — pedir o resumo à
+    // tela deixaria o corpo e o arquivo contando horas diferentes.
+    const r = dados.resumo || {}
     const linha = (rot, val) => `<tr><td style="padding:4px 10px;border-bottom:1px solid #eee">${rot}</td>` +
       `<td style="padding:4px 10px;border-bottom:1px solid #eee;text-align:right"><strong>${val}</strong></td></tr>`
     const hoje = new Date().toLocaleDateString('pt-BR')
@@ -983,5 +1026,6 @@ module.exports = {
   listar, buscarPorId, criar, atualizar, excluir,
   converterEmOrdem, importarManutencao,
   resumoDash, rankingsDash, serieDash, situacaoAtual, enviarSituacaoEmail,
+  baixarSituacaoExcel: baixarSituacao('excel'), baixarSituacaoPDF: baixarSituacao('pdf'),
   uploadAnexo, excluirAnexo
 }
