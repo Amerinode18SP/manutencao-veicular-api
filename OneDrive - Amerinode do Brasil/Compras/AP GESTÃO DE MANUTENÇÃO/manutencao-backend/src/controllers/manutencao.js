@@ -28,6 +28,15 @@ function parseData(valor) {
   return null
 }
 
+// Localidade, modelo, supervisor e oficina viram MAIÚSCULAS ao gravar — mesma
+// regra do cadastro de veículos (outros.js). Sem isso, "campinas" e "CAMPINAS"
+// voltam a ser dois lugares no painel e nos rankings, e ninguém percebe.
+// ⚠️ observacoes NÃO entra: é texto corrido.
+function caixaAlta(v) {
+  const s = String(v == null ? '' : v).trim()
+  return s === '' ? null : s.toUpperCase().replace(/\s+/g, ' ')
+}
+
 function diasEntre(inicio, fim) {
   if (!inicio) return null
   const d1 = new Date(inicio + 'T00:00:00')
@@ -108,9 +117,9 @@ async function criar(req, res) {
 
     const payload = {
       placa: normPlaca(placa),
-      modelo: modelo?.toString().trim() || null,
-      localidade: localidade?.toString().trim() || null,
-      supervisor: supervisor?.toString().trim() || null,
+      modelo: caixaAlta(modelo),
+      localidade: caixaAlta(localidade),
+      supervisor: caixaAlta(supervisor),
       data_entrada: parseData(data_entrada),
       data_saida: parseData(data_saida),
       previsao_retorno: parseData(previsao_retorno),
@@ -120,7 +129,7 @@ async function criar(req, res) {
       veiculo_devolvido: Boolean(veiculo_devolvido),
       data_devolucao: parseData(data_devolucao),
       num_os: num_os?.toString().trim() || null,
-      oficina: oficina?.toString().trim() || null,
+      oficina: caixaAlta(oficina),
       status,
       observacoes: observacoes?.toString().trim() || null,
       anexos: Array.isArray(anexos) ? anexos : [],
@@ -158,6 +167,11 @@ async function atualizar(req, res) {
     // Normalizar datas
     for (const d of ['data_entrada','data_saida','previsao_retorno','data_devolucao']) {
       if (payload[d] !== undefined) payload[d] = parseData(payload[d])
+    }
+
+    // Caixa alta só no campo que veio — um update parcial não mexe no resto.
+    for (const c of ['modelo','localidade','supervisor','oficina']) {
+      if (payload[c] !== undefined) payload[c] = caixaAlta(payload[c])
     }
 
     if (payload.placa) {
@@ -614,9 +628,9 @@ async function importarManutencao(req, res) {
 
       const payload = {
         placa:             normPlaca(r.placa),
-        modelo:            r.modelo ? r.modelo.toString().trim() : null,
-        localidade:        r.localidade ? r.localidade.toString().trim() : null,
-        supervisor:        r.supervisor ? r.supervisor.toString().trim() : null,
+        modelo:            caixaAlta(r.modelo),
+        localidade:        caixaAlta(r.localidade),
+        supervisor:        caixaAlta(r.supervisor),
         data_entrada:      dataEntrada,
         data_saida:        parseData(r.data_saida_da_oficina || r.data_saida),
         previsao_retorno:  parseData(r.previsao_de_retorno || r.previsao_retorno),
