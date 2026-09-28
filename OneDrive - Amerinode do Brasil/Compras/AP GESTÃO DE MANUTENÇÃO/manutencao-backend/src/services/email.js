@@ -72,49 +72,70 @@ async function postJson(url, headers, body) {
 
 // enviarEmail({ para: ['a@b.com'], assunto, html, texto })
 // → { provedor, id }   |  lança erro com .code='email_nao_configurado' se faltar env
-async function enviarEmail({ para, assunto, html, texto }) {
+// `anexos`: [{ nome, base64, tipo }] — opcional.
+// ⚠️ Cada provedor nomeia o anexo de um jeito (Resend: attachments/content;
+// Brevo: attachment/name; SendGrid: attachments + type e disposition). Mandar o
+// formato de um para outro NÃO dá erro: o e-mail sai, só que SEM o anexo — e
+// quem enviou só descobre quando o destinatário reclama.
+const TAMANHO_MAX_ANEXOS = 15 * 1024 * 1024 // ~15 MB somados, limite comum dos provedores
+
+async function enviarEmail({ para, assunto, html, texto, anexos }) {
   const st = statusEmail()
   if (!st.configurado) throw erroConfig(st.motivo)
 
   const destinos = (Array.isArray(para) ? para : [para]).map(e => String(e || '').trim()).filter(Boolean)
   if (!destinos.length) throw new Error('Nenhum destinatário informado.')
 
+  const lista = (Array.isArray(anexos) ? anexos : []).filter(a => a && a.nome && a.base64)
+  const bytes = lista.reduce((s, a) => s + Math.ceil(String(a.base64).length * 3 / 4), 0)
+  if (bytes > TAMANHO_MAX_ANEXOS) {
+    throw new Error('Os anexos somam mais de 15 MB — o provedor de e-mail recusaria a mensagem.')
+  }
+
   const from = partesRemetente(st.remetente)
   const chave = chaveDo(st.provedor)
 
   if (st.provedor === 'resend') {
+    const corpo = { from: st.remetente, to: destinos, subject: assunto, html, text: texto }
+    if (lista.length) corpo.attachments = lista.map(a => ({ filename: a.nome, content: a.base64 }))
     const res = await postJson('https://api.resend.com/emails',
-      { authorization: `Bearer ${chave}` },
-      { from: st.remetente, to: destinos, subject: assunto, html, text: texto })
-    return { provedor: 'resend', id: res.id || null }
+      { authorization: `Bearer ${chave}` }, corpo)
+    return { provedor: 'resend', id: res.id || null, anexos: lista.length }
   }
 
   if (st.provedor === 'brevo') {
+    const corpo = {
+      sender: { email: from.email, name: from.nome || undefined },
+      to: destinos.map(email => ({ email })),
+      subject: assunto,
+      htmlContent: html,
+      textContent: texto
+    }
+    if (lista.length) corpo.attachment = lista.map(a => ({ name: a.nome, content: a.base64 }))
     const res = await postJson('https://api.brevo.com/v3/smtp/email',
-      { 'api-key': chave },
-      {
-        sender: { email: from.email, name: from.nome || undefined },
-        to: destinos.map(email => ({ email })),
-        subject: assunto,
-        htmlContent: html,
-        textContent: texto
-      })
-    return { provedor: 'brevo', id: res.messageId || null }
+      { 'api-key': chave }, corpo)
+    return { provedor: 'brevo', id: res.messageId || null, anexos: lista.length }
   }
 
   // sendgrid — responde 202 com corpo vazio (sem id utilizável)
+  const corpo = {
+    personalizations: [{ to: destinos.map(email => ({ email })) }],
+    from: { email: from.email, name: from.nome || undefined },
+    subject: assunto,
+    content: [
+      { type: 'text/plain', value: texto || ' ' },
+      { type: 'text/html',  value: html }
+    ]
+  }
+  if (lista.length) {
+    corpo.attachments = lista.map(a => ({
+      filename: a.nome, content: a.base64,
+      type: a.tipo || 'application/octet-stream', disposition: 'attachment'
+    }))
+  }
   await postJson('https://api.sendgrid.com/v3/mail/send',
-    { authorization: `Bearer ${chave}` },
-    {
-      personalizations: [{ to: destinos.map(email => ({ email })) }],
-      from: { email: from.email, name: from.nome || undefined },
-      subject: assunto,
-      content: [
-        { type: 'text/plain', value: texto || ' ' },
-        { type: 'text/html',  value: html }
-      ]
-    })
-  return { provedor: 'sendgrid', id: null }
+    { authorization: `Bearer ${chave}` }, corpo)
+  return { provedor: 'sendgrid', id: null, anexos: lista.length }
 }
 
 module.exports = { enviarEmail, statusEmail }

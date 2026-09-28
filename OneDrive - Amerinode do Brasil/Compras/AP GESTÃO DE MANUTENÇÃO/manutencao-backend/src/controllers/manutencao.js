@@ -642,6 +642,67 @@ async function situacaoAtual(req, res) {
   }
 }
 
+// POST /api/manutencao/situacao/email — manda o relatório por e-mail.
+//
+// Os arquivos chegam PRONTOS da tela (base64): o Excel e o PDF já são montados
+// lá, e refazê-los aqui criaria uma segunda versão do mesmo relatório — que
+// divergiria da que a pessoa vê e exporta. O servidor confere, monta o corpo
+// com os números e envia.
+async function enviarSituacaoEmail(req, res) {
+  try {
+    const { enviarEmail, statusEmail } = require('../services/email')
+    const st = statusEmail()
+    if (!st.configurado) return res.status(412).json({ error: 'E-mail não configurado: ' + st.motivo })
+
+    const b = req.body || {}
+    // Aceita "a@x.com, b@y.com" ou lista. Só o que tem cara de e-mail passa —
+    // um endereço torto faz o provedor recusar a mensagem INTEIRA, e aí nem
+    // quem estava certo recebe.
+    const brutos = Array.isArray(b.para) ? b.para : String(b.para || '').split(/[;,\s]+/)
+    const para = brutos.map(e => String(e || '').trim()).filter(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))
+    if (!para.length) return res.status(400).json({ error: 'Informe ao menos um e-mail válido.' })
+
+    const anexos = (Array.isArray(b.anexos) ? b.anexos : []).filter(a => a && a.nome && a.base64)
+    if (!anexos.length) return res.status(400).json({ error: 'Nenhum arquivo para anexar.' })
+
+    const r = (b.resumo || {})
+    const linha = (rot, val) => `<tr><td style="padding:4px 10px;border-bottom:1px solid #eee">${rot}</td>` +
+      `<td style="padding:4px 10px;border-bottom:1px solid #eee;text-align:right"><strong>${val}</strong></td></tr>`
+    const hoje = new Date().toLocaleDateString('pt-BR')
+
+    const resultado = await enviarEmail({
+      para,
+      assunto: `Situação Atual da Frota — ${hoje}`,
+      // Os números vão NO CORPO, e não só no anexo: quem abre no celular
+      // costuma não baixar arquivo, e o essencial precisa ser lido na hora.
+      html: `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#333;line-height:1.5">
+        <h2 style="color:#1E3A5F;margin:0 0 4px">Situação Atual da Frota</h2>
+        <div style="color:#777;font-size:12px;margin-bottom:12px">Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+        <table style="border-collapse:collapse;min-width:320px">
+          ${linha('Frota ativa', r.frota_ativa != null ? r.frota_ativa : '—')}
+          ${linha('% da frota parada', r.percentual_parado != null ? r.percentual_parado + '%' : '—')}
+          ${linha('Manutenção em aberto', r.total || 0)}
+          ${linha('Em atraso', r.atrasados || 0)}
+          ${linha('Sinistros pendentes', r.sinistros || 0)}
+          ${linha('Em processo de seguro', r.em_seguro || 0)}
+          ${linha('Alugados em uso', r.alugados_ativos || 0)}
+          ${linha('Perda total (acumulado)', r.perda_total || 0)}
+          ${linha('Vendidos (acumulado)', r.vendidos || 0)}
+        </table>
+        <p style="margin-top:14px">O detalhamento completo está nos arquivos em anexo.</p>
+        <p style="color:#777;font-size:12px">Enviado pelo Sistema de Gestão de Manutenção Veicular — Amerinode.</p>
+      </div>`,
+      texto: `Situação Atual da Frota — ${hoje}. Frota ativa: ${r.frota_ativa ?? '—'}; ` +
+             `em aberto: ${r.total || 0}; em atraso: ${r.atrasados || 0}; alugados: ${r.alugados_ativos || 0}. ` +
+             'Detalhes nos anexos.',
+      anexos,
+    })
+    res.json({ ok: true, enviado_para: para, anexos: anexos.map(a => a.nome), provedor: resultado.provedor })
+  } catch (err) {
+    res.status(err.status === 400 ? 400 : 500).json({ error: err.message })
+  }
+}
+
 // ── Dashboard: rankings ───────────────────────────────────────────────────────
 async function rankingsDash(req, res) {
   try {
@@ -921,6 +982,6 @@ async function excluirAnexo(req, res) {
 module.exports = {
   listar, buscarPorId, criar, atualizar, excluir,
   converterEmOrdem, importarManutencao,
-  resumoDash, rankingsDash, serieDash, situacaoAtual,
+  resumoDash, rankingsDash, serieDash, situacaoAtual, enviarSituacaoEmail,
   uploadAnexo, excluirAnexo
 }
