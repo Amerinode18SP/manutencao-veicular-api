@@ -1615,6 +1615,10 @@ tr:hover td{background:#F9F9F9}
           <div class="form-group veic-baixa" style="display:none"><label>Data da baixa</label>
             <input type="date" id="veic-data-baixa">
           </div>
+          <div class="form-group veic-baixa" style="grid-column:1/-1;display:none"><label>Em substituição por</label>
+            <select id="veic-substituto"><option value="">— nenhum —</option></select>
+            <div style="font-size:11px;color:#666;margin-top:3px">Qual veículo entrou no lugar deste. A lista vem do cadastro — não se digita placa.</div>
+          </div>
           <div class="form-group" style="grid-column:1/-1"><label>Observação</label><textarea id="veic-obs" rows="2" placeholder="Anotações sobre o veículo"></textarea></div>
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
@@ -6992,6 +6996,7 @@ async function veicCarregar(){
         ? '<span style="padding:2px 8px;border-radius:10px;background:#EAF3DE;color:#27500A;font-size:11px">Ativo</span>'
         : `<span style="padding:2px 8px;border-radius:10px;background:${perdaTotal?'#FBE9E9':'#F5F1E6'};color:${perdaTotal?'#791F1F':'#8A5A00'};font-size:11px">${perdaTotal?'💀 ':''}${esc(v.motivo_baixa || 'Inativo')}</span>`
         + (v.data_baixa ? `<div style="font-size:10px;color:#888">${fmtData(v.data_baixa)}</div>` : '')
+        + (v.substituido_por ? `<div style="font-size:10px;color:#1F4E79">↪ ${esc(v.substituido_por.placa||'')}${v.substituido_por.modelo?' — '+esc(v.substituido_por.modelo):''}</div>` : '')
       const falta = t => String(t||'').trim() ? esc(String(t)) : '<span style="color:#B9433E">—</span>'
       return `<tr style="${ativo?'':'opacity:.65'}">
         <td><strong>${esc(v.placa||'-')}</strong></td>
@@ -7028,6 +7033,13 @@ function veicAbrirModal(id){
   document.getElementById('veic-ativo').value      = (id && !veicEhAtivo(v)) ? 'false' : 'true'
   document.getElementById('veic-motivo').value     = v.motivo_baixa || ''
   document.getElementById('veic-data-baixa').value = (v.data_baixa || '').slice(0,10)
+  // Lista do próprio cadastro, sem o veículo em edição: ninguém substitui a si
+  // mesmo (o banco também recusa).
+  const sel = document.getElementById('veic-substituto')
+  sel.innerHTML = '<option value="">— nenhum —</option>' + veicLista
+    .filter(x => String(x.id) !== String(id))
+    .map(x => `<option value="${x.id}">${esc(x.placa||'')}${x.modelo?' — '+esc(x.modelo):''}</option>`).join('')
+  sel.value = v.substituido_por_id || ''
   veicAoTrocarStatus()
   document.getElementById('veic-modal').style.display = 'flex'
 }
@@ -7078,6 +7090,8 @@ async function veicSalvar(){
       ? (document.getElementById('veic-motivo').value || null) : null,
     data_baixa: document.getElementById('veic-ativo').value === 'false'
       ? (document.getElementById('veic-data-baixa').value || null) : null,
+    substituido_por_id: document.getElementById('veic-ativo').value === 'false'
+      ? (document.getElementById('veic-substituto').value || null) : null,
   }
   btn.disabled = true
   try{
@@ -7109,13 +7123,16 @@ async function veicExcluir(id, placa){
 
 function veicExportarXLSX(){
   try{
-    const head=[['Placa','Modelo','Localidade','Supervisor','RENAVAM','Chassi','Status','Observação']]
+    const head=[['Placa','Modelo','Localidade','Supervisor','RENAVAM','Chassi','Status','Motivo da baixa','Data da baixa','Em substituição por','Observação']]
     const rows=veicLista.map(v=>[
       v.placa||'', v.modelo||'', v.localidade||'', v.supervisor||'',
-      v.renavam||'', v.chassi||'', veicEhAtivo(v)?'Ativo':'Inativo', v.observacao||''
+      v.renavam||'', v.chassi||'', veicEhAtivo(v)?'Ativo':'Inativo',
+      v.motivo_baixa||'', v.data_baixa||'',
+      v.substituido_por ? `${v.substituido_por.placa||''}${v.substituido_por.modelo?' — '+v.substituido_por.modelo:''}` : '',
+      v.observacao||''
     ])
     const ws=XLSX.utils.aoa_to_sheet([...head,...rows])
-    ws['!cols']=[{wch:10},{wch:20},{wch:16},{wch:18},{wch:14},{wch:20},{wch:10},{wch:34}]
+    ws['!cols']=[{wch:10},{wch:20},{wch:16},{wch:18},{wch:14},{wch:20},{wch:10},{wch:14},{wch:13},{wch:24},{wch:34}]
     const wb=XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb,ws,'Veículos')
     XLSX.writeFile(wb,`veiculos_${new Date().toISOString().slice(0,10)}.xlsx`)

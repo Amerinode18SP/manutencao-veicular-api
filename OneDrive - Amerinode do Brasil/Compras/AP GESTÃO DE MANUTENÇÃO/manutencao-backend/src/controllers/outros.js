@@ -49,8 +49,12 @@ function ajustarBaixa(dados) {
     }
   }
   // Voltou a ser ativo? A baixa deixa de valer — senão sobra um "Perda total"
-  // pendurado num carro que está rodando.
-  if (dados.ativo === true) { dados.motivo_baixa = null; dados.data_baixa = null }
+  // pendurado num carro que está rodando, e um substituto para um carro que
+  // não saiu da frota.
+  if (dados.ativo === true) { dados.motivo_baixa = null; dados.data_baixa = null; dados.substituido_por_id = null }
+  if (Object.prototype.hasOwnProperty.call(dados, 'substituido_por_id')) {
+    dados.substituido_por_id = limpo(dados.substituido_por_id)
+  }
   if (Object.prototype.hasOwnProperty.call(dados, 'data_baixa')) dados.data_baixa = limpo(dados.data_baixa)
   return dados
 }
@@ -76,6 +80,14 @@ async function listarVeiculos(req, res) {
       .select('*')
       .order('placa')
     if (error) throw error
+
+    // Resolve "substituído por" a partir da PRÓPRIA lista — a tela precisa da
+    // placa e do modelo do substituto, e eles já vieram nesta mesma consulta.
+    const porId = new Map((data || []).map(v => [v.id, v]))
+    for (const v of (data || [])) {
+      const s = v.substituido_por_id ? porId.get(v.substituido_por_id) : null
+      v.substituido_por = s ? { id: s.id, placa: s.placa, modelo: s.modelo } : null
+    }
 
     const txt = (v, t) => String(v || '').toLowerCase().includes(String(t).toLowerCase())
     let lista = data || []
@@ -164,6 +176,7 @@ async function criarVeiculo(req, res) {
       ativo: b.ativo === false ? false : true,
       motivo_baixa: b.motivo_baixa ?? null,
       data_baixa: b.data_baixa ?? null,
+      substituido_por_id: b.substituido_por_id ?? null,
     })
     const { data, error } = await supabase.from('veiculos').insert({
       placa,
