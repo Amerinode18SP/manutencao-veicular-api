@@ -1220,6 +1220,8 @@ tr:hover td{background:#F9F9F9}
           <div class="stat-card"><div class="stat-label">❓ Sem previsão</div><div class="stat-value" id="sit-kpi-sprev" style="color:#8A5A00">—</div><div class="stat-sub">Não dá para cobrar prazo</div></div>
           <div class="stat-card"><div class="stat-label">🚗 Alugados ativos</div><div class="stat-value" id="sit-kpi-alugados" style="color:#1F4E79">—</div><div class="stat-sub">Substitutos ainda não devolvidos</div></div>
           <div class="stat-card"><div class="stat-label">⏳ Parados +30 dias</div><div class="stat-value" id="sit-kpi-30">—</div><div class="stat-sub">Média <span id="sit-kpi-media">—</span> dias parados</div></div>
+          <div class="stat-card"><div class="stat-label">💀 Perda total</div><div class="stat-value" id="sit-kpi-pt" style="color:#791F1F">—</div><div class="stat-sub">Saíram da frota (acumulado)</div></div>
+          <div class="stat-card"><div class="stat-label">💰 Vendidos</div><div class="stat-value" id="sit-kpi-vend">—</div><div class="stat-sub">Saíram da frota (acumulado)</div></div>
         </div>
 
         <div class="card">
@@ -1238,9 +1240,25 @@ tr:hover td{background:#F9F9F9}
               <thead><tr>
                 <th>Placa</th><th>Modelo</th><th>Alugado</th><th>Localidade</th><th>Supervisor</th>
                 <th>Entrada</th><th>Dias parado</th><th>Previsão</th><th>Atraso</th>
-                <th>Tipo</th><th>Status</th><th>Oficina</th><th>Nº OS</th>
+                <th>Tipo</th><th>Status</th><th>Oficina</th><th>Nº OS</th><th>Última manutenção</th>
               </tr></thead>
-              <tbody id="sit-table"><tr><td colspan="13" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
+              <tbody id="sit-table"><tr><td colspan="14" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Saíram da frota: lista à parte, porque NÃO são carros parados -->
+        <div class="card" id="sit-baixas-card" style="display:none">
+          <div class="card-header">
+            <span class="card-title">🚫 Saíram da frota — perda total, venda e devolução</span>
+            <span style="color:#666;font-size:12px">Acumulado, do mais recente para o mais antigo</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Placa</th><th>Modelo</th><th>Localidade</th><th>Motivo</th><th>Data da baixa</th><th>Em substituição por</th>
+              </tr></thead>
+              <tbody id="sit-baixas-table"></tbody>
             </table>
           </div>
         </div>
@@ -5213,6 +5231,9 @@ async function carregarSituacao(){
     document.getElementById('sit-kpi-sprev').textContent  = r.sem_previsao ?? '0'
     document.getElementById('sit-kpi-alugados').textContent = r.alugados_ativos ?? '0'
     document.getElementById('sit-kpi-30').textContent     = r.parados_mais_30 ?? '0'
+    document.getElementById('sit-kpi-pt').textContent     = r.perda_total ?? '0'
+    document.getElementById('sit-kpi-vend').textContent   = r.vendidos ?? '0'
+    sitRenderBaixas(sitDados.baixas || [])
     document.getElementById('sit-kpi-media').textContent  = (r.media_dias ?? 0) + ''
     document.getElementById('sit-gerado').textContent =
       'Atualizado em ' + new Date(sitDados.gerado_em).toLocaleString('pt-BR')
@@ -5229,10 +5250,36 @@ async function carregarSituacao(){
   }
 }
 
+function sitRenderBaixas(baixas){
+  const card = document.getElementById('sit-baixas-card')
+  const tb = document.getElementById('sit-baixas-table')
+  if(!baixas.length){ card.style.display='none'; return }
+  card.style.display=''
+  tb.innerHTML = baixas.map(b=>{
+    const pt = b.motivo === 'Perda total'
+    const motivo = pt
+      ? '<strong style="color:#791F1F">💀 Perda total</strong>'
+      : esc(b.motivo||'-')
+    // Sem substituto é uma LACUNA, não um "nenhum": o carro saiu e ninguém
+    // registrou o que entrou no lugar. Fica visível para alguém preencher.
+    const sub = b.substituido_por
+      ? `${esc(b.substituido_por.placa||'')}${b.substituido_por.modelo?' — '+esc(b.substituido_por.modelo):''}`
+      : '<span style="color:#B9433E">— não informado —</span>'
+    return `<tr>
+      <td><strong>${esc(b.placa||'-')}</strong></td>
+      <td>${esc(b.modelo||'-')}</td>
+      <td>${esc(b.localidade||'-')}</td>
+      <td>${motivo}</td>
+      <td>${b.data_baixa?fmtData(b.data_baixa):'<span style="color:#B9433E">sem data</span>'}</td>
+      <td>${sub}</td>
+    </tr>`
+  }).join('')
+}
+
 function sitRenderTabela(itens){
   const tb = document.getElementById('sit-table')
   if(!itens.length){
-    tb.innerHTML = '<tr><td colspan="13" class="empty">🎉 Nenhum veículo em aberto — todos retornaram.</td></tr>'
+    tb.innerHTML = '<tr><td colspan="14" class="empty">🎉 Nenhum veículo em aberto — todos retornaram.</td></tr>'
     return
   }
   tb.innerHTML = itens.map(m=>{
@@ -5247,6 +5294,16 @@ function sitRenderTabela(itens){
     const tipo = ehSinistro
       ? '<strong style="color:#791F1F">💥 Sinistro</strong>'
       : (m.tipo_manutencao||'-')
+    // Última passagem pela oficina. O "serviço" sai das observações — o sistema
+    // ainda não tem campo próprio para isso (pendência anotada em 28/09/2026).
+    const u = m.ultima_manutencao
+    const ultima = u
+      ? `<div style="font-size:11px"><strong>${u.data_saida?fmtData(u.data_saida):'—'}</strong>`
+        + (u.tipo?` · ${esc(u.tipo)}`:'')
+        + (u.oficina?` · ${esc(u.oficina)}`:'')
+        + (u.servico?`<div style="color:#555">${esc(u.servico)}</div>`:'<div style="color:#B9433E">serviço não descrito</div>')
+        + '</div>'
+      : '<span style="color:#888;font-size:11px">primeira passagem</span>'
     // Alugado fica NA FRENTE (3ª coluna): na última, de 13, saía da tela sem rolar
     // e a informação existia sem ninguém ver (28/09/2026).
     // "Devolvido" aparece à parte de "Não": são coisas diferentes — carro que
@@ -5266,6 +5323,7 @@ function sitRenderTabela(itens){
       <td>${atraso}</td>
       <td>${tipo}</td><td>${m.status||'-'}</td>
       <td>${m.oficina||'-'}</td><td>${m.num_os||'-'}</td>
+      <td style="max-width:260px;white-space:normal">${ultima}</td>
     </tr>`
   }).join('')
 }

@@ -432,20 +432,40 @@ const STATUS_FECHADOS = ['Retornado', 'Cancelado', 'Perda total']
 async function situacaoAtual(req, res) {
   try {
     const hoje = new Date().toISOString().split('T')[0]
-    const { data, error } = await supabase
+    // Traz TODAS as manutenções, não só as abertas: a direção pediu também a
+    // ÚLTIMA manutenção de cada carro que está parado agora, e ela está no
+    // histórico. São poucas centenas de linhas — uma consulta só resolve.
+    const { data: todas, error } = await supabase
       .from('manutencoes')
       .select('*')
-      .not('status', 'in', `(${STATUS_FECHADOS.map(s => `"${s}"`).join(',')})`)
       .order('data_entrada', { ascending: true })
-      .limit(1000)
+      .limit(5000)
     if (error) throw error
 
+    const abertas = (todas || []).filter(m => !STATUS_FECHADOS.includes(m.status))
+
+    // Última manutenção ENCERRADA de cada placa — a anterior à atual.
+    // "Serviço realizado" sai das observações: o sistema não tem campo próprio
+    // para isso (anotado como pendência em 28/09/2026).
+    const ultimaPorPlaca = new Map()
+    for (const m of (todas || [])) {
+      if (m.status !== 'Retornado') continue
+      const chave = normPlaca(m.placa)
+      const atual = ultimaPorPlaca.get(chave)
+      const quando = m.data_saida || m.data_entrada
+      if (!atual || String(quando) > String(atual.data_saida || atual.data_entrada)) {
+        ultimaPorPlaca.set(chave, m)
+      }
+    }
+
+    const data = abertas
     const itens = (data || []).map(m => {
       const dias_parado = diasEntre(m.data_entrada, null)
       // Atraso só existe quando há previsão. Sem previsão NÃO é 0 (isso viraria
       // "no prazo" na tela): é null, e a coluna mostra "sem previsão".
       const dias_atraso = m.previsao_retorno && m.previsao_retorno < hoje
         ? diasEntre(m.previsao_retorno, null) : (m.previsao_retorno ? 0 : null)
+      const ult = ultimaPorPlaca.get(normPlaca(m.placa))
       return {
         ...m,
         dias_parado,
@@ -453,6 +473,15 @@ async function situacaoAtual(req, res) {
         atrasado: dias_atraso != null && dias_atraso > 0,
         sem_previsao: !m.previsao_retorno,
         alugado_ativo: !!m.veiculo_alugado && !m.veiculo_devolvido,
+        // Última passagem pela oficina, para a direção ver o que já foi feito
+        // antes de o carro voltar a parar.
+        ultima_manutencao: ult ? {
+          data_saida: ult.data_saida || null,
+          tipo: ult.tipo_manutencao || null,
+          oficina: ult.oficina || null,
+          num_os: ult.num_os || null,
+          servico: ult.observacoes || null,
+        } : null,
       }
     }).sort((a, b) => b.dias_parado - a.dias_parado) // mais parado primeiro
 
@@ -460,10 +489,25 @@ async function situacaoAtual(req, res) {
     // dá a régua "X de Y carros estão parados". Sem isso, 5 parados não diz nada
     // — 5 de 30 é rotina, 5 de 8 é a operação travando.
     let frotaAtiva = null
+    let baixas = []          // o que saiu da frota: perda total, vendido, devolvido
     try {
       const { veiculoAtivo } = require('./outros')
-      const { data: veics, error: ev } = await supabase.from('veiculos').select('id, ativo')
-      if (!ev) frotaAtiva = (veics || []).filter(veiculoAtivo).length
+      const { data: veics, error: ev } = await supabase.from('veiculos').select('*')
+      if (!ev) {
+        frotaAtiva = (veics || []).filter(veiculoAtivo).length
+        const porId = new Map((veics || []).map(v => [v.id, v]))
+        baixas = (veics || [])
+          .filter(v => v.motivo_baixa)
+          .map(v => {
+            const s = v.substituido_por_id ? porId.get(v.substituido_por_id) : null
+            return {
+              placa: v.placa, modelo: v.modelo, localidade: v.localidade,
+              motivo: v.motivo_baixa, data_baixa: v.data_baixa,
+              substituido_por: s ? { placa: s.placa, modelo: s.modelo } : null,
+            }
+          })
+          .sort((a, b) => String(b.data_baixa || '').localeCompare(String(a.data_baixa || '')))
+      }
     } catch (e) { /* cadastro indisponível: o painel funciona sem a régua */ }
 
     const soma = (f) => itens.filter(f).length
@@ -489,8 +533,15 @@ async function situacaoAtual(req, res) {
         por_status: itens.reduce((acc, i) => {
           const k = i.status || '—'; acc[k] = (acc[k] || 0) + 1; return acc
         }, {}),
+        // Saíram da frota — contagem acumulada, não do mês.
+        perda_total: baixas.filter(b => b.motivo === 'Perda total').length,
+        vendidos:    baixas.filter(b => b.motivo === 'Vendido').length,
+        devolvidos:  baixas.filter(b => b.motivo === 'Devolvido').length,
       },
       itens,
+      // Lista separada: são veículos que JÁ SAÍRAM, não carros parados. Misturar
+      // com `itens` faria o "% da frota parada" contar carro que não existe mais.
+      baixas,
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
