@@ -48,6 +48,61 @@ async function listarVeiculos(req, res) {
   }
 }
 
+// DELETE /api/veiculos/:id — só apaga veículo SEM histórico.
+//
+// ⚠️ POR QUE NÃO É UM DELETE DIRETO: as chaves estrangeiras mandam APAGAR JUNTO
+// o que está pendurado no veículo —
+//   revisoes_programadas ... ON DELETE CASCADE   (some a agenda de revisões)
+//   veiculo_km_historico ... ON DELETE CASCADE   (some o histórico de km)
+//   ordens               ... ON DELETE SET NULL  (a ordem fica órfã)
+// Um clique apagaria anos de histórico sem nada avisar na tela. Então o botão
+// serve ao caso que o motivou — placa digitada errada, cadastro sem uso — e
+// RECUSA quando há histórico, mandando marcar como INATIVO (que já esconde o
+// veículo das telas de controle e não destrói nada).
+async function excluirVeiculo(req, res) {
+  try {
+    const { data: veic, error: e0 } = await supabase
+      .from('veiculos').select('id, placa').eq('id', req.params.id).single()
+    if (e0 || !veic) return res.status(404).json({ error: 'Veículo não encontrado.' })
+
+    // Tabela que ainda não existe não bloqueia (o sistema é instalado por
+    // partes) — daí o erro virar 0 em vez de explodir.
+    const contar = async (tabela, coluna, valor) => {
+      try {
+        const { count, error } = await supabase.from(tabela)
+          .select('*', { count: 'exact', head: true }).eq(coluna, valor)
+        return error ? 0 : (count || 0)
+      } catch (e) { return 0 }
+    }
+    const [ordens, revisoes, kmHist, manut] = await Promise.all([
+      contar('ordens', 'veiculo_id', veic.id),
+      contar('revisoes_programadas', 'veiculo_id', veic.id),
+      contar('veiculo_km_historico', 'veiculo_id', veic.id),
+      contar('manutencoes', 'placa', veic.placa),
+    ])
+    const vinculos = []
+    if (ordens)   vinculos.push(`${ordens} ordem(ns) de compra`)
+    if (revisoes) vinculos.push(`${revisoes} revisão(ões) programada(s)`)
+    if (kmHist)   vinculos.push(`${kmHist} leitura(s) de km`)
+    if (manut)    vinculos.push(`${manut} manutenção(ões)`)
+
+    if (vinculos.length) {
+      return res.status(409).json({
+        error: `Este veículo tem histórico (${vinculos.join(', ')}) e não pode ser excluído — ` +
+               'apagar destruiria esses registros. Marque como INATIVO: ele sai das telas de ' +
+               'controle e o histórico fica preservado.',
+        vinculos: { ordens, revisoes, km_historico: kmHist, manutencoes: manut },
+      })
+    }
+
+    const { error } = await supabase.from('veiculos').delete().eq('id', veic.id)
+    if (error) throw error
+    res.json({ ok: true, placa: veic.placa })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}
+
 // POST /api/veiculos — cadastro novo, pela tela de Veículos.
 async function criarVeiculo(req, res) {
   try {
@@ -492,7 +547,7 @@ async function serie(req, res) {
 }
 
 module.exports = {
-  listarVeiculos, revisoesPendentes, atualizarVeiculo, criarVeiculo, veiculoAtivo,
+  listarVeiculos, revisoesPendentes, atualizarVeiculo, criarVeiculo, excluirVeiculo, veiculoAtivo,
   listarFornecedores, criarFornecedor, atualizarFornecedor, deletarFornecedor,
   resumo, rankings, serie
 }

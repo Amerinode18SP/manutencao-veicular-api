@@ -6962,7 +6962,10 @@ async function veicCarregar(){
         <td>${falta(v.chassi)}</td>
         <td>${selo}</td>
         <td style="max-width:220px;white-space:normal">${esc(v.observacao||'')}</td>
-        <td><button class="btn" onclick="veicAbrirModal('${v.id}')">✏️ Editar</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn" onclick="veicAbrirModal('${v.id}')">✏️</button>
+          <button class="btn" title="Excluir" onclick="veicExcluir('${v.id}','${esc(v.placa||'')}')">🗑️</button>
+        </td>
       </tr>`
     }).join('')
   }catch(e){
@@ -7025,6 +7028,18 @@ async function veicSalvar(){
     veicCarregar()
   }catch(e){ alert('Não foi possível salvar: '+e.message) }
   finally{ btn.disabled = false }
+}
+
+// Excluir é só para cadastro SEM histórico (placa digitada errada, por exemplo).
+// Quem tem histórico o servidor recusa e explica — ver excluirVeiculo no back.
+async function veicExcluir(id, placa){
+  if(!confirm(`Excluir o veículo ${placa}?\n\nSó é possível se ele não tiver histórico.\nSe tiver, marque como Inativo em vez de excluir.`)) return
+  try{
+    const r = await fetch(`${API}/api/veiculos/${id}`, { method:'DELETE' })
+    const d = await r.json()
+    if(!r.ok) throw new Error(d.error || 'falha ao excluir')
+    veicCarregar()
+  }catch(e){ alert(e.message) }
 }
 
 function veicExportarXLSX(){
