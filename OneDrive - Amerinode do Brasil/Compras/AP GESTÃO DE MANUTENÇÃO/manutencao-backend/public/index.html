@@ -5415,6 +5415,12 @@ function sitRenderTabela(itens){
   }).join('')
 }
 
+// Os itens comprados (ordens) são a descrição real do que foi feito no carro —
+// ver o comentário em lerCadastroEServicos (back). Vão para o Excel e o PDF na
+// mesma forma que a tela mostra.
+const sitServicosTexto = m => (m.ultimos_servicos||[])
+  .map(s=>`${s.item}${s.data?` (${fmtData(s.data)})`:''}`).join('; ')
+
 async function exportarSituacaoXLSX(){
   try{
     if(!sitDados) await carregarSituacao()
@@ -5427,9 +5433,16 @@ async function exportarSituacaoXLSX(){
       ['% da frota parada',r.percentual_parado!=null?r.percentual_parado+'%':'—'],
       ['Sinistros pendentes',r.sinistros||0],
       ['Em aberto agora',r.total||0],['Em atraso',r.atrasados||0],
-      ['Sem previsão',r.sem_previsao||0],['Alugados ativos',r.alugados_ativos||0],
+      ['Sem previsão',r.sem_previsao||0],
+      ['Em processo de seguro',r.em_seguro||0],
+      ['Alugados ativos',r.alugados_ativos||0],
+      ['   destes, cobrindo perda total',r.alugados_em_perda_total||0],
+      ['   sem placa informada',r.alugados_sem_placa||0],
+      ['   com devolução vencida',r.devolucoes_atrasadas||0],
       ['Parados há mais de 30 dias',r.parados_mais_30||0],
       ['Média de dias parados',r.media_dias||0],[''],
+      ['Saíram da frota','Qtd'],
+      ['Perda total',r.perda_total||0],['Vendidos',r.vendidos||0],['Devolvidos',r.devolvidos||0],[''],
       ['Por etapa','Qtd'],
       ...Object.entries(r.por_status||{}).map(([s,q])=>[s,q]),
     ])
@@ -5437,7 +5450,7 @@ async function exportarSituacaoXLSX(){
     XLSX.utils.book_append_sheet(wb,wsRes,'Resumo')
 
     const rotuloAlugado = m => m.veiculo_alugado ? (m.veiculo_devolvido ? 'Devolvido' : 'Sim') : 'Não'
-    const head=[['Placa','Modelo','Alugado','Placa do alugado','Prev. devolução','Localidade','Supervisor','Entrada','Dias parado','Previsão','Atraso (dias)','Tipo','Em seguro','Status','Oficina','Nº OS','Últ. manutenção','Serviço realizado']]
+    const head=[['Placa','Modelo','Alugado','Placa do alugado','Prev. devolução','Localidade','Supervisor','Entrada','Dias parado','Previsão','Atraso (dias)','Tipo','Em seguro','Status','Oficina','Nº OS','Últ. manutenção','Serviço realizado','Itens comprados (ordens)']]
     const rows=(sitDados.itens||[]).map(m=>[
       m.placa,m.modelo||'',rotuloAlugado(m),m.placa_alugado||'',m.previsao_devolucao||'',
       m.localidade||'',m.supervisor||'',
@@ -5446,11 +5459,38 @@ async function exportarSituacaoXLSX(){
       m.sem_previsao?'':(m.dias_atraso||0),
       m.tipo_manutencao||'',m.em_seguro?'Sim':'Não',m.status||'',m.oficina||'',m.num_os||'',
       (m.ultima_manutencao&&m.ultima_manutencao.data_saida)||'',
-      (m.ultima_manutencao&&m.ultima_manutencao.servico)||''
+      (m.ultima_manutencao&&m.ultima_manutencao.servico)||'',
+      sitServicosTexto(m)
     ])
     const ws=XLSX.utils.aoa_to_sheet([...head,...rows])
-    ws['!cols']=[{wch:10},{wch:14},{wch:11},{wch:14},{wch:14},{wch:16},{wch:16},{wch:12},{wch:12},{wch:14},{wch:13},{wch:12},{wch:10},{wch:14},{wch:18},{wch:14},{wch:14},{wch:40}]
+    ws['!cols']=[{wch:10},{wch:14},{wch:11},{wch:14},{wch:14},{wch:16},{wch:16},{wch:12},{wch:12},{wch:14},{wch:13},{wch:12},{wch:10},{wch:14},{wch:18},{wch:14},{wch:14},{wch:40},{wch:52}]
     XLSX.utils.book_append_sheet(wb,ws,'Em aberto')
+
+    // Alugados e baixas em ABAS PRÓPRIAS: são listas de coisas diferentes
+    // (carro emprestado x carro que saiu da frota). Empilhar tudo numa aba só
+    // obrigaria quem abre o arquivo a separar de novo na mão.
+    const alug=(sitDados.alugados||[])
+    if(alug.length){
+      const h2=[['Alugado (placa)','Substituindo','Modelo','Localidade','Situação do veículo','Devolver até','Devolução vencida']]
+      const r2=alug.map(a=>[
+        a.placa_alugado||'NÃO INFORMADA', a.placa_parada||'', a.modelo||'', a.localidade||'',
+        a.status||'', a.previsao_devolucao||'SEM PREVISÃO', a.devolucao_atrasada?'Sim':'Não'
+      ])
+      const ws2=XLSX.utils.aoa_to_sheet([...h2,...r2])
+      ws2['!cols']=[{wch:16},{wch:14},{wch:16},{wch:16},{wch:18},{wch:16},{wch:18}]
+      XLSX.utils.book_append_sheet(wb,ws2,'Alugados')
+    }
+    const bx=(sitDados.baixas||[])
+    if(bx.length){
+      const h3=[['Placa','Modelo','Localidade','Motivo','Data da baixa','Em substituição por']]
+      const r3=bx.map(b=>[
+        b.placa||'', b.modelo||'', b.localidade||'', b.motivo||'', b.data_baixa||'',
+        b.substituido_por?`${b.substituido_por.placa||''}${b.substituido_por.modelo?' — '+b.substituido_por.modelo:''}`:'NÃO INFORMADO'
+      ])
+      const ws3=XLSX.utils.aoa_to_sheet([...h3,...r3])
+      ws3['!cols']=[{wch:10},{wch:16},{wch:16},{wch:14},{wch:14},{wch:26}]
+      XLSX.utils.book_append_sheet(wb,ws3,'Saíram da frota')
+    }
     XLSX.writeFile(wb,`situacao_atual_${new Date().toISOString().slice(0,10)}.xlsx`)
   }catch(e){ alert('Não foi possível gerar o Excel: '+e.message) }
 }
@@ -5461,6 +5501,7 @@ async function exportarSituacaoPDF(){
     const {jsPDF}=window.jspdf
     const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'})
     const W=doc.internal.pageSize.getWidth(), M=12
+    const H=doc.internal.pageSize.getHeight()   // usado nas quebras de página
     const r=sitDados.resumo||{}, stamp=new Date().toLocaleString('pt-BR')
 
     doc.setFillColor(30,58,95); doc.rect(0,0,W,18,'F')
@@ -5495,19 +5536,23 @@ async function exportarSituacaoPDF(){
 
     const body=(sitDados.itens||[]).map(m=>[
       m.placa||'', m.modelo||'',
-      m.veiculo_alugado ? (m.veiculo_devolvido?'Devolvido':'Sim') : 'Nao',
       m.localidade||'', m.supervisor||'',
       fmtData(m.data_entrada), String(m.dias_parado),
       m.sem_previsao?'sem previsao':fmtData(m.previsao_retorno),
       m.sem_previsao?'-':(m.dias_atraso>0?String(m.dias_atraso):'no prazo'),
-      m.status||'', m.oficina||'', m.num_os||''
+      (m.tipo_manutencao||'') + (m.em_seguro?' / seguro':''),
+      m.status||'', m.oficina||'',
+      // O serviço real vem das ordens de compra; cai no texto da manutenção
+      // quando não há ordem para a placa.
+      sitServicosTexto(m) || (m.ultima_manutencao&&m.ultima_manutencao.servico) || 'nao descrito'
     ])
     doc.autoTable({
       startY:y, margin:{left:M,right:M},
-      head:[['Placa','Modelo','Alugado','Localidade','Supervisor','Entrada','Dias','Previsao','Atraso','Status','Oficina','N OS']],
+      head:[['Placa','Modelo','Localidade','Supervisor','Entrada','Dias','Previsao','Atraso','Tipo','Status','Oficina','Servicos (ordens)']],
       body,
       headStyles:{fillColor:[30,58,95],textColor:255,fontSize:8},
-      bodyStyles:{fontSize:8}, alternateRowStyles:{fillColor:[245,247,250]},
+      bodyStyles:{fontSize:7}, alternateRowStyles:{fillColor:[245,247,250]},
+      columnStyles:{11:{cellWidth:62}},
       // Linha do atrasado sai destacada também no papel — é o que se leva para a reunião.
       didParseCell:(d)=>{
         if(d.section==='body'){
@@ -5516,6 +5561,54 @@ async function exportarSituacaoPDF(){
         }
       }
     })
+    y = doc.lastAutoTable.finalY + 8
+
+    // ── Carros alugados em uso ──
+    const alug=(sitDados.alugados||[])
+    if(alug.length){
+      if(y > H-40){ doc.addPage(); y = 20 }
+      doc.setFontSize(10); doc.setFont(undefined,'bold'); doc.setTextColor(30,58,95)
+      doc.text('Carros alugados em uso',M,y); doc.setFont(undefined,'normal'); doc.setTextColor(0,0,0)
+      y += 4
+      doc.autoTable({
+        startY:y, margin:{left:M,right:M},
+        head:[['Alugado','Substituindo','Modelo','Localidade','Situacao do veiculo','Devolver ate']],
+        body:alug.map(a=>[
+          a.placa_alugado||'NAO INFORMADA', a.placa_parada||'', a.modelo||'', a.localidade||'',
+          a.perda_total?'PERDA TOTAL':(a.status||''),
+          a.previsao_devolucao?(fmtData(a.previsao_devolucao)+(a.devolucao_atrasada?' (vencida)':'')):'sem previsao'
+        ]),
+        headStyles:{fillColor:[30,58,95],textColor:255,fontSize:8},
+        bodyStyles:{fontSize:8}, alternateRowStyles:{fillColor:[245,247,250]},
+        didParseCell:(d)=>{
+          if(d.section==='body'){
+            const a=alug[d.row.index]
+            if(a && a.perda_total) d.cell.styles.fillColor=[253,243,243]
+          }
+        }
+      })
+      y = doc.lastAutoTable.finalY + 8
+    }
+
+    // ── Saíram da frota ──
+    const bx=(sitDados.baixas||[])
+    if(bx.length){
+      if(y > H-40){ doc.addPage(); y = 20 }
+      doc.setFontSize(10); doc.setFont(undefined,'bold'); doc.setTextColor(30,58,95)
+      doc.text('Sairam da frota',M,y); doc.setFont(undefined,'normal'); doc.setTextColor(0,0,0)
+      y += 4
+      doc.autoTable({
+        startY:y, margin:{left:M,right:M},
+        head:[['Placa','Modelo','Localidade','Motivo','Data da baixa','Em substituicao por']],
+        body:bx.map(b=>[
+          b.placa||'', b.modelo||'', b.localidade||'', b.motivo||'',
+          b.data_baixa?fmtData(b.data_baixa):'sem data',
+          b.substituido_por?`${b.substituido_por.placa||''}${b.substituido_por.modelo?' - '+b.substituido_por.modelo:''}`:'nao informado'
+        ]),
+        headStyles:{fillColor:[30,58,95],textColor:255,fontSize:8},
+        bodyStyles:{fontSize:8}, alternateRowStyles:{fillColor:[245,247,250]},
+      })
+    }
     doc.save(`situacao_atual_${new Date().toISOString().slice(0,10)}.pdf`)
   }catch(e){ alert('Não foi possível gerar o PDF: '+e.message) }
 }
