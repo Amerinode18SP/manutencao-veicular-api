@@ -5458,7 +5458,7 @@ async function exportarSituacaoXLSX(){
     XLSX.utils.book_append_sheet(wb,wsRes,'Resumo')
 
     const rotuloAlugado = m => m.veiculo_alugado ? (m.veiculo_devolvido ? 'Devolvido' : 'Sim') : 'Não'
-    const head=[['Placa','Modelo','Alugado','Locadora','Prev. devolução','Localidade','Supervisor','Entrada','Dias parado','Previsão','Atraso (dias)','Tipo','Em seguro','Status','Oficina','Nº OS','Últ. manutenção','Serviço realizado','Itens comprados (ordens)']]
+    const head=[['Placa','Modelo','Alugado','Locadora','Prev. devolução','Localidade','Supervisor','Entrada','Dias parado','Previsão','Atraso (dias)','Tipo','Em seguro','Status','Oficina','Nº OS','Últ. manutenção','Serviço realizado','Últimos Serviços (ordens)']]
     const rows=(sitDados.itens||[]).map(m=>[
       m.placa,m.modelo||'',rotuloAlugado(m),m.locadora||'',m.previsao_devolucao||'',
       m.localidade||'',m.supervisor||'',
@@ -5556,7 +5556,7 @@ async function exportarSituacaoPDF(){
     ])
     doc.autoTable({
       startY:y, margin:{left:M,right:M},
-      head:[['Placa','Modelo','Localidade','Supervisor','Entrada','Dias','Previsao','Atraso','Tipo','Status','Oficina','Servicos (ordens)']],
+      head:[['Placa','Modelo','Localidade','Supervisor','Entrada','Dias','Previsao','Atraso','Tipo','Status','Oficina','Ultimos Servicos (ordens)']],
       body,
       headStyles:{fillColor:[30,58,95],textColor:255,fontSize:8},
       bodyStyles:{fontSize:7}, alternateRowStyles:{fillColor:[245,247,250]},
