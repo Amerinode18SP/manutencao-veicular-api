@@ -13,6 +13,20 @@ const limpo = v => {
   return s === '' ? null : s
 }
 
+// Modelo, localidade e supervisor viram MAIÚSCULAS ao gravar.
+//
+// POR QUE NO SERVIDOR E NÃO SÓ NA TELA: a mesma cidade escrita "CAMPINAS" e
+// "Campinas" vira duas no filtro, e ninguém percebe — foi exatamente a sujeira
+// que a padronização de 28/09/2026 teve de limpar (17 grafias para 12). Aqui a
+// regra vale para qualquer origem: tela, planilha ou chamada direta da API.
+//
+// ⚠️ OBSERVAÇÃO NÃO ENTRA: é texto corrido: maiúscula em frase inteira fica
+// ruim de ler e parece grito.
+const caixaAlta = v => {
+  const s = limpo(v)
+  return s === null ? null : s.toUpperCase().replace(/\s+/g, ' ')
+}
+
 // A regra da placa mora em utils/placa.js — um lugar só, usado por todos os
 // caminhos que criam veículo. Ver o aviso lá sobre não duplicar.
 const { normPlaca: normPlacaVeic, placaValida, ERRO_PLACA } = require('../utils/placa')
@@ -119,9 +133,9 @@ async function criarVeiculo(req, res) {
     const chassi = limpo(b.chassi)
     const { data, error } = await supabase.from('veiculos').insert({
       placa,
-      localidade: String(b.localidade).trim(),
-      modelo:     limpo(b.modelo),
-      supervisor: limpo(b.supervisor),
+      localidade: caixaAlta(b.localidade),
+      modelo:     caixaAlta(b.modelo),
+      supervisor: caixaAlta(b.supervisor),
       renavam:    limpo(b.renavam),
       chassi:     chassi ? chassi.toUpperCase() : null,
       observacao: limpo(b.observacao),
@@ -170,6 +184,10 @@ async function atualizarVeiculo(req, res) {
     }
     if (Object.prototype.hasOwnProperty.call(corpo, 'chassi') && corpo.chassi) {
       corpo.chassi = String(corpo.chassi).trim().toUpperCase()
+    }
+    // Só mexe no campo que veio: um PUT parcial não pode apagar o que não mandou.
+    for (const campo of ['localidade', 'modelo', 'supervisor']) {
+      if (Object.prototype.hasOwnProperty.call(corpo, campo)) corpo[campo] = caixaAlta(corpo[campo])
     }
     const { data, error } = await supabase
       .from('veiculos')

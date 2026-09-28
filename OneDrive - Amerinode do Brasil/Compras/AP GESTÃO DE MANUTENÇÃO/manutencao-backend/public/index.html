@@ -1213,6 +1213,8 @@ tr:hover td{background:#F9F9F9}
       <!-- ABA: SITUAÇÃO ATUAL (o que está parado agora) -->
       <div id="man-aba-situacao" style="display:none">
         <div class="stats-grid">
+          <div class="stat-card"><div class="stat-label">🚗 Frota ativa</div><div class="stat-value" id="sit-kpi-frota" style="color:#1F4E79">—</div><div class="stat-sub"><span id="sit-kpi-pct">—</span> parada agora</div></div>
+          <div class="stat-card"><div class="stat-label">💥 Sinistros pendentes</div><div class="stat-value" id="sit-kpi-sinistros" style="color:#791F1F">—</div><div class="stat-sub">Em aberto, envolvem seguro</div></div>
           <div class="stat-card"><div class="stat-label">🔧 Em aberto agora</div><div class="stat-value" id="sit-kpi-total">—</div><div class="stat-sub">Ainda não retornaram</div></div>
           <div class="stat-card"><div class="stat-label">⚠️ Em atraso</div><div class="stat-value" id="sit-kpi-atraso" style="color:#791F1F">—</div><div class="stat-sub">Passaram da previsão</div></div>
           <div class="stat-card"><div class="stat-label">❓ Sem previsão</div><div class="stat-value" id="sit-kpi-sprev" style="color:#8A5A00">—</div><div class="stat-sub">Não dá para cobrar prazo</div></div>
@@ -5183,6 +5185,11 @@ async function carregarSituacao(){
     sitDados = await apiCall('/api/manutencao/situacao')
     const r = sitDados.resumo || {}
     document.getElementById('sit-kpi-total').textContent  = r.total ?? '0'
+    document.getElementById('sit-kpi-sinistros').textContent = r.sinistros ?? '0'
+    // "—" quando o cadastro não respondeu: 0% parado é o oposto de "não sei".
+    document.getElementById('sit-kpi-frota').textContent  = r.frota_ativa ?? '—'
+    document.getElementById('sit-kpi-pct').textContent    =
+      r.percentual_parado != null ? `${r.percentual_parado}%` : '—'
     document.getElementById('sit-kpi-atraso').textContent = r.atrasados ?? '0'
     document.getElementById('sit-kpi-sprev').textContent  = r.sem_previsao ?? '0'
     document.getElementById('sit-kpi-alugados').textContent = r.alugados_ativos ?? '0'
@@ -5215,6 +5222,12 @@ function sitRenderTabela(itens){
       ? '<span style="color:#8A5A00">sem previsão</span>'
       : (m.dias_atraso > 0 ? `<strong style="color:#791F1F">${m.dias_atraso} d</strong>` : '<span style="color:#27500A">no prazo</span>')
     const fundo = m.atrasado ? 'background:#FDF3F3' : (m.sem_previsao ? 'background:#FFFBF2' : '')
+    // Sinistro sai marcado na linha: é o caso que costuma envolver terceiro e
+    // seguro, e quem olha o painel precisa achar esses primeiro.
+    const ehSinistro = String(m.tipo_manutencao||'').toUpperCase() === 'SINISTRO'
+    const tipo = ehSinistro
+      ? '<strong style="color:#791F1F">💥 Sinistro</strong>'
+      : (m.tipo_manutencao||'-')
     // Alugado fica NA FRENTE (3ª coluna): na última, de 13, saía da tela sem rolar
     // e a informação existia sem ninguém ver (28/09/2026).
     // "Devolvido" aparece à parte de "Não": são coisas diferentes — carro que
@@ -5232,7 +5245,7 @@ function sitRenderTabela(itens){
       <td><strong>${m.dias_parado} d</strong></td>
       <td>${fmtData(m.previsao_retorno)}</td>
       <td>${atraso}</td>
-      <td>${m.tipo_manutencao||'-'}</td><td>${m.status||'-'}</td>
+      <td>${tipo}</td><td>${m.status||'-'}</td>
       <td>${m.oficina||'-'}</td><td>${m.num_os||'-'}</td>
     </tr>`
   }).join('')
@@ -5246,6 +5259,9 @@ async function exportarSituacaoXLSX(){
     const wsRes = XLSX.utils.aoa_to_sheet([
       ['SITUAÇÃO ATUAL — veículos em aberto'],[`Gerado em: ${stamp}`],[''],
       ['Indicador','Valor'],
+      ['Frota ativa',r.frota_ativa!=null?r.frota_ativa:'—'],
+      ['% da frota parada',r.percentual_parado!=null?r.percentual_parado+'%':'—'],
+      ['Sinistros pendentes',r.sinistros||0],
       ['Em aberto agora',r.total||0],['Em atraso',r.atrasados||0],
       ['Sem previsão',r.sem_previsao||0],['Alugados ativos',r.alugados_ativos||0],
       ['Parados há mais de 30 dias',r.parados_mais_30||0],
@@ -5289,6 +5305,8 @@ async function exportarSituacaoPDF(){
 
     let y=26
     const kpis=[
+      {label:'Frota ativa',val:r.frota_ativa!=null?r.frota_ativa:'-',cor:[230,241,251]},
+      {label:'Sinistros',val:r.sinistros||0,cor:[252,235,235]},
       {label:'Em aberto',val:r.total||0,cor:[230,241,251]},
       {label:'Em atraso',val:r.atrasados||0,cor:[252,235,235]},
       {label:'Sem previsao',val:r.sem_previsao||0,cor:[250,238,218]},

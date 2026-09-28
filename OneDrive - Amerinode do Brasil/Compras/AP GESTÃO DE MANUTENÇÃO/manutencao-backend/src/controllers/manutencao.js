@@ -410,11 +410,30 @@ async function situacaoAtual(req, res) {
       }
     }).sort((a, b) => b.dias_parado - a.dias_parado) // mais parado primeiro
 
+    // Frota ativa vem do CADASTRO de veículos, não das manutenções: é ela que
+    // dá a régua "X de Y carros estão parados". Sem isso, 5 parados não diz nada
+    // — 5 de 30 é rotina, 5 de 8 é a operação travando.
+    let frotaAtiva = null
+    try {
+      const { veiculoAtivo } = require('./outros')
+      const { data: veics, error: ev } = await supabase.from('veiculos').select('id, ativo')
+      if (!ev) frotaAtiva = (veics || []).filter(veiculoAtivo).length
+    } catch (e) { /* cadastro indisponível: o painel funciona sem a régua */ }
+
     const soma = (f) => itens.filter(f).length
+    const parados = itens.length
     res.json({
       gerado_em: new Date().toISOString(),
       resumo: {
-        total: itens.length,
+        total: parados,
+        // Sinistro é a única categoria que costuma envolver terceiro e seguro —
+        // por isso sai destacada, e não só como mais uma linha de "por_status".
+        sinistros: soma(i => String(i.tipo_manutencao || '').toUpperCase() === 'SINISTRO'),
+        frota_ativa: frotaAtiva,
+        // null quando o cadastro não respondeu — a tela mostra "—" em vez de 0%,
+        // que seria mentira (0% parado é o oposto de "não sei").
+        percentual_parado: (frotaAtiva && frotaAtiva > 0)
+          ? Math.round((parados / frotaAtiva) * 100) : null,
         atrasados: soma(i => i.atrasado),
         sem_previsao: soma(i => i.sem_previsao),
         alugados_ativos: soma(i => i.alugado_ativo),
