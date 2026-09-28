@@ -27,6 +27,34 @@ const caixaAlta = v => {
   return s === null ? null : s.toUpperCase().replace(/\s+/g, ' ')
 }
 
+// ── Baixa do veículo ────────────────────────────────────────────────────────
+const MOTIVOS_BAIXA = ['Perda total', 'Vendido', 'Devolvido', 'Outro']
+
+// Mantém `ativo` e `motivo_baixa` contando a MESMA história. Sem isto dá para
+// gravar "Perda total" num veículo que segue ativo — e aí ele continua sendo
+// cobrado nas Próximas Revisões de um carro que não existe mais, sem nada
+// falhar na tela.
+function ajustarBaixa(dados) {
+  const temMotivo = Object.prototype.hasOwnProperty.call(dados, 'motivo_baixa')
+  if (temMotivo) {
+    const m = limpo(dados.motivo_baixa)
+    if (m && !MOTIVOS_BAIXA.includes(m)) {
+      const e = new Error(`Motivo da baixa inválido. Use: ${MOTIVOS_BAIXA.join(', ')}.`)
+      e.status = 400; throw e
+    }
+    dados.motivo_baixa = m
+    if (m) {
+      dados.ativo = false                                   // baixa implica inativo
+      if (!limpo(dados.data_baixa)) dados.data_baixa = new Date().toISOString().slice(0, 10)
+    }
+  }
+  // Voltou a ser ativo? A baixa deixa de valer — senão sobra um "Perda total"
+  // pendurado num carro que está rodando.
+  if (dados.ativo === true) { dados.motivo_baixa = null; dados.data_baixa = null }
+  if (Object.prototype.hasOwnProperty.call(dados, 'data_baixa')) dados.data_baixa = limpo(dados.data_baixa)
+  return dados
+}
+
 // A regra da placa mora em utils/placa.js — um lugar só, usado por todos os
 // caminhos que criam veículo. Ver o aviso lá sobre não duplicar.
 const { normPlaca: normPlacaVeic, placaValida, ERRO_PLACA } = require('../utils/placa')
@@ -131,6 +159,12 @@ async function criarVeiculo(req, res) {
     if (!String(b.localidade || '').trim()) return res.status(400).json({ error: 'Informe a localidade.' })
 
     const chassi = limpo(b.chassi)
+    // ajustarBaixa decide ativo/motivo/data juntos — ver o porquê na função.
+    const baixa = ajustarBaixa({
+      ativo: b.ativo === false ? false : true,
+      motivo_baixa: b.motivo_baixa ?? null,
+      data_baixa: b.data_baixa ?? null,
+    })
     const { data, error } = await supabase.from('veiculos').insert({
       placa,
       localidade: caixaAlta(b.localidade),
@@ -139,11 +173,12 @@ async function criarVeiculo(req, res) {
       renavam:    limpo(b.renavam),
       chassi:     chassi ? chassi.toUpperCase() : null,
       observacao: limpo(b.observacao),
-      ativo:      b.ativo === false ? false : true,
+      ...baixa,
     }).select().single()
     if (error) throw error
     res.status(201).json(data)
   } catch (err) {
+    if (err.status === 400) return res.status(400).json({ error: err.message })
     res.status(erroDeDuplicidade(err) ? 409 : 500).json({ error: mensagemVeiculo(err) })
   }
 }
@@ -189,6 +224,7 @@ async function atualizarVeiculo(req, res) {
     for (const campo of ['localidade', 'modelo', 'supervisor']) {
       if (Object.prototype.hasOwnProperty.call(corpo, campo)) corpo[campo] = caixaAlta(corpo[campo])
     }
+    ajustarBaixa(corpo)
     const { data, error } = await supabase
       .from('veiculos')
       .update({ ...corpo, updated_at: new Date().toISOString() })
@@ -203,7 +239,7 @@ async function atualizarVeiculo(req, res) {
     }
     res.json(data)
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    res.status(err.status === 400 ? 400 : 500).json({ error: err.message })
   }
 }
 

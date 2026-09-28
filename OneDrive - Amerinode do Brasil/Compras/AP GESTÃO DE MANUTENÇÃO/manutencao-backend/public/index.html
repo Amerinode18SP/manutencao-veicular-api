@@ -1307,6 +1307,7 @@ tr:hover td{background:#F9F9F9}
               <option value="Em Andamento">Em Andamento</option>
               <option value="Retornado">Retornado</option>
               <option value="Cancelado">Cancelado</option>
+              <option value="Perda total">Perda total</option>
             </select>
           </div>
           <div class="form-group"><label>Placa</label><input id="man-f-placa" placeholder="Buscar placa..." oninput="carregarManLista(1)"></div>
@@ -1596,11 +1597,23 @@ tr:hover td{background:#F9F9F9}
           <div class="form-group"><label>RENAVAM</label><input id="veic-renavam" placeholder="11 dígitos" inputmode="numeric"></div>
           <div class="form-group"><label>Chassi</label><input id="veic-chassi" placeholder="17 caracteres" style="text-transform:uppercase"></div>
           <div class="form-group"><label>Status</label>
-            <select id="veic-ativo">
+            <select id="veic-ativo" onchange="veicAoTrocarStatus()">
               <option value="true">Ativo</option>
               <option value="false">Inativo</option>
             </select>
             <div style="font-size:11px;color:#8A5A00;margin-top:3px">Inativo sai das Próximas Revisões e dos alertas.</div>
+          </div>
+          <div class="form-group veic-baixa" style="display:none"><label>Motivo da baixa</label>
+            <select id="veic-motivo">
+              <option value="">— selecione —</option>
+              <option>Perda total</option>
+              <option>Vendido</option>
+              <option>Devolvido</option>
+              <option>Outro</option>
+            </select>
+          </div>
+          <div class="form-group veic-baixa" style="display:none"><label>Data da baixa</label>
+            <input type="date" id="veic-data-baixa">
           </div>
           <div class="form-group" style="grid-column:1/-1"><label>Observação</label><textarea id="veic-obs" rows="2" placeholder="Anotações sobre o veículo"></textarea></div>
         </div>
@@ -1723,7 +1736,9 @@ tr:hover td{background:#F9F9F9}
           <option value="Aprovado">Aprovado</option>
           <option value="Retornado">Retornado</option>
           <option value="Cancelado">Cancelado</option>
+          <option value="Perda total">Perda total</option>
         </select>
+        <div style="font-size:11px;color:#8A5A00;margin-top:3px">Perda total encerra a manutenção e dá baixa no veículo.</div>
       </div>
       <div class="form-group" style="display:flex;align-items:center;gap:8px;padding-top:22px">
         <input type="checkbox" id="man-alugado" onchange="toggleDevolucao()">
@@ -5457,6 +5472,8 @@ async function carregarManLista(pg){
         const atraso=m.status==='Em Andamento'&&m.previsao_retorno&&m.previsao_retorno<hoje()
         const stBadge=m.status==='Em Andamento'
           ?`<span class="badge badge-amber">🔧 Em Andamento</span>`
+          :m.status==='Perda total'
+            ?`<span class="badge badge-red">💀 Perda total</span>`
           :m.status==='Retornado'
             ?`<span class="badge badge-green">✅ Retornado</span>`
             :m.status==='Orçamento'
@@ -5851,6 +5868,7 @@ async function verHistorico(placa){
     if(!rows.length){tb.innerHTML=`<tr><td colspan="12" class="empty">Nenhum registro encontrado.</td></tr>`;return}
     tb.innerHTML=rows.map(m=>{
       const stBadge=m.status==='Em Andamento'?`<span class="badge badge-amber">🔧 Em Andamento</span>`
+        :m.status==='Perda total'?`<span class="badge badge-red">💀 Perda total</span>`
         :m.status==='Retornado'?`<span class="badge badge-green">✅ Retornado</span>`
         :m.status==='Orçamento'?`<span class="badge badge-blue">💰 Orçamento</span>`
         :m.status==='Aprovado'?`<span class="badge badge-green">✔ Aprovado</span>`
@@ -6967,9 +6985,13 @@ async function veicCarregar(){
     }
     tb.innerHTML = veicLista.map(v=>{
       const ativo = veicEhAtivo(v)
+      // Inativo mostra o MOTIVO junto: "Inativo" sozinho não diz se o carro foi
+      // vendido, devolvido ou destruído — e é essa diferença que interessa.
+      const perdaTotal = String(v.motivo_baixa||'') === 'Perda total'
       const selo = ativo
         ? '<span style="padding:2px 8px;border-radius:10px;background:#EAF3DE;color:#27500A;font-size:11px">Ativo</span>'
-        : '<span style="padding:2px 8px;border-radius:10px;background:#F5F1E6;color:#8A5A00;font-size:11px">Inativo</span>'
+        : `<span style="padding:2px 8px;border-radius:10px;background:${perdaTotal?'#FBE9E9':'#F5F1E6'};color:${perdaTotal?'#791F1F':'#8A5A00'};font-size:11px">${perdaTotal?'💀 ':''}${esc(v.motivo_baixa || 'Inativo')}</span>`
+        + (v.data_baixa ? `<div style="font-size:10px;color:#888">${fmtData(v.data_baixa)}</div>` : '')
       const falta = t => String(t||'').trim() ? esc(String(t)) : '<span style="color:#B9433E">—</span>'
       return `<tr style="${ativo?'':'opacity:.65'}">
         <td><strong>${esc(v.placa||'-')}</strong></td>
@@ -7004,7 +7026,17 @@ function veicAbrirModal(id){
   document.getElementById('veic-chassi').value     = v.chassi || ''
   document.getElementById('veic-obs').value        = v.observacao || ''
   document.getElementById('veic-ativo').value      = (id && !veicEhAtivo(v)) ? 'false' : 'true'
+  document.getElementById('veic-motivo').value     = v.motivo_baixa || ''
+  document.getElementById('veic-data-baixa').value = (v.data_baixa || '').slice(0,10)
+  veicAoTrocarStatus()
   document.getElementById('veic-modal').style.display = 'flex'
+}
+
+// Motivo e data da baixa só fazem sentido no veículo inativo — em veículo ativo
+// seriam dois campos para preencher errado.
+function veicAoTrocarStatus(){
+  const inativo = document.getElementById('veic-ativo').value === 'false'
+  document.querySelectorAll('.veic-baixa').forEach(el => el.style.display = inativo ? '' : 'none')
 }
 function veicFecharModal(){ document.getElementById('veic-modal').style.display = 'none'; veicEditId = null }
 
@@ -7040,6 +7072,12 @@ async function veicSalvar(){
     renavam, chassi,
     observacao: document.getElementById('veic-obs').value.trim(),
     ativo:      document.getElementById('veic-ativo').value === 'true',
+    // Em veículo ativo vão vazios de propósito: o servidor limpa a baixa quando
+    // o carro volta a rodar, senão sobraria um "Perda total" pendurado nele.
+    motivo_baixa: document.getElementById('veic-ativo').value === 'false'
+      ? (document.getElementById('veic-motivo').value || null) : null,
+    data_baixa: document.getElementById('veic-ativo').value === 'false'
+      ? (document.getElementById('veic-data-baixa').value || null) : null,
   }
   btn.disabled = true
   try{

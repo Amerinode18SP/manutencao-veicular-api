@@ -37,6 +37,33 @@ function caixaAlta(v) {
   return s === '' ? null : s.toUpperCase().replace(/\s+/g, ' ')
 }
 
+// Manutenção marcada como PERDA TOTAL dá baixa no veículo na mesma hora.
+//
+// ⚠️ POR QUE AUTOMÁTICO: os dois registros são a mesma notícia — o carro saiu da
+// frota. Deixar para alguém lembrar de ir ao cadastro depois significa, no dia
+// em que esquecer, um veículo destruído continuar ativo e sendo cobrado nas
+// Próximas Revisões. O sistema sabe disso no instante em que o status muda.
+//
+// Não sobrescreve baixa que já exista (alguém pode ter registrado como Vendido
+// por outro motivo) e nunca derruba o registro se o cadastro falhar: a
+// manutenção já foi gravada, e perder isso seria pior.
+async function darBaixaPorPerdaTotal(placa, dataSaida) {
+  try {
+    const { data: veic } = await supabase.from('veiculos')
+      .select('id, motivo_baixa').eq('placa', normPlaca(placa)).maybeSingle()
+    if (!veic || veic.motivo_baixa) return
+    await supabase.from('veiculos').update({
+      ativo: false,
+      motivo_baixa: 'Perda total',
+      data_baixa: dataSaida || new Date().toISOString().slice(0, 10),
+      updated_at: new Date().toISOString(),
+    }).eq('id', veic.id)
+    console.log(`[manutencao] ${placa}: baixa por perda total registrada no cadastro`)
+  } catch (e) {
+    console.warn('[manutencao] não deu baixa por perda total (rodar scripts/perda-total.sql):', e.message)
+  }
+}
+
 function diasEntre(inicio, fim) {
   if (!inicio) return null
   const d1 = new Date(inicio + 'T00:00:00')
@@ -143,6 +170,7 @@ async function criar(req, res) {
       .single()
 
     if (error) throw error
+    if (data && data.status === 'Perda total') await darBaixaPorPerdaTotal(data.placa, data.data_saida)
     res.status(201).json(data)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -187,6 +215,7 @@ async function atualizar(req, res) {
       .single()
 
     if (error) throw error
+    if (data && data.status === 'Perda total') await darBaixaPorPerdaTotal(data.placa, data.data_saida)
     res.json(data)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -395,7 +424,10 @@ async function resumoDash(req, res) {
 // ⚠️ A lista é por EXCLUSÃO de propósito: um status novo no CHECK da tabela entra
 // aqui sozinho. Listar os abertos um a um faria o veículo do status novo sumir do
 // painel sem erro nenhum — parado na oficina e invisível para quem cobra.
-const STATUS_FECHADOS = ['Retornado', 'Cancelado']
+// 'Perda total' entra aqui porque o carro NUNCA vai retornar: sem isso a
+// manutenção dele ficaria em aberto para sempre, contando como veículo parado e
+// inflando o "% da frota parada" todo mês.
+const STATUS_FECHADOS = ['Retornado', 'Cancelado', 'Perda total']
 
 async function situacaoAtual(req, res) {
   try {
@@ -557,6 +589,8 @@ function normalizeStatus(raw) {
   const s = raw.toString().replace(/[^\w\sÀ-ÿ]/gu, '').trim().toLowerCase()
   if (s.includes('retorn')) return 'Retornado'
   if (s.includes('cancel')) return 'Cancelado'
+  // "perda total", "perda", "PT" — como a planilha costuma vir escrita.
+  if (s.includes('perda') || s === 'pt') return 'Perda total'
   return 'Em Andamento'
 }
 
