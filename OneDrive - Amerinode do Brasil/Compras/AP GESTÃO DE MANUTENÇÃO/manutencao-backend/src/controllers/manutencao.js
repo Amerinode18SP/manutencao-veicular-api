@@ -675,36 +675,36 @@ function baixarSituacao(formato) {
   }
 }
 
-// POST /api/manutencao/situacao/email — manda o relatório por e-mail.
-// Os arquivos são montados AQUI, pela mesma função do botão de baixar.
-async function enviarSituacaoEmail(req, res) {
-  try {
-    const { enviarEmail, statusEmail } = require('../services/email')
-    const st = statusEmail()
-    if (!st.configurado) return res.status(412).json({ error: 'E-mail não configurado: ' + st.motivo })
+// Envia o relatório por e-mail. Usada pelo botão da tela E pelo agendador —
+// uma função só, para o e-mail automático ser idêntico ao manual.
+// Lança Error com .status=400 quando o pedido está errado.
+async function enviarRelatorioSituacao({ para, excel = true, pdf = true }) {
+  const { enviarEmail, statusEmail } = require('../services/email')
+  const st = statusEmail()
+  if (!st.configurado) { const e = new Error('E-mail não configurado: ' + st.motivo); e.status = 412; throw e }
 
-    const b = req.body || {}
-    // Aceita "a@x.com, b@y.com" ou lista. Só o que tem cara de e-mail passa —
-    // um endereço torto faz o provedor recusar a mensagem INTEIRA, e aí nem
-    // quem estava certo recebe.
-    const brutos = Array.isArray(b.para) ? b.para : String(b.para || '').split(/[;,\s]+/)
-    const para = brutos.map(e => String(e || '').trim()).filter(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))
-    if (!para.length) return res.status(400).json({ error: 'Informe ao menos um e-mail válido.' })
+  // Aceita "a@x.com, b@y.com" ou lista. Só o que tem cara de e-mail passa —
+  // um endereço torto faz o provedor recusar a mensagem INTEIRA, e aí nem
+  // quem estava certo recebe.
+  const brutos = Array.isArray(para) ? para : String(para || '').split(/[;,\s]+/)
+  const destinos = brutos.map(e => String(e || '').trim()).filter(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))
+  if (!destinos.length) { const e = new Error('Informe ao menos um e-mail válido.'); e.status = 400; throw e }
 
-    // Quais arquivos anexar (padrão: os dois).
-    const rel = require('../services/relatorioSituacao')
-    const dados = await montarDadosSituacao()
-    const quer = a => b[a] === undefined ? true : !!b[a]
-    const anexos = []
-    if (quer('excel')) anexos.push({
-      nome: rel.nomeArquivo('xlsx'), base64: rel.montarExcel(dados).toString('base64'),
-      tipo: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    })
-    if (quer('pdf')) anexos.push({
-      nome: rel.nomeArquivo('pdf'), base64: rel.montarPDF(dados).toString('base64'),
-      tipo: 'application/pdf',
-    })
-    if (!anexos.length) return res.status(400).json({ error: 'Escolha ao menos um arquivo para anexar.' })
+  const rel = require('../services/relatorioSituacao')
+  const dados = await montarDadosSituacao()
+  const anexos = []
+  if (excel) anexos.push({
+    nome: rel.nomeArquivo('xlsx'), base64: rel.montarExcel(dados).toString('base64'),
+    tipo: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  if (pdf) anexos.push({
+    nome: rel.nomeArquivo('pdf'), base64: rel.montarPDF(dados).toString('base64'),
+    tipo: 'application/pdf',
+  })
+  if (!anexos.length) { const e = new Error('Escolha ao menos um arquivo para anexar.'); e.status = 400; throw e }
+
+  {
+    const para = destinos
 
     // Os números do corpo saem dos MESMOS dados dos anexos — pedir o resumo à
     // tela deixaria o corpo e o arquivo contando horas diferentes.
@@ -740,10 +740,172 @@ async function enviarSituacaoEmail(req, res) {
              'Detalhes nos anexos.',
       anexos,
     })
-    res.json({ ok: true, enviado_para: para, anexos: anexos.map(a => a.nome), provedor: resultado.provedor })
-  } catch (err) {
-    res.status(err.status === 400 ? 400 : 500).json({ error: err.message })
+    return { para, anexos: anexos.map(a => a.nome), provedor: resultado.provedor }
   }
+}
+
+// POST /api/manutencao/situacao/email — o botão "Enviar por e-mail" da tela.
+async function enviarSituacaoEmail(req, res) {
+  try {
+    const b = req.body || {}
+    const r = await enviarRelatorioSituacao({
+      para: b.para,
+      excel: b.excel === undefined ? true : !!b.excel,
+      pdf: b.pdf === undefined ? true : !!b.pdf,
+    })
+    res.json({ ok: true, enviado_para: r.para, anexos: r.anexos, provedor: r.provedor })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+}
+
+// ── Envio agendado (semanal / quinzenal / mensal) ───────────────────────────
+const TZ_BR = 'America/Sao_Paulo'
+
+// Data/hora de Brasília, independentemente do fuso do servidor (o Railway roda
+// em UTC: usar a hora local mandaria o relatório 3 horas antes do combinado).
+function agoraBR() {
+  const p = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ_BR, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short',
+  }).formatToParts(new Date()).reduce((a, x) => (a[x.type] = x.value, a), {})
+  const dias = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+  return {
+    data: `${p.year}-${p.month}-${p.day}`,
+    hora: Number(p.hour),
+    diaSemana: dias[p.weekday],
+    diaMes: Number(p.day),
+  }
+}
+
+// Já passou da hora marcada HOJE e ainda não saiu nesta janela?
+//
+// ⚠️ A trava contra repetição é o `ultimo_em`, NÃO o relógio: o agendador acorda
+// a cada 20 min, e sem ela o mesmo relatório sairia várias vezes na mesma manhã
+// (ou de novo a cada reinício do processo).
+function deveEnviarAgora(cfg, agora) {
+  if (!cfg || !cfg.sit_envio_ativo) return { enviar: false, motivo: 'desativado' }
+  if (!(cfg.sit_envio_emails || []).length) return { enviar: false, motivo: 'sem_destinatarios' }
+  if (agora.hora < (cfg.sit_envio_hora ?? 8)) return { enviar: false, motivo: 'antes_da_hora' }
+
+  const freq = String(cfg.sit_envio_frequencia || 'semanal')
+  const ultimo = cfg.sit_envio_ultimo_em ? new Date(cfg.sit_envio_ultimo_em) : null
+  const diasDesde = ultimo ? (Date.now() - ultimo.getTime()) / 86400000 : 9999
+  // Saiu hoje? Não repete — vale para as três frequências.
+  if (ultimo && String(cfg.sit_envio_ultimo_em).slice(0, 10) === agora.data) {
+    return { enviar: false, motivo: 'ja_enviado_hoje' }
+  }
+
+  if (freq === 'mensal') {
+    if (agora.diaMes !== (cfg.sit_envio_dia_mes || 1)) return { enviar: false, motivo: 'outro_dia' }
+    return { enviar: true }
+  }
+  if (agora.diaSemana !== (cfg.sit_envio_dia_semana ?? 1)) return { enviar: false, motivo: 'outro_dia' }
+  if (freq === 'quinzenal') {
+    // 13 e não 14: o tique pode cair algumas horas antes do "mesmo horário" de
+    // duas semanas atrás, e exigir 14 exatos empurraria o envio para a semana
+    // seguinte — virando mensal na prática.
+    if (diasDesde < 13) return { enviar: false, motivo: 'quinzena_nao_fechou' }
+  }
+  return { enviar: true }
+}
+
+async function tickEnvioSituacao() {
+  const { data: cfg } = await supabase.from('config_sistema')
+    .select('sit_envio_ativo, sit_envio_emails, sit_envio_frequencia, sit_envio_dia_semana, ' +
+            'sit_envio_dia_mes, sit_envio_hora, sit_envio_excel, sit_envio_pdf, sit_envio_ultimo_em')
+    .eq('id', 1).maybeSingle()
+
+  const decisao = deveEnviarAgora(cfg, agoraBR())
+  if (!decisao.enviar) return { enviado: false, motivo: decisao.motivo }
+
+  const marcar = async (status, detalhe) => {
+    try {
+      await supabase.from('config_sistema').update({
+        sit_envio_ultimo_em: new Date().toISOString(),
+        sit_envio_ultimo_status: status,
+        sit_envio_ultimo_detalhe: String(detalhe || '').slice(0, 300),
+      }).eq('id', 1)
+    } catch (e) { /* não derruba o envio por causa do registro */ }
+  }
+
+  try {
+    const r = await enviarRelatorioSituacao({
+      para: cfg.sit_envio_emails,
+      excel: cfg.sit_envio_excel !== false,
+      pdf: cfg.sit_envio_pdf !== false,
+    })
+    await marcar('ok', `enviado para ${r.para.join(', ')}`)
+    return { enviado: true, para: r.para }
+  } catch (e) {
+    // Marca MESMO no erro: sem isso o tique seguinte tentaria de novo em 20 min,
+    // e um provedor fora do ar viraria dezenas de tentativas no mesmo dia.
+    await marcar('erro', e.message)
+    return { enviado: false, motivo: 'erro', erro: e.message }
+  }
+}
+
+function iniciarAgendadorSituacao() {
+  const min = parseInt(process.env.SIT_ENVIO_TICK_MIN || '20', 10)
+  if (!min || min <= 0) {
+    console.log('🔕  Envio agendado da Situação da Frota desativado (SIT_ENVIO_TICK_MIN=0)')
+    return
+  }
+  console.log(`📬  Envio agendado da Situação da Frota: confere a cada ${min} min (fuso ${TZ_BR})`)
+  const tick = () => tickEnvioSituacao()
+    .then(r => { if (r && r.enviado) console.log(`[situacao-envio] enviado para ${r.para.join(', ')}`) })
+    .catch(e => console.warn('[situacao-envio] tique falhou:', e.message))
+  setTimeout(tick, 2 * 60 * 1000)      // 1ª conferência ~2 min após subir
+  setInterval(tick, min * 60 * 1000)
+}
+
+// GET/PUT /api/manutencao/situacao/agenda — a tela lê e grava a configuração.
+async function getAgendaSituacao(_req, res) {
+  try {
+    const { data } = await supabase.from('config_sistema').select('*').eq('id', 1).maybeSingle()
+    const c = data || {}
+    res.json({
+      ativo: !!c.sit_envio_ativo,
+      emails: c.sit_envio_emails || [],
+      frequencia: c.sit_envio_frequencia || 'semanal',
+      dia_semana: c.sit_envio_dia_semana ?? 1,
+      dia_mes: c.sit_envio_dia_mes || 1,
+      hora: c.sit_envio_hora ?? 8,
+      excel: c.sit_envio_excel !== false,
+      pdf: c.sit_envio_pdf !== false,
+      ultimo_em: c.sit_envio_ultimo_em || null,
+      ultimo_status: c.sit_envio_ultimo_status || null,
+      ultimo_detalhe: c.sit_envio_ultimo_detalhe || null,
+    })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+}
+
+async function putAgendaSituacao(req, res) {
+  try {
+    const b = req.body || {}
+    const emails = (Array.isArray(b.emails) ? b.emails : String(b.emails || '').split(/[;,\s]+/))
+      .map(e => String(e || '').trim()).filter(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))
+    if (b.ativo && !emails.length) {
+      return res.status(400).json({ error: 'Para ativar o envio automático, informe ao menos um e-mail válido.' })
+    }
+    const freq = ['semanal', 'quinzenal', 'mensal'].includes(b.frequencia) ? b.frequencia : 'semanal'
+    const limita = (v, min, max, pad) => {
+      const n = Number(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : pad
+    }
+    const upd = {
+      sit_envio_ativo: !!b.ativo,
+      sit_envio_emails: emails,
+      sit_envio_frequencia: freq,
+      sit_envio_dia_semana: limita(b.dia_semana, 0, 6, 1),
+      sit_envio_dia_mes: limita(b.dia_mes, 1, 28, 1),   // 28: ver o porquê no SQL
+      sit_envio_hora: limita(b.hora, 0, 23, 8),
+      sit_envio_excel: b.excel !== false,
+      sit_envio_pdf: b.pdf !== false,
+    }
+    const { error } = await supabase.from('config_sistema').update(upd).eq('id', 1)
+    if (error) throw error
+    res.json({ ok: true, ...upd })
+  } catch (err) { res.status(500).json({ error: err.message }) }
 }
 
 // ── Dashboard: rankings ───────────────────────────────────────────────────────
@@ -1027,5 +1189,6 @@ module.exports = {
   converterEmOrdem, importarManutencao,
   resumoDash, rankingsDash, serieDash, situacaoAtual, enviarSituacaoEmail,
   baixarSituacaoExcel: baixarSituacao('excel'), baixarSituacaoPDF: baixarSituacao('pdf'),
+  getAgendaSituacao, putAgendaSituacao, iniciarAgendadorSituacao, tickEnvioSituacao, deveEnviarAgora,
   uploadAnexo, excluirAnexo
 }

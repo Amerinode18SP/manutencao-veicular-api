@@ -18,6 +18,7 @@ const revisoesRoutes    = require('./routes/revisoes')
 const { runMigrations } = require('./migrate')
 const { manterSessaoViva } = require('./controllers/importarKm')
 const { iniciarAgendador: iniciarAlertasRevisao } = require('./controllers/alertasRevisao')
+const { iniciarAgendadorSituacao } = require('./controllers/manutencao')
 
 const app  = express()
 const PORT = process.env.PORT || 3000
@@ -90,4 +91,5 @@ app.listen(PORT, async () => {
   await runMigrations()
   iniciarKeepaliveTicketlog()
   iniciarAlertasRevisao()   // alerta de revisão por e-mail (horário/dias vêm da config da tela)
+  iniciarAgendadorSituacao() // envio semanal/quinzenal/mensal da Situação da Frota
 })

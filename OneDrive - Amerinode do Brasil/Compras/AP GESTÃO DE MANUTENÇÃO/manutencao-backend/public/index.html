@@ -1658,9 +1658,47 @@ tr:hover td{background:#F9F9F9}
           quem abrir no celular lê sem precisar baixar arquivo.
         </div>
         <div id="sit-email-aviso" style="font-size:12px;margin-top:8px"></div>
+
+        <!-- Agendamento: mesma tela do envio manual, para quem manda hoje já
+             deixar marcado o envio de toda semana sem procurar outro lugar. -->
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid #EEE">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin:0">
+            <input type="checkbox" id="sit-ag-ativo" onchange="sitAgToggle()" style="width:auto">
+            📅 Enviar automaticamente
+          </label>
+          <div id="sit-ag-campos" style="display:none;margin-top:10px">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+              <div class="form-group" style="margin:0"><label>Frequência</label>
+                <select id="sit-ag-freq" onchange="sitAgToggle()">
+                  <option value="semanal">Semanal</option>
+                  <option value="quinzenal">Quinzenal</option>
+                  <option value="mensal">Mensal</option>
+                </select>
+              </div>
+              <div class="form-group" id="sit-ag-wrap-semana" style="margin:0"><label>Dia da semana</label>
+                <select id="sit-ag-dia-semana">
+                  <option value="1">Segunda</option><option value="2">Terça</option>
+                  <option value="3">Quarta</option><option value="4">Quinta</option>
+                  <option value="5">Sexta</option><option value="6">Sábado</option>
+                  <option value="0">Domingo</option>
+                </select>
+              </div>
+              <div class="form-group" id="sit-ag-wrap-mes" style="margin:0;display:none"><label>Dia do mês</label>
+                <input type="number" id="sit-ag-dia-mes" min="1" max="28" value="1">
+                <div style="font-size:11px;color:#8A5A00;margin-top:3px">Até 28: dia 29–31 não existe em todo mês.</div>
+              </div>
+              <div class="form-group" style="margin:0"><label>Hora</label>
+                <input type="number" id="sit-ag-hora" min="0" max="23" value="8">
+              </div>
+            </div>
+            <div id="sit-ag-status" style="font-size:12px;color:#666;margin-top:8px"></div>
+          </div>
+        </div>
+
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
-          <button class="btn" onclick="fecharEnvioSituacao()">Cancelar</button>
-          <button class="btn-primary" id="sit-email-btn" onclick="enviarSituacaoPorEmail()">Enviar</button>
+          <button class="btn" onclick="fecharEnvioSituacao()">Fechar</button>
+          <button class="btn" id="sit-ag-btn" onclick="salvarAgendaSituacao()">Salvar agendamento</button>
+          <button class="btn-primary" id="sit-email-btn" onclick="enviarSituacaoPorEmail()">Enviar agora</button>
         </div>
       </div>
     </div>
@@ -5497,6 +5535,62 @@ function abrirEnvioSituacao(){
   try{ document.getElementById('sit-email-para').value = localStorage.getItem('sitEmailPara')||'' }catch(e){}
   document.getElementById('sit-email-aviso').textContent=''
   document.getElementById('sit-email-modal').style.display='flex'
+  carregarAgendaSituacao()
+}
+
+// Mostra só os campos da frequência escolhida — dia do mês não faz sentido no
+// semanal, e dia da semana não faz sentido no mensal.
+function sitAgToggle(){
+  const on = document.getElementById('sit-ag-ativo').checked
+  document.getElementById('sit-ag-campos').style.display = on ? '' : 'none'
+  const mensal = document.getElementById('sit-ag-freq').value === 'mensal'
+  document.getElementById('sit-ag-wrap-semana').style.display = mensal ? 'none' : ''
+  document.getElementById('sit-ag-wrap-mes').style.display    = mensal ? '' : 'none'
+}
+
+async function carregarAgendaSituacao(){
+  try{
+    const a = await apiCall('/api/manutencao/situacao/agenda')
+    document.getElementById('sit-ag-ativo').checked = !!a.ativo
+    document.getElementById('sit-ag-freq').value = a.frequencia||'semanal'
+    document.getElementById('sit-ag-dia-semana').value = String(a.dia_semana ?? 1)
+    document.getElementById('sit-ag-dia-mes').value = a.dia_mes||1
+    document.getElementById('sit-ag-hora').value = a.hora ?? 8
+    // Se já existe agendamento, os destinatários dele mandam — são os que o
+    // envio automático usa de verdade.
+    if((a.emails||[]).length) document.getElementById('sit-email-para').value = a.emails.join(', ')
+    const st = document.getElementById('sit-ag-status')
+    st.textContent = a.ultimo_em
+      ? `Último envio automático: ${new Date(a.ultimo_em).toLocaleString('pt-BR')} (${a.ultimo_status||'—'})`
+      : 'Nenhum envio automático ainda.'
+    sitAgToggle()
+  }catch(e){ /* sem agenda configurada ainda: a tela abre com os padrões */ }
+}
+
+async function salvarAgendaSituacao(){
+  const btn=document.getElementById('sit-ag-btn')
+  const aviso=document.getElementById('sit-email-aviso')
+  btn.disabled=true
+  try{
+    const body={
+      ativo: document.getElementById('sit-ag-ativo').checked,
+      emails: document.getElementById('sit-email-para').value,
+      frequencia: document.getElementById('sit-ag-freq').value,
+      dia_semana: Number(document.getElementById('sit-ag-dia-semana').value),
+      dia_mes: Number(document.getElementById('sit-ag-dia-mes').value),
+      hora: Number(document.getElementById('sit-ag-hora').value),
+      excel: document.getElementById('sit-email-xlsx').checked,
+      pdf: document.getElementById('sit-email-pdf').checked,
+    }
+    const r=await fetch(`${API}/api/manutencao/situacao/agenda`,{
+      method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+    })
+    const d=await r.json()
+    if(!r.ok) throw new Error(d.error||'falha ao salvar')
+    aviso.style.color='#27500A'
+    aviso.textContent = body.ativo ? '✅ Agendamento salvo e ativado.' : '✅ Agendamento salvo (desativado).'
+  }catch(e){ aviso.style.color='#A32D2D'; aviso.textContent='Não foi possível salvar: '+e.message }
+  finally{ btn.disabled=false }
 }
 function fecharEnvioSituacao(){ document.getElementById('sit-email-modal').style.display='none' }
 
