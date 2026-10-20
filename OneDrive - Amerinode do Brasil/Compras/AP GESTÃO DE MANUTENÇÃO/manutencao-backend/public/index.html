@@ -173,6 +173,19 @@ tr:hover td{background:#F9F9F9}
 .chart-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 .chart-toolbar h4{font-size:13px;font-weight:500;color:#1E3A5F}
 .chart-controls{display:flex;gap:6px;flex-wrap:wrap}
+/* Filtro por coluna e arrastar coluna, estilo Excel */
+#man-thead th{cursor:grab;white-space:nowrap}
+#man-thead th.arrastando{opacity:.4}
+#man-thead th.alvo{box-shadow:inset 3px 0 0 #185FA5}
+.man-fil{cursor:pointer;font-size:9px;color:#9aa5b1;margin-left:3px;user-select:none}
+.man-fil:hover{color:#185FA5}
+.man-fil.ativo{color:#185FA5;font-weight:700}
+#man-filtro-pop{position:absolute;z-index:9999;background:#fff;border:1px solid #CBD5E1;border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;width:250px;display:none;font-size:13px}
+#man-filtro-pop .lista{max-height:220px;overflow:auto;border:1px solid #EEE;border-radius:6px;padding:6px;margin:6px 0}
+#man-filtro-pop label{display:flex;align-items:center;gap:6px;padding:3px 2px;margin:0;font-weight:400;cursor:pointer}
+#man-filtro-pop label:hover{background:#F0F4F9}
+#man-filtro-pop input[type=checkbox]{width:auto;margin:0}
 .man-aba-btn{border:none;background:transparent;padding:8px 16px;font-size:14px;color:#666;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
 .man-aba-btn.active{color:#1E3A5F;font-weight:600;border-bottom-color:#185FA5}
 .chart-controls .seg{display:flex;background:#F0F4F9;border-radius:8px;padding:3px}
@@ -1384,11 +1397,7 @@ tr:hover td{background:#F9F9F9}
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr>
-              <th>Placa</th><th>Modelo</th><th>Localidade</th><th>Supervisor</th>
-              <th>Entrada</th><th>Previsão Retorno</th><th>Dias</th><th>Tipo</th>
-              <th>Alugado</th><th>Status</th><th>Nº OS</th><th>Oficina</th><th>Anexos</th><th>Obs.</th><th>Ações</th>
-            </tr></thead>
+            <thead><tr id="man-thead"></tr></thead>
             <tbody id="man-table"><tr><td colspan="15" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
           </table>
         </div>
@@ -1638,6 +1647,9 @@ tr:hover td{background:#F9F9F9}
         </table>
       </div>
     </div><!-- /page-veiculos -->
+
+    <!-- Painel do filtro por coluna (um só, reposicionado a cada clique) -->
+    <div id="man-filtro-pop"></div>
 
     <!-- MODAL: ENVIAR SITUAÇÃO ATUAL DA FROTA POR E-MAIL -->
     <div class="modal-overlay" id="sit-email-modal" style="display:none">
@@ -5703,11 +5715,264 @@ function setManRank(tipo,btn){
 }
 
 // ── Lista de manutenções ──────────────────────────────────────
+// ════════════════════════════════════════════════════════════
+// LISTA DE MANUTENÇÕES — filtro por coluna e colunas que se movem
+// (pedido da Luciana em 20/10/2026, "filtro tipo Excel")
+//
+// ⚠️ A tabela é desenhada A PARTIR DESTA LISTA, e não de HTML fixo. É o que
+// permite arrastar coluna: a ordem é só a ordem do array. Com <th>/<td>
+// escritos à mão, mover uma coluna significaria mexer em dois lugares e eles
+// sairiam de sincronia na primeira troca.
+//
+// `val` é o texto usado no FILTRO (e na ordenação); `td` é o que aparece na
+// célula. Os dois existem porque a célula tem selo colorido e botão, e filtrar
+// por HTML não funcionaria.
+// ════════════════════════════════════════════════════════════
+const MAN_COLUNAS = [
+  { k:'placa', rot:'Placa', fil:true, val:m=>m.placa||'',
+    td:m=>`<strong style="cursor:pointer;color:#0C447C;text-decoration:underline" onclick="verHistorico('${m.placa}')" title="Ver histórico desta placa">${esc(m.placa)}</strong>` },
+  { k:'modelo', rot:'Modelo', fil:true, val:m=>m.modelo||'', td:m=>esc(m.modelo)||'—' },
+  { k:'localidade', rot:'Localidade', fil:true, val:m=>m.localidade||'', td:m=>esc(m.localidade)||'—' },
+  { k:'supervisor', rot:'Supervisor', fil:true, val:m=>m.supervisor||'', td:m=>esc(m.supervisor)||'—' },
+  { k:'data_entrada', rot:'Entrada', val:m=>m.data_entrada||'', td:m=>fmtData(m.data_entrada) },
+  { k:'previsao_retorno', rot:'Previsão Retorno', val:m=>m.previsao_retorno||'',
+    td:m=>m.previsao_retorno?`<span style="${manAtrasado(m)?'color:#791F1F;font-weight:600':''}">${fmtData(m.previsao_retorno)}</span>`:'—' },
+  { k:'dias_efetivos', rot:'Dias', num:true, val:m=>m.dias_efetivos??'',
+    td:m=>{ const d=m.dias_efetivos!=null?m.dias_efetivos:'—'
+            return manAtrasado(m)?`<span style="color:#791F1F;font-weight:600">${d} ⚠️</span>`:d } },
+  { k:'tipo_manutencao', rot:'Tipo', fil:true, val:m=>m.tipo_manutencao||'',
+    td:m=>`<span class="badge badge-gray">${esc(m.tipo_manutencao)}</span>` },
+  { k:'_alugado', rot:'Alugado', fil:true,
+    val:m=>m.veiculo_alugado?(m.veiculo_devolvido?'Devolvido':'Sim'):'Não',
+    td:m=>m.veiculo_alugado?`<span class="badge badge-blue">Sim${m.veiculo_devolvido?' ✓':''}</span>`:'—' },
+  { k:'status', rot:'Status', fil:true, val:m=>rotuloStatusMan(m.status), td:m=>manSeloStatus(m) },
+  { k:'num_os', rot:'Nº OS', fil:true, val:m=>m.num_os||'', td:m=>esc(m.num_os)||'—' },
+  { k:'oficina', rot:'Oficina', fil:true, val:m=>m.oficina||'', td:m=>esc(m.oficina)||'—' },
+  { k:'_anexos', rot:'Anexos', val:m=>String((Array.isArray(m.anexos)?m.anexos.filter(a=>a&&a.url).length:0)),
+    td:m=>{ const n=Array.isArray(m.anexos)?m.anexos.filter(a=>a&&a.url).length:0
+            return n>0?`<button class="btn" style="padding:2px 8px;font-size:11px" onclick='verAnexosManutencao(${JSON.stringify(m.anexos||[]).replace(/'/g,"&apos;")},"${esc(m.placa)}")'>📎 ${n}</button>`:'—' } },
+  { k:'observacoes', rot:'Obs.', val:m=>m.observacoes||'',
+    td:m=>m.observacoes?`<span title="${esc(m.observacoes)}" style="cursor:help">📝</span>`:'—' },
+  { k:'_acoes', rot:'Ações', val:()=>'', td:m=>manAcoes(m) },
+]
+
+const manAtrasado = m => m.status==='Em Andamento' && m.previsao_retorno && m.previsao_retorno<hoje()
+
+function manSeloStatus(m){
+  if(m.status==='Em Andamento') return '<span class="badge badge-amber">🔧 Manutenção em andamento</span>'
+  if(m.status==='Perda total')  return '<span class="badge badge-red">💀 Perda total</span>'
+  if(m.status==='Retornado')    return '<span class="badge badge-green">✅ Retornado</span>'
+  if(m.status==='Orçamento')    return '<span class="badge badge-blue">💰 Orçamento</span>'
+  if(m.status==='Aprovado')     return '<span class="badge badge-green">✔ Aprovado</span>'
+  return '<span class="badge badge-gray">Cancelado</span>'
+}
+
+function manAcoes(m){
+  if(currentPerfil!=='administrador') return '<span style="color:#bbb;font-size:11px">—</span>'
+  const podeConverter = m.status!=='Cancelado' && !m.convertido_ordem
+  return `<button class="btn" style="padding:3px 8px;font-size:11px" onclick="editarManutencao('${m.id}')">✏️</button>`
+    + (podeConverter?`<button class="btn btn-primary" style="padding:3px 8px;font-size:11px;margin-left:4px" onclick="abrirConverter('${m.id}','${esc(m.supervisor||'')}')">🔀 OC</button>`:'')
+    + `<button class="btn btn-danger" style="padding:3px 8px;font-size:11px;margin-left:4px" onclick="excluirManutencao('${m.id}')">🗑️</button>`
+}
+
+let manLinhas = []            // tudo que veio do servidor
+let manFiltros = {}           // { coluna: Set(valores marcados) }
+let manOrdenacao = { k:null, dir:1 }
+// A ordem das colunas é escolha de cada pessoa e fica no navegador dela.
+let manOrdemCols = (()=>{
+  try{
+    const s=JSON.parse(localStorage.getItem('manOrdemCols')||'null')
+    // Coluna nova (ou removida) não pode quebrar a ordem salva: o que existe
+    // no código manda, e o que estiver guardado só define a posição.
+    if(Array.isArray(s)){
+      const validas=s.filter(k=>MAN_COLUNAS.some(c=>c.k===k))
+      const faltando=MAN_COLUNAS.map(c=>c.k).filter(k=>!validas.includes(k))
+      return [...validas,...faltando]
+    }
+  }catch(e){}
+  return MAN_COLUNAS.map(c=>c.k)
+})()
+const manCol = k => MAN_COLUNAS.find(c=>c.k===k)
+const manValor = (m,k) => { const v=manCol(k).val(m); return String(v??'').trim() }
+
+function manSalvarOrdemCols(){
+  try{ localStorage.setItem('manOrdemCols',JSON.stringify(manOrdemCols)) }catch(e){}
+}
+
+// Linhas que passam pelos filtros. `exceto` permite montar a lista de valores
+// de uma coluna já considerando os filtros das OUTRAS — é assim que o Excel faz,
+// e é o que evita oferecer uma opção que resultaria em lista vazia.
+function manFiltradas(exceto){
+  return manLinhas.filter(m =>
+    Object.entries(manFiltros).every(([k,set]) =>
+      k===exceto || !set || !set.size || set.has(manValor(m,k) || '(vazio)')))
+}
+
+function manOrdenadas(linhas){
+  const o=manOrdenacao
+  if(!o.k) return linhas
+  const c=manCol(o.k)
+  return [...linhas].sort((a,b)=>{
+    const va=c.val(a), vb=c.val(b)
+    if(c.num) return ((Number(va)||0)-(Number(vb)||0))*o.dir
+    return String(va??'').localeCompare(String(vb??''),'pt-BR')*o.dir
+  })
+}
+
+function manRenderCabecalho(){
+  const tr=document.getElementById('man-thead')
+  tr.innerHTML=manOrdemCols.map(k=>{
+    const c=manCol(k)
+    const ativo=manFiltros[k]&&manFiltros[k].size
+    const seta=manOrdenacao.k===k?(manOrdenacao.dir>0?' ▲':' ▼'):''
+    const fil=c.fil?`<span class="man-fil ${ativo?'ativo':''}" onclick="manAbrirFiltro('${k}',event)" title="Filtrar">${ativo?'▼':'▽'}</span>`:''
+    return `<th draggable="true" data-col="${k}" title="Arraste para mover a coluna">${esc(c.rot)}${seta}${fil}</th>`
+  }).join('')
+  manLigarArraste()
+}
+
+// Arrastar para reordenar. O índice vai no dataTransfer (e não numa variável
+// solta) para o arraste sobreviver a um render no meio do caminho.
+function manLigarArraste(){
+  const ths=[...document.querySelectorAll('#man-thead th')]
+  ths.forEach(th=>{
+    th.ondragstart=e=>{ e.dataTransfer.setData('text/plain',th.dataset.col); th.classList.add('arrastando') }
+    th.ondragend  =()=>{ th.classList.remove('arrastando'); ths.forEach(x=>x.classList.remove('alvo')) }
+    th.ondragover =e=>{ e.preventDefault(); th.classList.add('alvo') }
+    th.ondragleave=()=>th.classList.remove('alvo')
+    th.ondrop     =e=>{
+      e.preventDefault()
+      const de=e.dataTransfer.getData('text/plain'), para=th.dataset.col
+      if(!de||de===para) return
+      const i=manOrdemCols.indexOf(de)
+      manOrdemCols.splice(i,1)
+      manOrdemCols.splice(manOrdemCols.indexOf(para),0,de)
+      manSalvarOrdemCols()
+      manRenderLista()
+    }
+  })
+}
+
+function manRenderLista(pg){
+  if(pg!==undefined) manPage=pg
+  manRenderCabecalho()
+  const tb=document.getElementById('man-table')
+  const nCols=manOrdemCols.length
+  const linhas=manOrdenadas(manFiltradas())
+  const porPag=20
+  const paginas=Math.max(1,Math.ceil(linhas.length/porPag))
+  if(manPage>paginas) manPage=paginas
+  const fatia=linhas.slice((manPage-1)*porPag, manPage*porPag)
+
+  tb.innerHTML = fatia.length
+    ? fatia.map(m=>`<tr>${manOrdemCols.map(k=>{
+        const estilo = k==='_acoes' ? ' style="white-space:nowrap"' : ''
+        return `<td${estilo}>${manCol(k).td(m)}</td>`
+      }).join('')}</tr>`).join('')
+    : `<tr><td colspan="${nCols}" class="empty">Nenhum registro com esse filtro.</td></tr>`
+
+  const pag=document.getElementById('man-pag')
+  const temFiltro=Object.values(manFiltros).some(s=>s&&s.size)
+  pag.innerHTML=`<span style="font-size:12px;color:#666">${linhas.length} registro(s)${temFiltro?` de ${manLinhas.length}`:''}</span>`
+    + (temFiltro?` <button class="btn" style="padding:4px 10px;font-size:12px" onclick="manLimparTodosFiltros()">✕ Limpar filtros</button>`:'')
+  if(paginas>1){
+    if(manPage>1) pag.innerHTML+=`<button class="btn" style="padding:4px 10px;font-size:12px" onclick="manRenderLista(${manPage-1})">‹ Ant</button>`
+    pag.innerHTML+=`<span style="font-size:12px">Pág ${manPage}/${paginas}</span>`
+    if(manPage<paginas) pag.innerHTML+=`<button class="btn" style="padding:4px 10px;font-size:12px" onclick="manRenderLista(${manPage+1})">Próx ›</button>`
+  }
+}
+
+function manLimparTodosFiltros(){ manFiltros={}; manRenderLista(1) }
+
+// ── Painel do filtro ────────────────────────────────────────
+function manAbrirFiltro(k,ev){
+  ev.stopPropagation()
+  const pop=document.getElementById('man-filtro-pop')
+  if(pop.dataset.col===k && pop.style.display==='block'){ pop.style.display='none'; pop.dataset.col=''; return }
+  pop.dataset.col=k
+  manRenderPainelFiltro()
+  pop.style.display='block'
+  const r=ev.target.getBoundingClientRect()
+  // Não deixa o painel sair pela direita da janela.
+  pop.style.left=Math.min(r.left+window.scrollX, window.scrollX+document.documentElement.clientWidth-262)+'px'
+  pop.style.top=(r.bottom+window.scrollY+4)+'px'
+}
+
+function manRenderPainelFiltro(){
+  const pop=document.getElementById('man-filtro-pop')
+  const k=pop.dataset.col; if(!k) return
+  const busca=(document.getElementById('man-fil-busca')?.value||'').toLowerCase()
+  const marcados=manFiltros[k]
+  const valores=[...new Set(manFiltradas(k).map(m=>manValor(m,k)||'(vazio)'))]
+    .sort((a,b)=>a.localeCompare(b,'pt-BR'))
+    .filter(v=>!busca||v.toLowerCase().includes(busca))
+  pop.innerHTML=`
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <button class="btn" style="flex:1;padding:4px;font-size:11px" onclick="manOrdenarPor('${k}',1)">A → Z</button>
+      <button class="btn" style="flex:1;padding:4px;font-size:11px" onclick="manOrdenarPor('${k}',-1)">Z → A</button>
+    </div>
+    <input id="man-fil-busca" placeholder="Procurar..." value="${esc(busca)}" oninput="manRenderPainelFiltro()" style="width:100%;padding:5px;border:1px solid #D8D6D0;border-radius:5px">
+    <div class="lista">
+      <label style="border-bottom:1px solid #EEE;padding-bottom:4px"><input type="checkbox" id="man-fil-todos" ${!marcados||!marcados.size?'checked':''} onchange="manMarcarTodos(this.checked)"> <strong>(Selecionar tudo)</strong></label>
+      ${valores.length?valores.map(v=>`<label><input type="checkbox" class="man-fil-item" value="${esc(v)}" ${!marcados||!marcados.size||marcados.has(v)?'checked':''}> ${esc(v)}</label>`).join('')
+                      :'<div style="color:#888;padding:6px">Nenhum valor</div>'}
+    </div>
+    <div style="display:flex;gap:6px;justify-content:flex-end">
+      <button class="btn" style="padding:4px 10px;font-size:12px" onclick="manLimparFiltro('${k}')">Limpar</button>
+      <button class="btn-primary" style="padding:4px 10px;font-size:12px" onclick="manAplicarFiltro('${k}')">Aplicar</button>
+    </div>`
+  const b=document.getElementById('man-fil-busca')
+  if(busca){ b.focus(); b.setSelectionRange(b.value.length,b.value.length) }
+}
+
+function manMarcarTodos(on){
+  document.querySelectorAll('#man-filtro-pop .man-fil-item').forEach(c=>c.checked=on)
+}
+
+function manAplicarFiltro(k){
+  const itens=[...document.querySelectorAll('#man-filtro-pop .man-fil-item')]
+  const marcados=itens.filter(c=>c.checked).map(c=>c.value)
+  // Tudo marcado = sem filtro. Guardar os valores todos faria o filtro "sumir"
+  // com uma linha nova que não existia quando ele foi aplicado.
+  if(!marcados.length || marcados.length===itens.length) delete manFiltros[k]
+  else manFiltros[k]=new Set(marcados)
+  document.getElementById('man-filtro-pop').style.display='none'
+  manRenderLista(1)
+}
+
+function manLimparFiltro(k){
+  delete manFiltros[k]
+  document.getElementById('man-filtro-pop').style.display='none'
+  manRenderLista(1)
+}
+
+function manOrdenarPor(k,dir){
+  manOrdenacao={k,dir}
+  document.getElementById('man-filtro-pop').style.display='none'
+  manRenderLista(1)
+}
+
+// Clique fora fecha o painel (senão ele fica pendurado na tela).
+document.addEventListener('click',e=>{
+  const pop=document.getElementById('man-filtro-pop')
+  if(pop && pop.style.display==='block' && !pop.contains(e.target) && !e.target.classList.contains('man-fil')){
+    pop.style.display='none'; pop.dataset.col=''
+  }
+})
+
+// Busca a lista INTEIRA e filtra na tela.
+// ⚠️ Antes vinham 20 por vez do servidor. Com paginação no servidor, o filtro
+// por coluna só enxergaria a página aberta: a pessoa filtraria "JAGUARÉ" e veria
+// só os de Jaguaré DAQUELA página, achando que era a frota toda.
+// O limite alto é proposital e cabe (são ~20 registros hoje). Se um dia a tabela
+// crescer muito, o caminho é paginar no servidor E pedir a ele os valores
+// distintos de cada coluna — não voltar a filtrar meia página.
 async function carregarManLista(pg){
   if(pg!==undefined) manPage=pg
   const tb=document.getElementById('man-table')
-  tb.innerHTML=`<tr><td colspan="13" class="loading"><span class="spinner"></span>Carregando...</td></tr>`
+  tb.innerHTML=`<tr><td colspan="15" class="loading"><span class="spinner"></span>Carregando...</td></tr>`
 
+  // Os filtros de cima continuam no servidor; os de coluna agem sobre o que vem.
   const status=document.getElementById('man-f-status').value
   const placa=document.getElementById('man-f-placa').value.trim()
   const localidade=document.getElementById('man-f-localidade').value.trim()
@@ -5715,7 +5980,7 @@ async function carregarManLista(pg){
   const dataIni=document.getElementById('man-f-data-ini').value
   const dataFim=document.getElementById('man-f-data-fim').value
 
-  let qs=`page=${manPage}&limit=20`
+  let qs='page=1&limit=2000'
   if(status)   qs+=`&status=${encodeURIComponent(status)}`
   if(placa)    qs+=`&placa=${encodeURIComponent(placa)}`
   if(localidade) qs+=`&localidade=${encodeURIComponent(localidade)}`
@@ -5725,70 +5990,18 @@ async function carregarManLista(pg){
 
   try{
     const r=await apiCall(`/api/manutencao?${qs}`)
-    const rows=r.data||[]
-    if(!rows.length){
-      tb.innerHTML=`<tr><td colspan="15" class="empty">Nenhum registro encontrado.</td></tr>`
-    } else {
-      tb.innerHTML=rows.map(m=>{
-        const atraso=m.status==='Em Andamento'&&m.previsao_retorno&&m.previsao_retorno<hoje()
-        const stBadge=m.status==='Em Andamento'
-          ?`<span class="badge badge-amber">🔧 Manutenção em andamento</span>`
-          :m.status==='Perda total'
-            ?`<span class="badge badge-red">💀 Perda total</span>`
-          :m.status==='Retornado'
-            ?`<span class="badge badge-green">✅ Retornado</span>`
-            :m.status==='Orçamento'
-              ?`<span class="badge badge-blue">💰 Orçamento</span>`
-              :m.status==='Aprovado'
-                ?`<span class="badge badge-green">✔ Aprovado</span>`
-                :`<span class="badge badge-gray">Cancelado</span>`
-        const alugBadge=m.veiculo_alugado?`<span class="badge badge-blue">Sim${m.veiculo_devolvido?' ✓':''}</span>`:'—'
-        const diasVal=m.dias_efetivos!=null?m.dias_efetivos:'—'
-        const diasBadge=atraso?`<span style="color:#791F1F;font-weight:600">${diasVal} ⚠️</span>`:diasVal
-        const obs=m.observacoes?`<span title="${esc(m.observacoes)}" style="cursor:help">📝</span>`:'—'
-        const nAnex=Array.isArray(m.anexos)?m.anexos.filter(a=>a&&a.url).length:0
-        const anexCol=nAnex>0
-          ?`<button class="btn" style="padding:2px 8px;font-size:11px" onclick='verAnexosManutencao(${JSON.stringify(m.anexos||[]).replace(/'/g,"&apos;")},"${esc(m.placa)}")'>📎 ${nAnex}</button>`
-          :'—'
-        const canConvert=m.status!=='Cancelado'&&!m.convertido_ordem
-        const isAdmin=currentPerfil==='administrador'
-        const acoes=isAdmin
-          ? `<button class="btn" style="padding:3px 8px;font-size:11px" onclick="editarManutencao('${m.id}')">✏️</button>
-             ${canConvert?`<button class="btn btn-primary" style="padding:3px 8px;font-size:11px;margin-left:4px" onclick="abrirConverter('${m.id}','${esc(m.supervisor||'')}')">🔀 OC</button>`:''}
-             <button class="btn btn-danger" style="padding:3px 8px;font-size:11px;margin-left:4px" onclick="excluirManutencao('${m.id}')">🗑️</button>`
-          : '<span style="color:#bbb;font-size:11px">—</span>'
-        return `<tr>
-          <td><strong style="cursor:pointer;color:#0C447C;text-decoration:underline" onclick="verHistorico('${m.placa}')" title="Ver histórico desta placa">${m.placa}</strong></td>
-          <td>${m.modelo||'—'}</td>
-          <td>${m.localidade||'—'}</td>
-          <td>${m.supervisor||'—'}</td>
-          <td>${fmtData(m.data_entrada)}</td>
-          <td>${m.previsao_retorno?`<span style="${atraso?'color:#791F1F;font-weight:600':''}">${fmtData(m.previsao_retorno)}</span>`:'—'}</td>
-          <td>${diasBadge}</td>
-          <td><span class="badge badge-gray">${m.tipo_manutencao}</span></td>
-          <td>${alugBadge}</td>
-          <td>${stBadge}</td>
-          <td>${m.num_os||'—'}</td>
-          <td>${m.oficina||'—'}</td>
-          <td>${anexCol}</td>
-          <td>${obs}</td>
-          <td style="white-space:nowrap">${acoes}</td>
-        </tr>`
-      }).join('')
+    manLinhas=r.data||[]
+    // Filtro de coluna que não casa com nada do resultado novo é descartado —
+    // senão a lista apareceria vazia e sem explicação depois de mexer nos
+    // filtros de cima.
+    for(const k of Object.keys(manFiltros)){
+      const existentes=new Set(manLinhas.map(m=>manValor(m,k)||'(vazio)'))
+      const restantes=[...manFiltros[k]].filter(v=>existentes.has(v))
+      if(restantes.length) manFiltros[k]=new Set(restantes); else delete manFiltros[k]
     }
-
-    // Paginação
-    const total=r.total||0, limit=20
-    const pages=Math.ceil(total/limit)
-    const pag=document.getElementById('man-pag')
-    pag.innerHTML=`<span style="font-size:12px;color:#666">${total} registro(s)</span>`
-    if(pages>1){
-      if(manPage>1) pag.innerHTML+=`<button class="btn" style="padding:4px 10px;font-size:12px" onclick="carregarManLista(${manPage-1})">‹ Ant</button>`
-      pag.innerHTML+=`<span style="font-size:12px">Pág ${manPage}/${pages}</span>`
-      if(manPage<pages) pag.innerHTML+=`<button class="btn" style="padding:4px 10px;font-size:12px" onclick="carregarManLista(${manPage+1})">Próx ›</button>`
-    }
+    manRenderLista(1)
   }catch(e){
-    tb.innerHTML=`<tr><td colspan="13" class="empty">Erro: ${e.message}</td></tr>`
+    tb.innerHTML=`<tr><td colspan="15" class="empty">Erro: ${e.message}</td></tr>`
   }
 }
 
