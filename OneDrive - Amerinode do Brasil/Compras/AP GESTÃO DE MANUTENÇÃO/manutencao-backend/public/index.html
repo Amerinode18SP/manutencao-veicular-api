@@ -1308,8 +1308,8 @@ tr:hover td{background:#F9F9F9}
 
       <!-- KPIs -->
       <div class="stats-grid" id="man-stats-grid">
-        <div class="stat-card"><div class="stat-label">🔧 Manutenção em andamento</div><div class="stat-value" id="man-kpi-andamento">—</div><div class="stat-sub">Veículos na oficina agora</div></div>
-        <div class="stat-card"><div class="stat-label">🚗 Alugados Ativos</div><div class="stat-value" id="man-kpi-alugados">—</div><div class="stat-sub">Veículos alugados em uso</div></div>
+        <div class="stat-card"><div class="stat-label">🔧 Manutenção em aberto</div><div class="stat-value" id="man-kpi-andamento">—</div><div class="stat-sub">Na oficina ou aguardando orçamento</div></div>
+        <div class="stat-card"><div class="stat-label">🚗 Alugados Ativos</div><div class="stat-value" id="man-kpi-alugados">—</div><div class="stat-sub">Em uso, inclusive de perda total</div></div>
         <div class="stat-card"><div class="stat-label">⚠️ Em Atraso</div><div class="stat-value" id="man-kpi-atraso" style="color:#791F1F">—</div><div class="stat-sub">Prazo vencido, não retornado</div></div>
         <div class="stat-card"><div class="stat-label">✅ Retornados no Mês</div><div class="stat-value" id="man-kpi-retornados">—</div><div class="stat-sub">Média <span id="man-kpi-media">—</span> dias na oficina</div></div>
       </div>
@@ -5339,7 +5339,13 @@ function handleDrop(e){e.preventDefault();const file=e.dataTransfer.files[0];if(
 // ══════════════════════════════════════════════════════════════
 let manPage=1, manEditId=null, manChartObj=null, manGran='mes', manRankTipo='localidade'
 
+// Chamada depois de salvar, excluir ou importar.
+// ⚠️ ZERA O CACHE DO PAINEL de propósito: `sitDados` é guardado em memória e
+// manAbrirAba só busca de novo quando ele está vazio. Sem esta linha, a pessoa
+// editava um registro e o painel continuava mostrando os números velhos — sem
+// erro nenhum na tela, só desatualizado (relatado em 20/10/2026).
 async function carregarManutencao(){
+  sitDados = null
   manAbrirAba(manAbaAtual)
 }
 

@@ -385,32 +385,40 @@ async function converterEmOrdem(req, res) {
 }
 
 // ── Dashboard: resumo ─────────────────────────────────────────────────────────
+// ⚠️ ESTES CARTÕES CONTAVAM SÓ O STATUS 'Em Andamento' E MENTIAM POR OMISSÃO.
+// Em 20/10/2026 a tela mostrava 1 alugado existindo 4: um estava em Orçamento e
+// dois em Perda total, e os três simplesmente não entravam na conta. O mesmo
+// defeito já tinha sido corrigido no painel Situação Atual — aqui ficou para
+// trás, e as duas abas passaram a mostrar números diferentes da mesma frota.
+//
+// Agora valem as MESMAS regras do painel:
+//   • "em aberto"  = tudo que não é Retornado/Cancelado/Perda total;
+//   • "alugado"    = alugado e não devolvido, em QUALQUER status — o carro
+//     alugado continua com a empresa depois que a manutenção fecha, inclusive
+//     (e principalmente) quando ela fecha como perda total.
 async function resumoDash(req, res) {
   try {
     const hoje = new Date().toISOString().split('T')[0]
+    const abertas = q => q.not('status', 'in', `(${STATUS_FECHADOS.map(s => `"${s}"`).join(',')})`)
 
-    // Total em andamento
-    const { count: emAndamento, error: e1 } = await supabase
-      .from('manutencoes')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'Em Andamento')
+    // Manutenções em aberto (na oficina ou aguardando orçamento/aprovação)
+    const { count: emAndamento, error: e1 } = await abertas(supabase
+      .from('manutencoes').select('*', { count: 'exact', head: true }))
     if (e1) throw e1
 
-    // Veículos alugados ativos (em andamento + alugado + não devolvido)
+    // Alugados em uso — qualquer status, desde que não devolvido.
     const { count: alugadosAtivos, error: e2 } = await supabase
       .from('manutencoes')
       .select('*', { count: 'exact', head: true })
-      .eq('status', 'Em Andamento')
       .eq('veiculo_alugado', true)
       .eq('veiculo_devolvido', false)
     if (e2) throw e2
 
-    // Em atraso (data previsao_retorno < hoje e status Em Andamento)
-    const { count: emAtraso, error: e3 } = await supabase
-      .from('manutencoes')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'Em Andamento')
-      .lt('previsao_retorno', hoje)
+    // Em atraso: previsão vencida em manutenção ainda aberta. Carro parado
+    // esperando orçamento atrasa igual ao que está na bancada.
+    const { count: emAtraso, error: e3 } = await abertas(supabase
+      .from('manutencoes').select('*', { count: 'exact', head: true })
+      .lt('previsao_retorno', hoje))
     if (e3) throw e3
 
     // Retornados no mês atual
@@ -423,11 +431,9 @@ async function resumoDash(req, res) {
       .gte('data_saida', inicioMesStr)
     if (e4) throw e4
 
-    // Média de dias (em andamento)
-    const { data: andamento, error: e5 } = await supabase
-      .from('manutencoes')
-      .select('data_entrada, data_saida')
-      .eq('status', 'Em Andamento')
+    // Média de dias dos que estão parados agora
+    const { data: andamento, error: e5 } = await abertas(supabase
+      .from('manutencoes').select('data_entrada, data_saida'))
     if (e5) throw e5
 
     const mediaDias = andamento?.length
