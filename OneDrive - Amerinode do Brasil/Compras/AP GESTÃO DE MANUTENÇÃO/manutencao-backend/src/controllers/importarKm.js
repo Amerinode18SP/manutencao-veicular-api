@@ -485,6 +485,67 @@ async function renovarSessao(motivo) {
   }
 }
 
+// Avisa que a atualização voltou. Fecha o ciclo do alerta: sem isto a pessoa
+// recebia "parou" e nunca ficava sabendo que normalizou — e só descobria
+// abrindo a tela, ou não descobria.
+async function avisarSessaoVoltou(falhas) {
+  try {
+    const { enviarEmail, statusEmail } = require('../services/email')
+    if (!statusEmail().configurado) return
+    const { data } = await supabase.from('config_sistema')
+      .select('alerta_tecnico_emails').eq('id', 1).single()
+    const para = (data && data.alerta_tecnico_emails) || []
+    if (!para.length) return
+    const minutos = falhas * 15 // o keep-alive roda a cada 15 min
+    await enviarEmail({
+      para,
+      assunto: '✅ Atualização automática de KM voltou ao normal',
+      html: `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#333;line-height:1.6">
+        <p><strong>A atualização automática de quilometragem voltou a funcionar.</strong></p>
+        <p>Ficou cerca de ${minutos} minuto(s) fora do ar e se reconectou sozinha. Nenhuma ação é necessária.</p>
+        <p style="color:#777;font-size:12px">Aviso automático do Sistema de Gestão de Manutenção Veicular — Amerinode.</p>
+      </div>`,
+      texto: `A atualização automática de KM voltou ao normal (ficou ~${minutos} min fora). Nenhuma ação necessária.`,
+    })
+    console.log('[km] aviso de normalização enviado por e-mail')
+  } catch (e) {
+    console.warn('[km] não avisou a normalização:', e.message)
+  }
+}
+
+// ── Tolerância a queda passageira ───────────────────────────────────────────
+// O keep-alive roda a cada 15 min. Avisar na PRIMEIRA falha transformava
+// instabilidade de minutos em e-mail de emergência (21/10/2026).
+const FALHAS_PARA_AVISAR = 2   // ~30 min caído antes de incomodar alguém
+
+async function somarFalha() {
+  try {
+    const { data } = await supabase.from('config_sistema')
+      .select('km_keepalive_falhas').eq('id', 1).maybeSingle()
+    const n = Number(data && data.km_keepalive_falhas) || 0
+    await supabase.from('config_sistema').update({ km_keepalive_falhas: n + 1 }).eq('id', 1)
+    return n + 1
+  } catch (e) {
+    // Coluna ainda não criada (scripts/km-alerta-tolerancia.sql): volta ao
+    // comportamento antigo de avisar já, em vez de ficar mudo.
+    return FALHAS_PARA_AVISAR
+  }
+}
+
+// Zera o contador e, se já tinha avisado que caiu, conta que voltou.
+async function zerarFalhas() {
+  try {
+    const { data } = await supabase.from('config_sistema')
+      .select('km_keepalive_falhas').eq('id', 1).maybeSingle()
+    const n = Number(data && data.km_keepalive_falhas) || 0
+    if (n === 0) return
+    await supabase.from('config_sistema').update({ km_keepalive_falhas: 0 }).eq('id', 1)
+    // Só manda o "voltou" para quem recebeu o "caiu" — senão seria um e-mail
+    // sobre um problema que a pessoa nunca soube que existiu.
+    if (n >= FALHAS_PARA_AVISAR) await avisarSessaoVoltou(n)
+  } catch (e) { /* sem a coluna: nada a zerar */ }
+}
+
 // Status de sessão já registrado, pra avisar só na TRANSIÇÃO para expirado
 // (o keep-alive roda a cada 15 min — avisar sempre seria spam).
 async function statusSessaoAnterior() {
@@ -519,19 +580,40 @@ async function avisarSessaoCaiu(detalhe) {
       return
     }
 
-    const temCred = !!ticketlog.credenciaisPortal()
+    // ⚠️ O TEXTO FALA DO ACESSO DE 90 DIAS (Conta Edenred), que é o que sustenta
+    // a integração. A versão anterior mandava "conferir se a senha do usuário da
+    // integração mudou" — essa senha é do login LEGADO, que nunca funcionou e
+    // não é mais usado: o aviso mandava a pessoa para um caminho morto
+    // (corrigido em 22/10/2026).
+    const v = await validadeSSO()
+    const temSSO = !!(await getRefreshSSO())
+    const prazo = v
+      ? `O acesso de ~90 dias da Conta Edenred vale até <strong>${v.vence_em.split('-').reverse().join('/')}</strong> (${v.dias_restantes} dia(s)).`
+      : ''
+    const oQueFazer = temSSO
+      ? `<p>Normalmente o sistema se reconecta sozinho nas próximas verificações. ${prazo}</p>
+         <p><strong>Se não voltar sozinho</strong>, refaça a captura do acesso: abra uma janela anônima,
+         entre no portal TicketLog e copie o código novo para o Railway — passo a passo em
+         <em>COMO-CONECTAR-SSO-TICKETLOG.md</em>.</p>`
+      : `<p>Não há acesso da Conta Edenred guardado. É preciso reconectar: passo a passo em
+         <em>COMO-CONECTAR-SSO-TICKETLOG.md</em>, ou, como alternativa imediata, colar o cURL em
+         Análise de Gastos → Quilometragem → 🔄 Atualizar (online).</p>`
+
     await enviarEmail({
       para,
       assunto: '⚠️ Atualização automática de KM parou (sessão TicketLog)',
       html: `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#333;line-height:1.6">
         <p><strong>A atualização automática de quilometragem parou.</strong></p>
         <p>Motivo: ${detalhe || 'sessão do portal TicketLog expirada'}.</p>
-        <p>${temCred
-          ? 'O login automático está configurado, mas o portal recusou — vale conferir se a senha do usuário da integração mudou.'
-          : 'O login automático não está configurado; é preciso reconectar manualmente no sistema (Análise de Gastos → Quilometragem → 🔄 Atualizar (online)).'}</p>
-        <p style="color:#777;font-size:12px">Aviso automático do Sistema de Gestão de Manutenção Veicular — Amerinode.</p>
+        <p style="color:#777;font-size:13px">A sessão está caída há pelo menos 30 minutos — quedas curtas
+        não geram este aviso.</p>
+        ${oQueFazer}
+        <p style="color:#777;font-size:12px">Você receberá outro e-mail quando a atualização voltar ao normal.<br>
+        Aviso automático do Sistema de Gestão de Manutenção Veicular — Amerinode.</p>
       </div>`,
-      texto: `A atualização automática de KM parou. Motivo: ${detalhe || 'sessão TicketLog expirada'}.`
+      texto: `A atualização automática de KM parou. Motivo: ${detalhe || 'sessão TicketLog expirada'}. ` +
+             (temSSO ? 'Costuma voltar sozinha; se não voltar, refaça a captura do acesso de 90 dias.'
+                     : 'Sem acesso da Conta Edenred guardado — é preciso reconectar.')
     })
     console.log('[km] aviso de sessão caída enviado por e-mail')
   } catch (e) {
@@ -588,19 +670,25 @@ async function manterSessaoViva() {
     if (estado === 'viva') {
       if (ping.cookieMudou) await salvarCookieSessao(ping.cookie)  // portal rotacionou
       await marcarKeepalive('ok')
+      await zerarFalhas()
       return { alive: true, cookieRotacionado: !!ping.cookieMudou }
     }
     if (estado === 'expirada') {
-      // Antes de acusar expiração, tenta entrar de novo com as credenciais.
+      // Antes de acusar expiração, tenta entrar de novo (SSO e depois o legado).
       const novo = await renovarSessao('keep-alive detectou expiração')
-      if (novo) return { alive: true, renovada: true }
-      const antes = await statusSessaoAnterior()
+      if (novo) { await zerarFalhas(); return { alive: true, renovada: true } }
+
+      // ⚠️ SÓ AVISA NA SEGUNDA FALHA SEGUIDA (~30 min caído). Em 21/10/2026 a
+      // sessão caiu por minutos, o e-mail saiu e o sistema se reconectou sozinho
+      // no tique seguinte — sem ninguém ser avisado de que voltou. Alarme que
+      // dispara à toa e nunca diz "passou" ensina a ignorar o alarme.
+      const falhas = await somarFalha()
       await marcarKeepalive('expirado')
-      console.warn('[km-keepalive] sessão TicketLog expirada — reconectar pelo modal')
-      if (antes !== 'expirado') {
-        await avisarSessaoCaiu('a sessão do portal expirou e o login automático não conseguiu renovar')
+      console.warn(`[km-keepalive] sessão TicketLog expirada (falha ${falhas} seguida)`)
+      if (falhas === FALHAS_PARA_AVISAR) {
+        await avisarSessaoCaiu('a sessão do portal expirou e a reconexão automática não resolveu')
       }
-      return { alive: false }
+      return { alive: false, falhas }
     }
     // 'erro' = portal instável; NÃO marca expirado pra não dar falso alarme
     console.warn('[km-keepalive] portal instável (não conta como expiração)')
@@ -660,6 +748,11 @@ async function sync(req, res) {
     })
   } catch (err) {
     if (err.status === 401) {
+      // ⚠️ AQUI O AVISO SAI NA PRIMEIRA FALHA, de propósito — diferente do
+      // keep-alive, que tolera uma queda curta. O sync roda 1x por dia: se ele
+      // falhou, a quilometragem do dia NÃO atualizou, e isso não é passageiro.
+      // A trava de repetição continua sendo o status anterior, então um alerta
+      // já enviado pelo keep-alive não vira dois.
       const antes = await statusSessaoAnterior()
       await marcarSync('expirado')
       if (antes !== 'expirado') {
