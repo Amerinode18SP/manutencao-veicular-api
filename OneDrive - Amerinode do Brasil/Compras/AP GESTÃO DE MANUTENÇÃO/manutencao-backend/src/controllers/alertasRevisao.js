@@ -303,7 +303,7 @@ function blocoMensagem(cfg) {
       </div>`
 }
 
-function montarHtml(cfg, itens) {
+function montarHtml(cfg, itens, opts = {}) {
   const linhas = itens.map(i => {
     const cor = i.vencida ? '#B22222' : (i.dias <= 3 ? '#B26A00' : '#0C447C')
     return `<tr>
@@ -345,7 +345,11 @@ function montarHtml(cfg, itens) {
         </thead>
         <tbody>${linhas}</tbody>
       </table>
-      <p style="margin:18px 0 0;font-size:12px;color:#777;line-height:1.6">
+      <p style="margin:18px 0 0;font-size:12px;color:#777;line-height:1.6">${opts.avulso ? `
+        Envio manual feito pelo Departamento de Compras em <strong>${fmtBR(hojeISO())}</strong>,
+        com os veículos filtrados na tela. Não substitui o aviso automático, que continua
+        saindo normalmente para a lista completa.
+      ` : `
         Aviso automático configurado para <strong>${marcos}</strong> dia(s) de antecedência
         ${cfg.alerta_revisao_incluir_vencidas === false ? '' : ' (e revisões já vencidas)'}.
         Cada veículo é avisado uma vez por marco de antecedência${
@@ -353,7 +357,7 @@ function montarHtml(cfg, itens) {
         }.<br>
         Marcar <strong>Providência tomada</strong> na revisão tira o veículo deste aviso.<br>
         Para alterar destinatários ou prazos: sistema → <strong>Próximas Revisões → 🔔 Alertas por e-mail</strong>.
-      </p>
+      `}</p>
     </div>
   </div>
 </body></html>`
@@ -408,6 +412,58 @@ async function executarAlerta(opcoes = {}) {
     await marcarExecucao('erro', err.message)
     err.status = err.status || 500
     throw err
+  }
+}
+
+// ── Envio avulso: só o que está filtrado na tela, só para quem se escolheu ───
+// Nasceu de um pedido simples: filtrar Sorocaba e cobrar o supervisor de lá, em
+// vez de mandar o aviso inteiro para os oito da lista.
+//
+// NÃO grava em `alertas_revisao_log` de propósito. O log é o que impede o aviso
+// AUTOMÁTICO de repetir; marcar aqui faria um lembrete mandado a uma pessoa
+// calar o aviso que vai para o time todo — exatamente o contrário do que se
+// quer ao cobrar alguém.
+async function enviarSelecao(req, res) {
+  try {
+    const body = req.body || {}
+    const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map(String).filter(Boolean))]
+    if (!ids.length)      return res.status(400).json({ error: 'Nenhuma revisão selecionada.' })
+    if (ids.length > 300) return res.status(400).json({ error: 'Seleção grande demais (máximo 300).' })
+
+    const { emails: para, invalidos } = normalizarEmails(body.para)
+    if (invalidos.length) return res.status(400).json({ error: `E-mail inválido: ${invalidos.join(', ')}` })
+    if (!para.length)     return res.status(400).json({ error: 'Informe ao menos um destinatário.' })
+
+    const email = statusEmail()
+    if (!email.configurado) {
+      return res.status(400).json({ error: `Envio de e-mail não configurado${email.motivo ? ': ' + email.motivo : ''}.` })
+    }
+
+    // Mesma fonte do aviso automático, para a tabela sair idêntica — só que
+    // recortada pelos ids que a tela mandou. Buscar pela agenda (e não pelos
+    // ids crus) mantém de graça as duas regras que já valem lá: revisão
+    // concluída e veículo inativo não viram e-mail.
+    const porId = new Map((await lerAgenda()).map(a => [String(a.revisao_id), a]))
+    const itens = ids.map(id => porId.get(id)).filter(Boolean)
+      .map(v => { const dias = diasAte(v.data); return { ...v, proxima_revisao: v.data, dias, vencida: dias < 0 } })
+      .sort((a, b) => a.dias - b.dias)
+    if (!itens.length) {
+      return res.status(404).json({ error: 'Nenhuma das revisões escolhidas está pendente — a lista da tela pode estar desatualizada.' })
+    }
+
+    const base = await lerConfig()
+    const recado = String(body.mensagem || '').trim()
+    const cfg = { ...base, alerta_revisao_mensagem: recado }
+
+    const r = await enviarEmail({
+      para,
+      assunto: montarAssunto(cfg, itens),
+      html:    montarHtml(cfg, itens, { avulso: true }),
+      texto:   montarTexto(cfg, itens),
+    })
+    res.json({ enviado: true, total: itens.length, ignorados: ids.length - itens.length, para, provedor: r.provedor })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
   }
 }
 
@@ -590,5 +646,5 @@ function iniciarAgendador() {
 
 module.exports = {
   getConfigAlerta, putConfigAlerta, previaAlerta, executarHandler, testeAlerta,
-  historicoAlerta, iniciarAgendador, executarAlerta, tickAgendado
+  historicoAlerta, iniciarAgendador, executarAlerta, tickAgendado, enviarSelecao
 }

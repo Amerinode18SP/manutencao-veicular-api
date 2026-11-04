@@ -625,6 +625,7 @@ tr:hover td{background:#F9F9F9}
                 <option value="todas">Todas</option>
               </select>
               <button class="btn btn-primary man-admin-only" onclick="abrirModalRevisao()">+ Nova revisão</button>
+              <button class="btn man-admin-only" onclick="revAbrirEnvio()" title="Manda o aviso só com as linhas que estão na tela agora, para quem você escolher">✉️ Avisar supervisor</button>
               <button class="btn man-admin-only" onclick="document.getElementById('rev-import-input').click()">⬆ Importar planilha</button>
               <input type="file" id="rev-import-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="importarRevisoesXLSX(this)">
               <button class="btn" onclick="baixarTemplateRevisoes()">⬇ Baixar template</button>
@@ -635,7 +636,7 @@ tr:hover td{background:#F9F9F9}
           </div>
           <div class="table-wrap"><table>
             <thead class="tf-thead"><tr id="revisoes-thead"></tr></thead>
-            <tbody id="revisoes-table"><tr><td colspan="11" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
+            <tbody id="revisoes-table"><tr><td colspan="12" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
           </table></div>
           <div class="tf-rodape" id="revisoes-rodape"></div>
         </div>
@@ -1658,6 +1659,36 @@ tr:hover td{background:#F9F9F9}
 
     <!-- Painel do filtro por coluna (um só, reposicionado a cada clique) -->
     <div id="tf-pop"></div>
+
+    <!-- Aviso avulso: só as revisões filtradas na tela, só para quem se escolhe -->
+    <div class="modal-overlay" id="modal-rev-envio">
+      <div class="modal" style="width:620px;max-width:95vw">
+        <h3 style="font-size:15px;color:#1E3A5F;margin-bottom:6px">✉️ Avisar supervisor</h3>
+        <p style="font-size:12px;color:#666;margin-bottom:14px">
+          Manda o mesmo e-mail de revisão, mas só com as linhas que estão na tela agora
+          (depois dos filtros) e só para quem você indicar.
+        </p>
+        <div id="rev-envio-resumo" style="background:#F5F8FB;border:1px solid #E0E6ED;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:14px"></div>
+        <div class="form-group">
+          <label>Para *</label>
+          <select id="rev-envio-para" onchange="revEnvioTrocouDestino()" style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px;background:#fff"></select>
+          <input id="rev-envio-outro" placeholder="nome@amerinode.com.br" style="display:none;margin-top:8px">
+          <div style="font-size:11px;color:#888;margin-top:4px">A lista vem dos e-mails cadastrados em 🔔 Alertas por e-mail.</div>
+        </div>
+        <div class="form-group">
+          <label>Recado (opcional)</label>
+          <textarea id="rev-envio-msg" rows="3" placeholder="Ex.: Favor levar na oficina esta semana e confirmar a data." style="width:100%;padding:8px;border:1px solid #D8D6D0;border-radius:6px"></textarea>
+        </div>
+        <div id="rev-envio-erro" style="display:none;font-size:12px;color:#A32D2D;margin-bottom:8px"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px">
+          <span style="font-size:11px;color:#888">Não interfere no aviso automático: ele continua saindo para a lista toda.</span>
+          <div style="display:flex;gap:8px">
+            <button class="btn" onclick="closeModal('modal-rev-envio')">Cancelar</button>
+            <button class="btn btn-primary" id="rev-envio-btn" onclick="revEnviarSelecao()">Enviar</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- MODAL: ENVIAR SITUAÇÃO ATUAL DA FROTA POR E-MAIL -->
     <div class="modal-overlay" id="sit-email-modal" style="display:none">
@@ -4732,6 +4763,7 @@ function renderRevisoes(){
 const REV_COLUNAS = [
   { k:'placa', rot:'Placa', fil:true, val:r=>r.placa||'', td:r=>`<strong>${esc(r.placa)||'-'}</strong>` },
   { k:'localidade', rot:'Localidade', fil:true, val:r=>r.localidade||'', td:r=>esc(r.localidade)||'-' },
+  { k:'supervisor', rot:'Supervisor', fil:true, val:r=>r.supervisor||'(sem supervisor)', td:r=>esc(r.supervisor)||'<span style="color:#BBB">—</span>' },
   { k:'tipo', rot:'Tipo', fil:true, val:r=>r.tipo||'',
     td:r=>`<span class="badge ${r.tipo==='Corretiva'?'badge-red':(r.tipo==='Segurança'?'badge-amber':(r.tipo==='Preditiva'?'badge-purple':'badge-blue'))}">${esc(r.tipo)||'-'}</span>` },
   { k:'servico', rot:'Serviço', fil:true, val:r=>r.servico||'',
@@ -4761,6 +4793,88 @@ criarTabelaFiltro({
   vazio:'Nenhuma revisão com esse filtro. Use <strong>+ Nova revisão</strong> ou <strong>⬆ Importar planilha</strong>.',
   trAttr:r=>revSituacao(r).urgente&&r.status==='Pendente'?'class="rev-alert-row"':'',
 })
+
+// ── Aviso avulso: os filtrados da tela, para um destinatário ──────────────
+// A lista enviada é EXATAMENTE a que está na tela (TF.revisoes.filtradas()), e
+// não a página visível: filtrar JAGUARÉ e mandar só a primeira página seria
+// avisar pela metade sem dizer.
+function revLinhasParaEnvio(){ return TF.revisoes.ordenadas(TF.revisoes.filtradas()) }
+
+// Casa o nome do supervisor com o e-mail pelo primeiro nome (WALTER ->
+// walter.junior@...). Não há cadastro ligando os dois; quando o palpite erra,
+// é só trocar no seletor — nada é enviado sem passar por ele.
+function revPalpiteEmail(supervisores, emails){
+  if(supervisores.length!==1) return ''
+  const primeiro=String(supervisores[0]).trim().toLowerCase().split(/\s+/)[0]
+  if(!primeiro) return ''
+  return emails.find(e=>e.split('@')[0].toLowerCase().startsWith(primeiro)) || ''
+}
+
+async function revAbrirEnvio(){
+  if(currentPerfil!=='administrador'){alert('Apenas administrador pode enviar avisos.');return}
+  const linhas=revLinhasParaEnvio()
+  if(!linhas.length){alert('Não há nenhuma revisão na tela para avisar. Ajuste os filtros.');return}
+
+  const locais=[...new Set(linhas.map(r=>r.localidade||'(sem localidade)'))]
+  const sups  =[...new Set(linhas.map(r=>r.supervisor).filter(Boolean))]
+  const vencidas=linhas.filter(r=>revDias(r.data_prevista)<0).length
+  document.getElementById('rev-envio-resumo').innerHTML=
+    `<strong>${linhas.length} revisão(ões)</strong> vão no e-mail`
+    + (vencidas?` — <span style="color:#B22;font-weight:600">${vencidas} já vencida(s)</span>`:'')
+    + `<div style="font-size:12px;color:#666;margin-top:4px">Localidade: ${esc(locais.join(', '))}`
+    + (sups.length?` · Supervisor: ${esc(sups.join(', '))}`:'')+`</div>`
+    + (linhas.length===TF.revisoes.linhas.length
+        ? `<div style="font-size:12px;color:#8A5A00;margin-top:6px">⚠ Nenhum filtro aplicado — isto é a lista inteira.</div>`
+        : '')
+
+  // Destinatários possíveis = os já cadastrados no alerta automático.
+  let emails=[]
+  try{ const cfg=await apiCall('/api/alertas/revisao/config'); emails=cfg.emails||[] }catch(e){}
+  const sel=document.getElementById('rev-envio-para')
+  const palpite=revPalpiteEmail(sups,emails)
+  sel.innerHTML=emails.map(e=>`<option value="${esc(e)}" ${e===palpite?'selected':''}>${esc(e)}</option>`).join('')
+    +`<option value="__outro__" ${emails.length?'':'selected'}>Outro e-mail...</option>`
+  document.getElementById('rev-envio-outro').style.display=sel.value==='__outro__'?'block':'none'
+  document.getElementById('rev-envio-outro').value=''
+  document.getElementById('rev-envio-msg').value=''
+  document.getElementById('rev-envio-erro').style.display='none'
+  showModal('modal-rev-envio')
+}
+
+function revEnvioTrocouDestino(){
+  const sel=document.getElementById('rev-envio-para')
+  const outro=document.getElementById('rev-envio-outro')
+  outro.style.display=sel.value==='__outro__'?'block':'none'
+  if(sel.value==='__outro__') outro.focus()
+}
+
+async function revEnviarSelecao(){
+  const btn=document.getElementById('rev-envio-btn')
+  const erro=document.getElementById('rev-envio-erro')
+  const sel=document.getElementById('rev-envio-para')
+  const para=sel.value==='__outro__'?document.getElementById('rev-envio-outro').value.trim():sel.value
+  const mostrarErro=t=>{erro.textContent=t;erro.style.display='block'}
+  erro.style.display='none'
+  if(!para) return mostrarErro('Informe para quem enviar.')
+
+  // Relê a tela na hora do envio: entre abrir o modal e clicar em Enviar a
+  // pessoa pode ter mexido nos filtros atrás.
+  const linhas=revLinhasParaEnvio()
+  if(!linhas.length) return mostrarErro('Não há nenhuma revisão na tela para avisar.')
+
+  btn.disabled=true; btn.textContent='Enviando...'
+  try{
+    const r=await apiCall('/api/alertas/revisao/enviar-selecao','POST',{
+      ids: linhas.map(l=>l.id),
+      para: [para],
+      mensagem: document.getElementById('rev-envio-msg').value
+    })
+    closeModal('modal-rev-envio')
+    alert(`✅ Aviso enviado para ${para}\n${r.total} revisão(ões).`
+      + (r.ignorados?`\n\n${r.ignorados} linha(s) ficaram de fora por não estarem mais pendentes — vale atualizar a tela.`:''))
+  }catch(e){ mostrarErro('Não enviou: '+e.message) }
+  finally{ btn.disabled=false; btn.textContent='Enviar' }
+}
 
 // ── Cadastro manual ───────────────────────────────────────────
 function abrirModalRevisao(id){

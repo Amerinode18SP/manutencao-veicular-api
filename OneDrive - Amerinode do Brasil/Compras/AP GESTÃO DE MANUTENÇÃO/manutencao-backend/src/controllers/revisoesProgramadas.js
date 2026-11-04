@@ -137,7 +137,7 @@ async function garantirRevisaoDaData(veiculoId, placa, data) {
 // km_atual vem do cadastro (alimentado pelo sync/import TicketLog) — a tela mostra
 // junto do km_previsto para dar contexto de quanto falta rodar.
 async function mapaVeiculos() {
-  const { data, error } = await supabase.from('veiculos').select('id, placa, localidade, km_atual, ativo')
+  const { data, error } = await supabase.from('veiculos').select('id, placa, localidade, supervisor, km_atual, ativo')
   if (error) throw error
   const mapa = new Map()
   for (const v of (data || [])) mapa.set(normPlaca(v.placa), v)
@@ -164,7 +164,9 @@ async function listar(req, res) {
     const { data, error } = await q
     if (error) throw error
 
-    // anexa localidade e km atual do veículo (a tela mostra as duas)
+    // anexa localidade, supervisor e km atual do veículo (a tela mostra os três).
+    // O supervisor entrou em 04/11/2026: é por ele que se escolhe para quem
+    // mandar o aviso avulso de uma localidade.
     const veics = await mapaVeiculos()
     const porId = new Map([...veics.values()].map(v => [v.id, v]))
     const { veiculoAtivo } = require('./outros')
@@ -175,7 +177,8 @@ async function listar(req, res) {
       .filter(r => { const v = porId.get(r.veiculo_id); return !v || veiculoAtivo(v) })
       .map(r => {
         const v = porId.get(r.veiculo_id) || {}
-        return { ...r, localidade: v.localidade || '', km_atual: v.km_atual != null ? v.km_atual : null }
+        return { ...r, localidade: v.localidade || '', supervisor: v.supervisor || '',
+                 km_atual: v.km_atual != null ? v.km_atual : null }
       }))
   } catch (err) {
     if (tabelaAusente(err)) return res.json([])

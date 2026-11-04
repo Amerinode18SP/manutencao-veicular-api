@@ -3,7 +3,7 @@ const express = require('express')
 const router  = express.Router()
 const {
   getConfigAlerta, putConfigAlerta, previaAlerta,
-  executarHandler, testeAlerta, historicoAlerta
+  executarHandler, testeAlerta, historicoAlerta, enviarSelecao
 } = require('../controllers/alertasRevisao')
 
 router.get('/revisao/config',    getConfigAlerta)   // config atual + status do provedor de e-mail
@@ -12,5 +12,6 @@ router.get('/revisao/previa',    previaAlerta)      // quem seria avisado agora 
 router.post('/revisao/executar', executarHandler)   // botão "Enviar agora" + agendador externo
 router.post('/revisao/teste',    testeAlerta)       // e-mail de teste
 router.get('/revisao/historico', historicoAlerta)   // últimos avisos disparados
+router.post('/revisao/enviar-selecao', enviarSelecao) // avulso: só os filtrados, só para quem se escolhe
 
 module.exports = router
