@@ -173,19 +173,20 @@ tr:hover td{background:#F9F9F9}
 .chart-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 .chart-toolbar h4{font-size:13px;font-weight:500;color:#1E3A5F}
 .chart-controls{display:flex;gap:6px;flex-wrap:wrap}
-/* Filtro por coluna e arrastar coluna, estilo Excel */
-#man-thead th{cursor:grab;white-space:nowrap}
-#man-thead th.arrastando{opacity:.4}
-#man-thead th.alvo{box-shadow:inset 3px 0 0 #185FA5}
-.man-fil{cursor:pointer;font-size:9px;color:#9aa5b1;margin-left:3px;user-select:none}
-.man-fil:hover{color:#185FA5}
-.man-fil.ativo{color:#185FA5;font-weight:700}
-#man-filtro-pop{position:absolute;z-index:9999;background:#fff;border:1px solid #CBD5E1;border-radius:8px;
+/* Filtro por coluna e arrastar coluna, estilo Excel — vale para TODAS as listas */
+.tf-thead th{cursor:grab;white-space:nowrap}
+.tf-thead th.arrastando{opacity:.4}
+.tf-thead th.alvo{box-shadow:inset 3px 0 0 #185FA5}
+.tf-fil{cursor:pointer;font-size:9px;color:#9aa5b1;margin-left:3px;user-select:none}
+.tf-fil:hover{color:#185FA5}
+.tf-fil.ativo{color:#185FA5;font-weight:700}
+.tf-rodape{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+#tf-pop{position:absolute;z-index:9999;background:#fff;border:1px solid #CBD5E1;border-radius:8px;
   box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;width:250px;display:none;font-size:13px}
-#man-filtro-pop .lista{max-height:220px;overflow:auto;border:1px solid #EEE;border-radius:6px;padding:6px;margin:6px 0}
-#man-filtro-pop label{display:flex;align-items:center;gap:6px;padding:3px 2px;margin:0;font-weight:400;cursor:pointer}
-#man-filtro-pop label:hover{background:#F0F4F9}
-#man-filtro-pop input[type=checkbox]{width:auto;margin:0}
+#tf-pop .lista{max-height:220px;overflow:auto;border:1px solid #EEE;border-radius:6px;padding:6px;margin:6px 0}
+#tf-pop label{display:flex;align-items:center;gap:6px;padding:3px 2px;margin:0;font-weight:400;cursor:pointer}
+#tf-pop label:hover{background:#F0F4F9}
+#tf-pop input[type=checkbox]{width:auto;margin:0}
 .man-aba-btn{border:none;background:transparent;padding:8px 16px;font-size:14px;color:#666;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
 .man-aba-btn.active{color:#1E3A5F;font-weight:600;border-bottom-color:#185FA5}
 .chart-controls .seg{display:flex;background:#F0F4F9;border-radius:8px;padding:3px}
@@ -504,10 +505,11 @@ tr:hover td{background:#F9F9F9}
       <div class="card">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Nº Ordem</th><th>Link OC</th><th>Placa</th><th>Localidade</th><th>Supervisor</th><th>NF</th><th>Item</th><th>Categoria</th><th>Fornecedor</th><th>CNPJ</th><th>Vl. Item</th><th>Vl. Total</th><th>KM</th><th>Próx. Revisão</th><th>Status</th><th>Obs.</th><th>Ações</th></tr></thead>
-            <tbody id="ordens-table"><tr><td colspan="17" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
+            <thead class="tf-thead"><tr id="ordens-thead"></tr></thead>
+            <tbody id="ordens-table"><tr><td colspan="18" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
           </table>
         </div>
+        <div class="tf-rodape" id="ordens-rodape"></div>
       </div>
     </div>
 
@@ -632,9 +634,10 @@ tr:hover td{background:#F9F9F9}
             </div>
           </div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Placa</th><th>Localidade</th><th>Tipo</th><th>Serviço</th><th>Data prevista</th><th title="Vem do cadastro do veículo, atualizado pelo TicketLog">KM atual</th><th title="Km em que o serviço vence (opcional, você preenche)">KM previsto</th><th>Situação</th><th>Prazo</th><th style="text-align:right">Ações</th></tr></thead>
-            <tbody id="revisoes-table"><tr><td colspan="10" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
+            <thead class="tf-thead"><tr id="revisoes-thead"></tr></thead>
+            <tbody id="revisoes-table"><tr><td colspan="11" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
           </table></div>
+          <div class="tf-rodape" id="revisoes-rodape"></div>
         </div>
       </div>
 
@@ -1406,7 +1409,7 @@ tr:hover td{background:#F9F9F9}
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr id="man-thead"></tr></thead>
+            <thead class="tf-thead"><tr id="man-thead"></tr></thead>
             <tbody id="man-table"><tr><td colspan="15" class="loading"><span class="spinner"></span>Carregando...</td></tr></tbody>
           </table>
         </div>
@@ -1595,13 +1598,11 @@ tr:hover td{background:#F9F9F9}
       <!-- Tabela -->
       <div class="table-wrap">
         <table>
-          <thead><tr>
-            <th>Razão Social</th><th>CNPJ</th><th>Tipos de serviço</th>
-            <th>Cidade/UF</th><th>Contato</th><th>E-mail</th><th>Homologação</th><th style="width:120px"></th>
-          </tr></thead>
-          <tbody id="forne-tbody"><tr><td colspan="8" style="color:#666">Carregando...</td></tr></tbody>
+          <thead class="tf-thead"><tr id="forne-thead"></tr></thead>
+          <tbody id="forne-tbody"><tr><td colspan="9" style="color:#666">Carregando...</td></tr></tbody>
         </table>
       </div>
+      <div class="tf-rodape" id="forne-rodape"></div>
     </div><!-- /page-fornecedores -->
 
     <!-- ══ CADASTRO DE VEÍCULOS ══ -->
@@ -1648,17 +1649,15 @@ tr:hover td{background:#F9F9F9}
 
       <div class="table-wrap">
         <table>
-          <thead><tr>
-            <th>Placa</th><th>Modelo</th><th>Localidade</th><th>Supervisor</th>
-            <th>RENAVAM</th><th>Chassi</th><th>Status</th><th>Observação</th><th style="width:90px"></th>
-          </tr></thead>
+          <thead class="tf-thead"><tr id="veic-thead"></tr></thead>
           <tbody id="veic-tbody"><tr><td colspan="9" style="color:#666">Carregando...</td></tr></tbody>
         </table>
       </div>
+      <div class="tf-rodape" id="veic-rodape"></div>
     </div><!-- /page-veiculos -->
 
     <!-- Painel do filtro por coluna (um só, reposicionado a cada clique) -->
-    <div id="man-filtro-pop"></div>
+    <div id="tf-pop"></div>
 
     <!-- MODAL: ENVIAR SITUAÇÃO ATUAL DA FROTA POR E-MAIL -->
     <div class="modal-overlay" id="sit-email-modal" style="display:none">
@@ -2036,6 +2035,241 @@ let ordens = [], currentPeriod = 'ano', editId = null, importBuffer = []
 
 // Utilitário global de escape HTML
 const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+
+// ════════════════════════════════════════════════════════════════════════════
+// MOTOR DE TABELA COM FILTRO POR COLUNA, ESTILO EXCEL  (04/11/2026)
+//
+// Uma implementação só, usada por TODAS as listas. Nasceu dentro da lista de
+// manutenção em 20/10; quando a Luciana pediu o mesmo filtro em Ordens de
+// Compra, Próximas Revisões, Veículos e Fornecedores, copiar estas ~120 linhas
+// quatro vezes significaria cinco lugares para corrigir o mesmo defeito — e a
+// correção que esquece uma cópia é exatamente como este sistema já quebrou
+// antes (a contagem de alugados, que vivia em dois lugares).
+//
+// cfg = {
+//   id      prefixo único; é também a chave da ordem das colunas no navegador
+//   cols    [{ k, rot, fil?, num?, val(linha), td(linha), tdAttr? }]
+//             val = texto usado no FILTRO e na ORDENAÇÃO
+//             td  = o HTML da célula (selo colorido, botão, link)
+//             Os dois existem separados porque filtrar por HTML não funciona.
+//   thead   id do <tr> do cabeçalho    tbody id do <tbody>
+//   rodape? id do rodapé (contagem + limpar filtros + paginação)
+//   porPag? 0 = mostra tudo numa página
+//   trAttr? (linha) => atributos extras do <tr>
+//   vazio?  texto quando o filtro não deixa nada
+// }
+// ════════════════════════════════════════════════════════════════════════════
+const TF = {}
+
+function criarTabelaFiltro(cfg){
+  const chaveOrdem = 'tfCols:' + cfg.id
+  const t = {
+    cfg,
+    linhas: [],
+    filtros: {},                       // { coluna: Set(valores marcados) }
+    ordenacao: { k:null, dir:1 },
+    pagina: 1,
+    // A ordem das colunas é escolha de cada pessoa e fica no navegador dela.
+    // Coluna nova (ou removida) não pode quebrar a ordem salva: o que existe no
+    // código manda, e o que está guardado só define a posição.
+    ordemCols: (()=>{
+      try{
+        const s=JSON.parse(localStorage.getItem(chaveOrdem)||'null')
+        if(Array.isArray(s)){
+          const validas=s.filter(k=>cfg.cols.some(c=>c.k===k))
+          const faltando=cfg.cols.map(c=>c.k).filter(k=>!validas.includes(k))
+          return [...validas,...faltando]
+        }
+      }catch(e){}
+      return cfg.cols.map(c=>c.k)
+    })(),
+  }
+
+  t.col   = k => cfg.cols.find(c=>c.k===k)
+  t.valor = (linha,k) => { const c=t.col(k); return c?String(c.val(linha)??'').trim():'' }
+
+  t.salvarOrdem = ()=>{ try{ localStorage.setItem(chaveOrdem,JSON.stringify(t.ordemCols)) }catch(e){} }
+
+  // Linhas que passam pelos filtros. `exceto` permite montar a lista de valores
+  // de uma coluna já considerando os filtros das OUTRAS — é assim que o Excel
+  // faz, e é o que evita oferecer uma opção que resultaria em lista vazia.
+  t.filtradas = exceto => t.linhas.filter(linha =>
+    Object.entries(t.filtros).every(([k,set]) =>
+      k===exceto || !set || !set.size || set.has(t.valor(linha,k) || '(vazio)')))
+
+  t.ordenadas = linhas => {
+    const o=t.ordenacao
+    if(!o.k) return linhas
+    const c=t.col(o.k); if(!c) return linhas
+    return [...linhas].sort((a,b)=>{
+      const va=c.val(a), vb=c.val(b)
+      if(c.num) return ((Number(va)||0)-(Number(vb)||0))*o.dir
+      return String(va??'').localeCompare(String(vb??''),'pt-BR')*o.dir
+    })
+  }
+
+  // Troca os dados. Filtro que não casa com NADA do resultado novo é descartado:
+  // senão a lista apareceria vazia e sem explicação depois de mexer nos filtros
+  // de cima (os que vão ao servidor).
+  t.dados = linhas => {
+    t.linhas = Array.isArray(linhas) ? linhas : []
+    for(const k of Object.keys(t.filtros)){
+      const existentes=new Set(t.linhas.map(l=>t.valor(l,k)||'(vazio)'))
+      const resta=[...t.filtros[k]].filter(v=>existentes.has(v))
+      if(resta.length) t.filtros[k]=new Set(resta); else delete t.filtros[k]
+    }
+    return t
+  }
+
+  t.renderCabecalho = ()=>{
+    const tr=document.getElementById(cfg.thead); if(!tr) return
+    tr.innerHTML=t.ordemCols.map(k=>{
+      const c=t.col(k)
+      const ativo=t.filtros[k]&&t.filtros[k].size
+      const seta=t.ordenacao.k===k?(t.ordenacao.dir>0?' ▲':' ▼'):''
+      const fil=c.fil?`<span class="tf-fil ${ativo?'ativo':''}" onclick="TF['${cfg.id}'].abrirFiltro('${k}',event)" title="Filtrar">${ativo?'▼':'▽'}</span>`:''
+      return `<th draggable="true" data-col="${k}" title="Arraste para mover a coluna">${esc(c.rot)}${seta}${fil}</th>`
+    }).join('')
+    t.ligarArraste()
+  }
+
+  // Arrastar para reordenar. A coluna vai no dataTransfer (e não numa variável
+  // solta) para o arraste sobreviver a um render no meio do caminho.
+  t.ligarArraste = ()=>{
+    const ths=[...document.querySelectorAll('#'+cfg.thead+' th')]
+    ths.forEach(th=>{
+      th.ondragstart=e=>{ e.dataTransfer.setData('text/plain',th.dataset.col); th.classList.add('arrastando') }
+      th.ondragend  =()=>{ th.classList.remove('arrastando'); ths.forEach(x=>x.classList.remove('alvo')) }
+      th.ondragover =e=>{ e.preventDefault(); th.classList.add('alvo') }
+      th.ondragleave=()=>th.classList.remove('alvo')
+      th.ondrop     =e=>{
+        e.preventDefault()
+        const de=e.dataTransfer.getData('text/plain'), para=th.dataset.col
+        if(!de||de===para) return
+        t.ordemCols.splice(t.ordemCols.indexOf(de),1)
+        t.ordemCols.splice(t.ordemCols.indexOf(para),0,de)
+        t.salvarOrdem()
+        t.render()
+      }
+    })
+  }
+
+  t.render = pg => {
+    if(pg!==undefined) t.pagina=pg
+    t.renderCabecalho()
+    const tb=document.getElementById(cfg.tbody); if(!tb) return
+    const nCols=t.ordemCols.length
+    const linhas=t.ordenadas(t.filtradas())
+    const porPag=cfg.porPag||0
+    const paginas=porPag?Math.max(1,Math.ceil(linhas.length/porPag)):1
+    if(t.pagina>paginas) t.pagina=paginas
+    const fatia=porPag?linhas.slice((t.pagina-1)*porPag, t.pagina*porPag):linhas
+
+    tb.innerHTML = fatia.length
+      ? fatia.map(linha=>`<tr ${cfg.trAttr?cfg.trAttr(linha):''}>${t.ordemCols.map(k=>{
+          const c=t.col(k)
+          return `<td ${c.tdAttr||''}>${c.td(linha)}</td>`
+        }).join('')}</tr>`).join('')
+      : `<tr><td colspan="${nCols}" class="empty">${cfg.vazio||'Nenhum registro com esse filtro.'}</td></tr>`
+
+    const rod=cfg.rodape&&document.getElementById(cfg.rodape)
+    if(rod){
+      const temFiltro=Object.values(t.filtros).some(s=>s&&s.size)
+      rod.innerHTML=`<span style="font-size:12px;color:#666">${linhas.length} registro(s)${temFiltro?` de ${t.linhas.length}`:''}</span>`
+        + (temFiltro?` <button class="btn" style="padding:4px 10px;font-size:12px" onclick="TF['${cfg.id}'].limparTudo()">✕ Limpar filtros</button>`:'')
+      if(paginas>1){
+        if(t.pagina>1) rod.innerHTML+=`<button class="btn" style="padding:4px 10px;font-size:12px" onclick="TF['${cfg.id}'].render(${t.pagina-1})">‹ Ant</button>`
+        rod.innerHTML+=`<span style="font-size:12px">Pág ${t.pagina}/${paginas}</span>`
+        if(t.pagina<paginas) rod.innerHTML+=`<button class="btn" style="padding:4px 10px;font-size:12px" onclick="TF['${cfg.id}'].render(${t.pagina+1})">Próx ›</button>`
+      }
+    }
+    if(cfg.aoRenderizar) cfg.aoRenderizar(linhas)
+  }
+
+  t.limparTudo = ()=>{ t.filtros={}; t.render(1) }
+
+  // ── Painel do filtro ──────────────────────────────────────────────────────
+  t.abrirFiltro = (k,ev)=>{
+    ev.stopPropagation()
+    const pop=document.getElementById('tf-pop')
+    if(pop.dataset.tab===cfg.id && pop.dataset.col===k && pop.style.display==='block'){
+      pop.style.display='none'; pop.dataset.col=''; return
+    }
+    pop.dataset.tab=cfg.id
+    pop.dataset.col=k
+    t.renderPainel()
+    pop.style.display='block'
+    const r=ev.target.getBoundingClientRect()
+    // Não deixa o painel sair pela direita da janela.
+    pop.style.left=Math.min(r.left+window.scrollX, window.scrollX+document.documentElement.clientWidth-262)+'px'
+    pop.style.top=(r.bottom+window.scrollY+4)+'px'
+  }
+
+  t.renderPainel = ()=>{
+    const pop=document.getElementById('tf-pop')
+    const k=pop.dataset.col; if(!k) return
+    const busca=(document.getElementById('tf-busca')?.value||'').toLowerCase()
+    const marcados=t.filtros[k]
+    const valores=[...new Set(t.filtradas(k).map(l=>t.valor(l,k)||'(vazio)'))]
+      .sort((a,b)=>a.localeCompare(b,'pt-BR'))
+      .filter(v=>!busca||v.toLowerCase().includes(busca))
+    pop.innerHTML=`
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <button class="btn" style="flex:1;padding:4px;font-size:11px" onclick="TF['${cfg.id}'].ordenarPor('${k}',1)">A → Z</button>
+        <button class="btn" style="flex:1;padding:4px;font-size:11px" onclick="TF['${cfg.id}'].ordenarPor('${k}',-1)">Z → A</button>
+      </div>
+      <input id="tf-busca" placeholder="Procurar..." value="${esc(busca)}" oninput="TF['${cfg.id}'].renderPainel()" style="width:100%;padding:5px;border:1px solid #D8D6D0;border-radius:5px">
+      <div class="lista">
+        <label style="border-bottom:1px solid #EEE;padding-bottom:4px"><input type="checkbox" ${!marcados||!marcados.size?'checked':''} onchange="TF['${cfg.id}'].marcarTodos(this.checked)"> <strong>(Selecionar tudo)</strong></label>
+        ${valores.length?valores.map(v=>`<label><input type="checkbox" class="tf-item" value="${esc(v)}" ${!marcados||!marcados.size||marcados.has(v)?'checked':''}> ${esc(v)}</label>`).join('')
+                        :'<div style="color:#888;padding:6px">Nenhum valor</div>'}
+      </div>
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn" style="padding:4px 10px;font-size:12px" onclick="TF['${cfg.id}'].limpar('${k}')">Limpar</button>
+        <button class="btn-primary" style="padding:4px 10px;font-size:12px" onclick="TF['${cfg.id}'].aplicar('${k}')">Aplicar</button>
+      </div>`
+    const b=document.getElementById('tf-busca')
+    if(busca){ b.focus(); b.setSelectionRange(b.value.length,b.value.length) }
+  }
+
+  t.marcarTodos = on => document.querySelectorAll('#tf-pop .tf-item').forEach(c=>c.checked=on)
+
+  t.aplicar = k => {
+    const itens=[...document.querySelectorAll('#tf-pop .tf-item')]
+    const marcados=itens.filter(c=>c.checked).map(c=>c.value)
+    // Tudo marcado = sem filtro. Guardar os valores todos faria o filtro esconder
+    // uma linha NOVA que não existia quando ele foi aplicado.
+    if(!marcados.length || marcados.length===itens.length) delete t.filtros[k]
+    else t.filtros[k]=new Set(marcados)
+    document.getElementById('tf-pop').style.display='none'
+    t.render(1)
+  }
+
+  t.limpar = k => {
+    delete t.filtros[k]
+    document.getElementById('tf-pop').style.display='none'
+    t.render(1)
+  }
+
+  t.ordenarPor = (k,dir)=>{
+    t.ordenacao={k,dir}
+    document.getElementById('tf-pop').style.display='none'
+    t.render(1)
+  }
+
+  TF[cfg.id]=t
+  return t
+}
+
+// Clique fora fecha o painel (senão ele fica pendurado na tela). Um só listener
+// para todas as tabelas — o painel também é um só.
+document.addEventListener('click',e=>{
+  const pop=document.getElementById('tf-pop')
+  if(pop && pop.style.display==='block' && !pop.contains(e.target) && !e.target.classList.contains('tf-fil')){
+    pop.style.display='none'; pop.dataset.col=''
+  }
+})
+
 
 // ⚠️ O VALOR GRAVADO no banco continua 'Em Andamento'. Aqui só se traduz o que
 // a pessoa LÊ (pedido da Luciana em 28/09/2026: "Manutenção em andamento").
@@ -3002,12 +3236,52 @@ async function carregarOrdens(){
   }
 }
 
+// Colunas das Ordens de Compra. `val` é o texto que o filtro e a ordenação
+// enxergam; `td` é o que aparece na célula (selo, link, botão).
+const ORD_COLUNAS = (()=>{
+  const escAttr = s => String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const veic = o => o.veiculo||{}
+  const forn = o => o.fornecedor||{}
+  return [
+    { k:'num_ordem', rot:'Nº Ordem', fil:true, val:o=>o.num_ordem||'', td:o=>`<strong>${esc(o.num_ordem)||'—'}</strong>` },
+    { k:'link_ordem', rot:'Link OC', val:o=>o.link_ordem?'Com link':'Sem link',
+      td:o=>o.link_ordem?`<a class="oc-link" href="${o.link_ordem}" target="_blank">🔗 Abrir</a>`:'—' },
+    { k:'placa', rot:'Placa', fil:true, val:o=>veic(o).placa||'', td:o=>`<strong>${esc(veic(o).placa)||'-'}</strong>` },
+    { k:'localidade', rot:'Localidade', fil:true, val:o=>veic(o).localidade||'', td:o=>esc(veic(o).localidade)||'-' },
+    { k:'supervisor', rot:'Supervisor', fil:true, val:o=>o.supervisor||'', td:o=>esc(o.supervisor)||'-' },
+    { k:'nota_fiscal', rot:'NF', fil:true, val:o=>o.nota_fiscal||'', td:o=>esc(o.nota_fiscal)||'-' },
+    { k:'item', rot:'Item', fil:true, val:o=>o.item||'', td:o=>esc(o.item)||'-' },
+    { k:'categoria', rot:'Categoria', fil:true, val:o=>o.categoria||'', td:o=>catBadge(o.categoria) },
+    { k:'fornecedor', rot:'Fornecedor', fil:true, val:o=>forn(o).razao_social||'', td:o=>esc(forn(o).razao_social)||'-' },
+    { k:'cnpj', rot:'CNPJ', val:o=>forn(o).cnpj||'', tdAttr:'style="font-size:11px"', td:o=>esc(forn(o).cnpj)||'-' },
+    { k:'valor_item', rot:'Vl. Item', num:true, val:o=>o.valor_item??'', td:o=>fmtMoeda(o.valor_item) },
+    { k:'valor_total', rot:'Vl. Total', num:true, val:o=>o.valor_total??'', td:o=>`<strong>${fmtMoeda(o.valor_total)}</strong>` },
+    { k:'km', rot:'KM', num:true, val:o=>veic(o).km_atual??'',
+      td:o=>veic(o).km_atual?Number(veic(o).km_atual).toLocaleString('pt-BR')+' km':'-' },
+    { k:'proxima_revisao', rot:'Próx. Revisão', val:o=>veic(o).proxima_revisao||'', td:o=>fmtData(veic(o).proxima_revisao) },
+    { k:'data_ordem', rot:'Data da ordem', val:o=>o.data_ordem||'', td:o=>fmtData(o.data_ordem) },
+    { k:'status', rot:'Status', fil:true, val:o=>o.status||'', td:o=>statusBadge(o.status) },
+    { k:'observacao', rot:'Obs.', val:o=>o.observacao||'', tdAttr:'style="text-align:center"',
+      td:o=>o.observacao?`<span title="${escAttr(o.observacao)}" style="cursor:help">📝</span>`:'—' },
+    { k:'_acoes', rot:'Ações', val:()=>'', tdAttr:'style="white-space:nowrap"',
+      td:o=>currentPerfil==='administrador'
+        ?`<div style="display:flex;gap:4px"><button class="btn-sm" onclick="editarOrdem('${o.id}')">Editar</button><button class="btn-sm" style="color:red" onclick="excluirOrdem('${o.id}')">Excluir</button></div>`
+        :`<span style="font-size:11px;color:#999">Somente leitura</span>` },
+  ]
+})()
+
+criarTabelaFiltro({
+  id:'ordens', cols:ORD_COLUNAS, thead:'ordens-thead', tbody:'ordens-table',
+  rodape:'ordens-rodape', porPag:50, vazio:'Nenhuma ordem com esse filtro.',
+})
+
 function renderOrdens(){
-  const isAdmin=currentPerfil==='administrador'
   const busca=(document.getElementById('filtro-busca')?.value||'').toLowerCase()
   const st=document.getElementById('filtro-status')?.value||''
   const cat=document.getElementById('filtro-cat')?.value||''
   let lista=ordens.filter(o=>{const v=o.veiculo||{},f=o.fornecedor||{};const txt=(v.placa+v.localidade+o.supervisor+f.razao_social+o.nota_fiscal+o.item+(o.num_ordem||'')+(o.observacao||'')).toLowerCase();return(!busca||txt.includes(busca))&&(!st||o.status===st)&&(!cat||o.categoria===cat)})
+  // A ordenação do seletor de cima só vale enquanto ninguém usou o A→Z de uma
+  // coluna: senão as duas brigariam, e a que o cabeçalho mostra perderia.
   const ord=document.getElementById('filtro-ordenacao')?.value||'recente'
   const numOrd=o=>{const m=String(o.num_ordem||'').match(/\d+/g);return m?parseInt(m.join('')):0}
   if(ord==='num_desc')        lista.sort((a,b)=>numOrd(b)-numOrd(a))
@@ -3016,20 +3290,7 @@ function renderOrdens(){
   else if(ord==='valor_asc')  lista.sort((a,b)=>Number(a.valor_total||0)-Number(b.valor_total||0))
   else if(ord==='data_desc')  lista.sort((a,b)=>String(b.data_ordem||'').localeCompare(String(a.data_ordem||'')))
   else if(ord==='data_asc')   lista.sort((a,b)=>String(a.data_ordem||'').localeCompare(String(b.data_ordem||'')))
-  const tb=document.getElementById('ordens-table')
-  if(!lista.length){tb.innerHTML='<tr><td colspan="17" class="empty">Nenhuma ordem encontrada.</td></tr>';return}
-  const escAttr = s => String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-  tb.innerHTML=lista.map(o=>{
-    const v=o.veiculo||{},f=o.fornecedor||{}
-    const link=o.link_ordem?`<a class="oc-link" href="${o.link_ordem}" target="_blank">🔗 Abrir</a>`:'—'
-    const obs=o.observacao
-      ? `<span title="${escAttr(o.observacao)}" style="cursor:help">📝</span>`
-      : '—'
-    const acoes=isAdmin
-      ?`<div style="display:flex;gap:4px"><button class="btn-sm" onclick="editarOrdem('${o.id}')">Editar</button><button class="btn-sm" style="color:red" onclick="excluirOrdem('${o.id}')">Excluir</button></div>`
-      :`<span style="font-size:11px;color:#999">Somente leitura</span>`
-    return`<tr><td><strong>${o.num_ordem||'—'}</strong></td><td>${link}</td><td><strong>${v.placa||'-'}</strong></td><td>${v.localidade||'-'}</td><td>${o.supervisor}</td><td>${o.nota_fiscal}</td><td>${o.item}</td><td>${catBadge(o.categoria)}</td><td>${f.razao_social||'-'}</td><td style="font-size:11px">${f.cnpj||'-'}</td><td>${fmtMoeda(o.valor_item)}</td><td><strong>${fmtMoeda(o.valor_total)}</strong></td><td>${v.km_atual?Number(v.km_atual).toLocaleString('pt-BR')+' km':'-'}</td><td>${fmtData(v.proxima_revisao)}</td><td>${statusBadge(o.status)}</td><td style="text-align:center">${obs}</td><td>${acoes}</td></tr>`
-  }).join('')
+  TF.ordens.dados(lista).render(1)
 }
 
 // ── RELATÓRIOS ────────────────────────────────────────────────
@@ -4379,18 +4640,20 @@ function exportarRecorrenciaXLSX(){
 let revisoesDados=[], revEditandoId=null, revImportBuffer=[], revImportIgnorados=[]
 let revVeiculosCache=[], revServicosCache=[]
 
-const REV_COLS=10 // colunas da tabela (para o colspan das mensagens)
+// Colspan das mensagens. Derivado das colunas para não desencontrar quando uma
+// coluna nova entra — foi o que aconteceu com a Providência em 04/11.
+const REV_COLS=()=>REV_COLUNAS.length
 
 async function carregarRevisoes(){
   const tb=document.getElementById('revisoes-table')
-  tb.innerHTML=`<tr><td colspan="${REV_COLS}" class="loading"><span class="spinner"></span>Carregando...</td></tr>`
+  tb.innerHTML=`<tr><td colspan="${REV_COLS()}" class="loading"><span class="spinner"></span>Carregando...</td></tr>`
   try{
     const status=document.getElementById('rev-filtro-status').value
     revisoesDados=await apiCall('/api/revisoes?status='+encodeURIComponent(status))
     renderRevisoes()
     revCarregarAuxiliares()
   }catch(e){
-    tb.innerHTML=`<tr><td colspan="${REV_COLS}" class="empty">Erro: ${e.message}</td></tr>`
+    tb.innerHTML=`<tr><td colspan="${REV_COLS()}" class="empty">Erro: ${e.message}</td></tr>`
   }
 }
 
@@ -4420,14 +4683,16 @@ function revDias(dataISO){
   return Math.round((d-hoje)/86400000)
 }
 
+// `texto` é o mesmo rótulo do selo em texto puro: é por ele que a coluna
+// Situação filtra e ordena — filtrar pelo HTML do selo não funcionaria.
 function revSituacao(r){
-  if(r.status==='Concluída') return {badge:'<span class="badge badge-green">Concluída</span>',prazo:r.concluida_em?fmtData(r.concluida_em):'—',urgente:false}
-  if(r.status==='Cancelada') return {badge:'<span class="badge badge-gray">Cancelada</span>',prazo:'—',urgente:false}
+  if(r.status==='Concluída') return {texto:'Concluída',badge:'<span class="badge badge-green">Concluída</span>',prazo:r.concluida_em?fmtData(r.concluida_em):'—',urgente:false}
+  if(r.status==='Cancelada') return {texto:'Cancelada',badge:'<span class="badge badge-gray">Cancelada</span>',prazo:'—',urgente:false}
   const dias=revDias(r.data_prevista)
-  if(dias<0)  return {badge:'<span class="badge badge-red">Vencida</span>',prazo:`<span style="color:#B22;font-weight:500">${Math.abs(dias)} dias atrás</span>`,urgente:true}
-  if(dias<=10)return {badge:'<span class="rev-urgent-badge">⚠ Urgente</span>',prazo:`<span style="color:#791F1F;font-weight:500">${dias===0?'Hoje':dias+' dia(s)'}</span>`,urgente:true}
-  if(dias<=30)return {badge:'<span class="badge badge-amber">Próxima</span>',prazo:dias+' dias',urgente:false}
-  return {badge:'<span class="badge badge-green">OK</span>',prazo:dias+' dias',urgente:false}
+  if(dias<0)  return {texto:'Vencida',badge:'<span class="badge badge-red">Vencida</span>',prazo:`<span style="color:#B22;font-weight:500">${Math.abs(dias)} dias atrás</span>`,urgente:true}
+  if(dias<=10)return {texto:'Urgente',badge:'<span class="rev-urgent-badge">⚠ Urgente</span>',prazo:`<span style="color:#791F1F;font-weight:500">${dias===0?'Hoje':dias+' dia(s)'}</span>`,urgente:true}
+  if(dias<=30)return {texto:'Próxima',badge:'<span class="badge badge-amber">Próxima</span>',prazo:dias+' dias',urgente:false}
+  return {texto:'OK',badge:'<span class="badge badge-green">OK</span>',prazo:dias+' dias',urgente:false}
 }
 
 // KM previsto + quanto falta rodar (quando dá para comparar com o km atual)
@@ -4461,33 +4726,41 @@ function renderRevisoes(){
   }else{box.style.display='none'}
 
   document.getElementById('rev-count').textContent=`— ${lista.length} registro(s)`
-
-  if(!lista.length){
-    tb.innerHTML=`<tr><td colspan="${REV_COLS}" class="empty">Nenhuma revisão programada. Use <strong>+ Nova revisão</strong> ou <strong>⬆ Importar planilha</strong>.</td></tr>`
-    return
-  }
-  const isAdmin=currentPerfil==='administrador'
-  tb.innerHTML=lista.map(r=>{
-    const s=revSituacao(r)
-    const pendente=r.status==='Pendente'
-    const acoes=isAdmin?`
-      ${pendente?`<button class="btn-sm" style="background:#EAF3DE;color:#27500A;border-color:#B7DFA3" onclick="concluirRevisaoProgramada('${r.id}')" title="Marcar como concluída">✓</button>`:''}
-      <button class="btn-sm" onclick="abrirModalRevisao('${r.id}')" title="Editar">✏️</button>
-      <button class="btn-sm" style="color:#B22" onclick="excluirRevisao('${r.id}')" title="Excluir">🗑</button>`:''
-    return `<tr class="${s.urgente&&pendente?'rev-alert-row':''}">
-      <td><strong>${r.placa||'-'}</strong></td>
-      <td>${r.localidade||'-'}</td>
-      <td><span class="badge ${r.tipo==='Corretiva'?'badge-red':(r.tipo==='Segurança'?'badge-amber':(r.tipo==='Preditiva'?'badge-purple':'badge-blue'))}">${r.tipo||'-'}</span></td>
-      <td>${r.servico||'-'}${r.providencia?` <span class="badge badge-green" title="Já autorizado e oficina avisada — fora do e-mail de alerta">✓ Providência tomada</span>`:''}${r.observacao?`<div style="font-size:11px;color:#888">${r.observacao}</div>`:''}</td>
-      <td>${fmtData(r.data_prevista)}</td>
-      <td>${r.km_atual?Number(r.km_atual).toLocaleString('pt-BR')+' km':'<span style="color:#BBB">—</span>'}</td>
-      <td>${revKmPrevisto(r)}</td>
-      <td>${s.badge}</td>
-      <td>${s.prazo}</td>
-      <td style="text-align:right;white-space:nowrap">${acoes}</td>
-    </tr>`
-  }).join('')
+  TF.revisoes.dados(lista).render(1)
 }
+
+const REV_COLUNAS = [
+  { k:'placa', rot:'Placa', fil:true, val:r=>r.placa||'', td:r=>`<strong>${esc(r.placa)||'-'}</strong>` },
+  { k:'localidade', rot:'Localidade', fil:true, val:r=>r.localidade||'', td:r=>esc(r.localidade)||'-' },
+  { k:'tipo', rot:'Tipo', fil:true, val:r=>r.tipo||'',
+    td:r=>`<span class="badge ${r.tipo==='Corretiva'?'badge-red':(r.tipo==='Segurança'?'badge-amber':(r.tipo==='Preditiva'?'badge-purple':'badge-blue'))}">${esc(r.tipo)||'-'}</span>` },
+  { k:'servico', rot:'Serviço', fil:true, val:r=>r.servico||'',
+    td:r=>`${esc(r.servico)||'-'}${r.observacao?`<div style="font-size:11px;color:#888">${esc(r.observacao)}</div>`:''}` },
+  { k:'data_prevista', rot:'Data prevista', val:r=>r.data_prevista||'', td:r=>fmtData(r.data_prevista) },
+  { k:'km_atual', rot:'KM atual', num:true, val:r=>r.km_atual??'',
+    td:r=>r.km_atual?Number(r.km_atual).toLocaleString('pt-BR')+' km':'<span style="color:#BBB">—</span>' },
+  { k:'km_previsto', rot:'KM previsto', num:true, val:r=>r.km_previsto??'', td:r=>revKmPrevisto(r) },
+  { k:'situacao', rot:'Situação', fil:true, val:r=>revSituacao(r).texto||'', td:r=>revSituacao(r).badge },
+  { k:'prazo', rot:'Prazo', val:r=>revDias(r.data_prevista), num:true, td:r=>revSituacao(r).prazo },
+  // Coluna própria (e não um selo dentro de Serviço) para poder FILTRAR por ela:
+  // "o que já está encaminhado" é justamente o recorte que se quer esconder.
+  { k:'providencia', rot:'Providência', fil:true, val:r=>r.providencia?'Tomada':'Pendente',
+    td:r=>r.providencia
+      ?'<span class="badge badge-green" title="Já autorizado e oficina avisada — fora do e-mail de alerta">✓ Tomada</span>'
+      :'<span style="color:#BBB">—</span>' },
+  { k:'_acoes', rot:'Ações', val:()=>'', tdAttr:'style="text-align:right;white-space:nowrap"',
+    td:r=>currentPerfil!=='administrador'?'':`
+      ${r.status==='Pendente'?`<button class="btn-sm" style="background:#EAF3DE;color:#27500A;border-color:#B7DFA3" onclick="concluirRevisaoProgramada('${r.id}')" title="Marcar como concluída">✓</button>`:''}
+      <button class="btn-sm" onclick="abrirModalRevisao('${r.id}')" title="Editar">✏️</button>
+      <button class="btn-sm" style="color:#B22" onclick="excluirRevisao('${r.id}')" title="Excluir">🗑</button>` },
+]
+
+criarTabelaFiltro({
+  id:'revisoes', cols:REV_COLUNAS, thead:'revisoes-thead', tbody:'revisoes-table',
+  rodape:'revisoes-rodape',
+  vazio:'Nenhuma revisão com esse filtro. Use <strong>+ Nova revisão</strong> ou <strong>⬆ Importar planilha</strong>.',
+  trAttr:r=>revSituacao(r).urgente&&r.status==='Pendente'?'class="rev-alert-row"':'',
+})
 
 // ── Cadastro manual ───────────────────────────────────────────
 function abrirModalRevisao(id){
@@ -5360,7 +5633,7 @@ function handleDrop(e){e.preventDefault();const file=e.dataTransfer.files[0];if(
 // ══════════════════════════════════════════════════════════════
 // ── CONTROLE EM MANUTENÇÃO ───────────────────────────────────
 // ══════════════════════════════════════════════════════════════
-let manPage=1, manEditId=null, manChartObj=null, manGran='mes', manRankTipo='localidade'
+let manEditId=null, manChartObj=null, manGran='mes', manRankTipo='localidade'
 
 // Chamada depois de salvar, excluir ou importar.
 // ⚠️ ZERA O CACHE DO PAINEL de propósito: `sitDados` é guardado em memória e
@@ -5764,7 +6037,7 @@ const MAN_COLUNAS = [
             return n>0?`<button class="btn" style="padding:2px 8px;font-size:11px" onclick='verAnexosManutencao(${JSON.stringify(m.anexos||[]).replace(/'/g,"&apos;")},"${esc(m.placa)}")'>📎 ${n}</button>`:'—' } },
   { k:'observacoes', rot:'Obs.', val:m=>m.observacoes||'',
     td:m=>m.observacoes?`<span title="${esc(m.observacoes)}" style="cursor:help">📝</span>`:'—' },
-  { k:'_acoes', rot:'Ações', val:()=>'', td:m=>manAcoes(m) },
+  { k:'_acoes', rot:'Ações', val:()=>'', tdAttr:'style="white-space:nowrap"', td:m=>manAcoes(m) },
 ]
 
 const manAtrasado = m => m.status==='Em Andamento' && m.previsao_retorno && m.previsao_retorno<hoje()
@@ -5787,189 +6060,14 @@ function manAcoes(m){
 }
 
 let manLinhas = []            // tudo que veio do servidor
-let manFiltros = {}           // { coluna: Set(valores marcados) }
-let manOrdenacao = { k:null, dir:1 }
-// A ordem das colunas é escolha de cada pessoa e fica no navegador dela.
-let manOrdemCols = (()=>{
-  try{
-    const s=JSON.parse(localStorage.getItem('manOrdemCols')||'null')
-    // Coluna nova (ou removida) não pode quebrar a ordem salva: o que existe
-    // no código manda, e o que estiver guardado só define a posição.
-    if(Array.isArray(s)){
-      const validas=s.filter(k=>MAN_COLUNAS.some(c=>c.k===k))
-      const faltando=MAN_COLUNAS.map(c=>c.k).filter(k=>!validas.includes(k))
-      return [...validas,...faltando]
-    }
-  }catch(e){}
-  return MAN_COLUNAS.map(c=>c.k)
-})()
-const manCol = k => MAN_COLUNAS.find(c=>c.k===k)
-const manValor = (m,k) => { const v=manCol(k).val(m); return String(v??'').trim() }
 
-function manSalvarOrdemCols(){
-  try{ localStorage.setItem('manOrdemCols',JSON.stringify(manOrdemCols)) }catch(e){}
-}
-
-// Linhas que passam pelos filtros. `exceto` permite montar a lista de valores
-// de uma coluna já considerando os filtros das OUTRAS — é assim que o Excel faz,
-// e é o que evita oferecer uma opção que resultaria em lista vazia.
-function manFiltradas(exceto){
-  return manLinhas.filter(m =>
-    Object.entries(manFiltros).every(([k,set]) =>
-      k===exceto || !set || !set.size || set.has(manValor(m,k) || '(vazio)')))
-}
-
-function manOrdenadas(linhas){
-  const o=manOrdenacao
-  if(!o.k) return linhas
-  const c=manCol(o.k)
-  return [...linhas].sort((a,b)=>{
-    const va=c.val(a), vb=c.val(b)
-    if(c.num) return ((Number(va)||0)-(Number(vb)||0))*o.dir
-    return String(va??'').localeCompare(String(vb??''),'pt-BR')*o.dir
-  })
-}
-
-function manRenderCabecalho(){
-  const tr=document.getElementById('man-thead')
-  tr.innerHTML=manOrdemCols.map(k=>{
-    const c=manCol(k)
-    const ativo=manFiltros[k]&&manFiltros[k].size
-    const seta=manOrdenacao.k===k?(manOrdenacao.dir>0?' ▲':' ▼'):''
-    const fil=c.fil?`<span class="man-fil ${ativo?'ativo':''}" onclick="manAbrirFiltro('${k}',event)" title="Filtrar">${ativo?'▼':'▽'}</span>`:''
-    return `<th draggable="true" data-col="${k}" title="Arraste para mover a coluna">${esc(c.rot)}${seta}${fil}</th>`
-  }).join('')
-  manLigarArraste()
-}
-
-// Arrastar para reordenar. O índice vai no dataTransfer (e não numa variável
-// solta) para o arraste sobreviver a um render no meio do caminho.
-function manLigarArraste(){
-  const ths=[...document.querySelectorAll('#man-thead th')]
-  ths.forEach(th=>{
-    th.ondragstart=e=>{ e.dataTransfer.setData('text/plain',th.dataset.col); th.classList.add('arrastando') }
-    th.ondragend  =()=>{ th.classList.remove('arrastando'); ths.forEach(x=>x.classList.remove('alvo')) }
-    th.ondragover =e=>{ e.preventDefault(); th.classList.add('alvo') }
-    th.ondragleave=()=>th.classList.remove('alvo')
-    th.ondrop     =e=>{
-      e.preventDefault()
-      const de=e.dataTransfer.getData('text/plain'), para=th.dataset.col
-      if(!de||de===para) return
-      const i=manOrdemCols.indexOf(de)
-      manOrdemCols.splice(i,1)
-      manOrdemCols.splice(manOrdemCols.indexOf(para),0,de)
-      manSalvarOrdemCols()
-      manRenderLista()
-    }
-  })
-}
-
-function manRenderLista(pg){
-  if(pg!==undefined) manPage=pg
-  manRenderCabecalho()
-  const tb=document.getElementById('man-table')
-  const nCols=manOrdemCols.length
-  const linhas=manOrdenadas(manFiltradas())
-  const porPag=20
-  const paginas=Math.max(1,Math.ceil(linhas.length/porPag))
-  if(manPage>paginas) manPage=paginas
-  const fatia=linhas.slice((manPage-1)*porPag, manPage*porPag)
-
-  tb.innerHTML = fatia.length
-    ? fatia.map(m=>`<tr>${manOrdemCols.map(k=>{
-        const estilo = k==='_acoes' ? ' style="white-space:nowrap"' : ''
-        return `<td${estilo}>${manCol(k).td(m)}</td>`
-      }).join('')}</tr>`).join('')
-    : `<tr><td colspan="${nCols}" class="empty">Nenhum registro com esse filtro.</td></tr>`
-
-  const pag=document.getElementById('man-pag')
-  const temFiltro=Object.values(manFiltros).some(s=>s&&s.size)
-  pag.innerHTML=`<span style="font-size:12px;color:#666">${linhas.length} registro(s)${temFiltro?` de ${manLinhas.length}`:''}</span>`
-    + (temFiltro?` <button class="btn" style="padding:4px 10px;font-size:12px" onclick="manLimparTodosFiltros()">✕ Limpar filtros</button>`:'')
-  if(paginas>1){
-    if(manPage>1) pag.innerHTML+=`<button class="btn" style="padding:4px 10px;font-size:12px" onclick="manRenderLista(${manPage-1})">‹ Ant</button>`
-    pag.innerHTML+=`<span style="font-size:12px">Pág ${manPage}/${paginas}</span>`
-    if(manPage<paginas) pag.innerHTML+=`<button class="btn" style="padding:4px 10px;font-size:12px" onclick="manRenderLista(${manPage+1})">Próx ›</button>`
-  }
-}
-
-function manLimparTodosFiltros(){ manFiltros={}; manRenderLista(1) }
-
-// ── Painel do filtro ────────────────────────────────────────
-function manAbrirFiltro(k,ev){
-  ev.stopPropagation()
-  const pop=document.getElementById('man-filtro-pop')
-  if(pop.dataset.col===k && pop.style.display==='block'){ pop.style.display='none'; pop.dataset.col=''; return }
-  pop.dataset.col=k
-  manRenderPainelFiltro()
-  pop.style.display='block'
-  const r=ev.target.getBoundingClientRect()
-  // Não deixa o painel sair pela direita da janela.
-  pop.style.left=Math.min(r.left+window.scrollX, window.scrollX+document.documentElement.clientWidth-262)+'px'
-  pop.style.top=(r.bottom+window.scrollY+4)+'px'
-}
-
-function manRenderPainelFiltro(){
-  const pop=document.getElementById('man-filtro-pop')
-  const k=pop.dataset.col; if(!k) return
-  const busca=(document.getElementById('man-fil-busca')?.value||'').toLowerCase()
-  const marcados=manFiltros[k]
-  const valores=[...new Set(manFiltradas(k).map(m=>manValor(m,k)||'(vazio)'))]
-    .sort((a,b)=>a.localeCompare(b,'pt-BR'))
-    .filter(v=>!busca||v.toLowerCase().includes(busca))
-  pop.innerHTML=`
-    <div style="display:flex;gap:6px;margin-bottom:6px">
-      <button class="btn" style="flex:1;padding:4px;font-size:11px" onclick="manOrdenarPor('${k}',1)">A → Z</button>
-      <button class="btn" style="flex:1;padding:4px;font-size:11px" onclick="manOrdenarPor('${k}',-1)">Z → A</button>
-    </div>
-    <input id="man-fil-busca" placeholder="Procurar..." value="${esc(busca)}" oninput="manRenderPainelFiltro()" style="width:100%;padding:5px;border:1px solid #D8D6D0;border-radius:5px">
-    <div class="lista">
-      <label style="border-bottom:1px solid #EEE;padding-bottom:4px"><input type="checkbox" id="man-fil-todos" ${!marcados||!marcados.size?'checked':''} onchange="manMarcarTodos(this.checked)"> <strong>(Selecionar tudo)</strong></label>
-      ${valores.length?valores.map(v=>`<label><input type="checkbox" class="man-fil-item" value="${esc(v)}" ${!marcados||!marcados.size||marcados.has(v)?'checked':''}> ${esc(v)}</label>`).join('')
-                      :'<div style="color:#888;padding:6px">Nenhum valor</div>'}
-    </div>
-    <div style="display:flex;gap:6px;justify-content:flex-end">
-      <button class="btn" style="padding:4px 10px;font-size:12px" onclick="manLimparFiltro('${k}')">Limpar</button>
-      <button class="btn-primary" style="padding:4px 10px;font-size:12px" onclick="manAplicarFiltro('${k}')">Aplicar</button>
-    </div>`
-  const b=document.getElementById('man-fil-busca')
-  if(busca){ b.focus(); b.setSelectionRange(b.value.length,b.value.length) }
-}
-
-function manMarcarTodos(on){
-  document.querySelectorAll('#man-filtro-pop .man-fil-item').forEach(c=>c.checked=on)
-}
-
-function manAplicarFiltro(k){
-  const itens=[...document.querySelectorAll('#man-filtro-pop .man-fil-item')]
-  const marcados=itens.filter(c=>c.checked).map(c=>c.value)
-  // Tudo marcado = sem filtro. Guardar os valores todos faria o filtro "sumir"
-  // com uma linha nova que não existia quando ele foi aplicado.
-  if(!marcados.length || marcados.length===itens.length) delete manFiltros[k]
-  else manFiltros[k]=new Set(marcados)
-  document.getElementById('man-filtro-pop').style.display='none'
-  manRenderLista(1)
-}
-
-function manLimparFiltro(k){
-  delete manFiltros[k]
-  document.getElementById('man-filtro-pop').style.display='none'
-  manRenderLista(1)
-}
-
-function manOrdenarPor(k,dir){
-  manOrdenacao={k,dir}
-  document.getElementById('man-filtro-pop').style.display='none'
-  manRenderLista(1)
-}
-
-// Clique fora fecha o painel (senão ele fica pendurado na tela).
-document.addEventListener('click',e=>{
-  const pop=document.getElementById('man-filtro-pop')
-  if(pop && pop.style.display==='block' && !pop.contains(e.target) && !e.target.classList.contains('man-fil')){
-    pop.style.display='none'; pop.dataset.col=''
-  }
+// ── Lista de manutenção: usa o motor acima ──────────────────────────────────
+criarTabelaFiltro({
+  id:'man', cols:MAN_COLUNAS, thead:'man-thead', tbody:'man-table',
+  rodape:'man-pag', porPag:20,
 })
+function manRenderLista(pg){ TF.man.dados(manLinhas).render(pg===undefined?TF.man.pagina:pg) }
+function manLimparTodosFiltros(){ TF.man.limparTudo() }
 
 // Busca a lista INTEIRA e filtra na tela.
 // ⚠️ Antes vinham 20 por vez do servidor. Com paginação no servidor, o filtro
@@ -5978,8 +6076,7 @@ document.addEventListener('click',e=>{
 // O limite alto é proposital e cabe (são ~20 registros hoje). Se um dia a tabela
 // crescer muito, o caminho é paginar no servidor E pedir a ele os valores
 // distintos de cada coluna — não voltar a filtrar meia página.
-async function carregarManLista(pg){
-  if(pg!==undefined) manPage=pg
+async function carregarManLista(){
   const tb=document.getElementById('man-table')
   tb.innerHTML=`<tr><td colspan="15" class="loading"><span class="spinner"></span>Carregando...</td></tr>`
 
@@ -6002,14 +6099,8 @@ async function carregarManLista(pg){
   try{
     const r=await apiCall(`/api/manutencao?${qs}`)
     manLinhas=r.data||[]
-    // Filtro de coluna que não casa com nada do resultado novo é descartado —
-    // senão a lista apareceria vazia e sem explicação depois de mexer nos
-    // filtros de cima.
-    for(const k of Object.keys(manFiltros)){
-      const existentes=new Set(manLinhas.map(m=>manValor(m,k)||'(vazio)'))
-      const restantes=[...manFiltros[k]].filter(v=>existentes.has(v))
-      if(restantes.length) manFiltros[k]=new Set(restantes); else delete manFiltros[k]
-    }
+    // Descartar filtro de coluna que não casa com o resultado novo é trabalho do
+    // motor (TF.dados), que faz isso para todas as listas.
     manRenderLista(1)
   }catch(e){
     tb.innerHTML=`<tr><td colspan="15" class="empty">Erro: ${e.message}</td></tr>`
@@ -7253,6 +7344,42 @@ function forneFmtCep(c){
   return d.length === 8 ? `${d.slice(0,5)}-${d.slice(5)}` : d
 }
 
+const FORNE_COLUNAS = [
+  { k:'razao_social', rot:'Razão Social', fil:true, val:f=>f.razao_social||'',
+    td:f=>`<strong>${esc(f.razao_social)||'-'}</strong>${f.nome_fantasia?`<br><span style="color:#666;font-size:11px">${esc(f.nome_fantasia)}</span>`:''}` },
+  { k:'cnpj', rot:'CNPJ', val:f=>f.cnpj||'', td:f=>forneFmtCnpj(f.cnpj) },
+  // Um fornecedor pode ter vários tipos; o filtro usa a lista inteira como um
+  // valor só. Para achar "quem faz mecânica" existe o filtro de cima, que vai
+  // ao servidor e casa item a item.
+  { k:'tipos_servico', rot:'Tipos de serviço', fil:true,
+    val:f=>(f.tipos_servico||[]).join(', ')||'(sem tipo)',
+    tdAttr:'style="font-size:11px;color:#666"',
+    td:f=>esc((f.tipos_servico||[]).join(', '))||'<span style="color:#999">—</span>' },
+  { k:'cidade', rot:'Cidade/UF', fil:true,
+    val:f=>[f.cidade,f.estado].filter(Boolean).join('/')||'(sem cidade)',
+    td:f=>esc([f.cidade,f.estado].filter(Boolean).join('/'))||'—' },
+  { k:'abrange_cidades', rot:'Abrange', fil:true, val:f=>f.abrange_cidades||'(não informado)',
+    tdAttr:'style="font-size:11px;color:#666;max-width:200px;white-space:normal"',
+    td:f=>esc(f.abrange_cidades||'')||'<span style="color:#999">—</span>' },
+  { k:'contato', rot:'Contato', val:f=>[f.contato_principal,f.telefone||f.whatsapp].filter(Boolean).join(' · '),
+    tdAttr:'style="font-size:12px"',
+    td:f=>esc([f.contato_principal,f.telefone||f.whatsapp].filter(Boolean).join(' · '))||'—' },
+  { k:'email', rot:'E-mail', val:f=>f.email||'', tdAttr:'style="font-size:12px"',
+    td:f=>f.email?`<a href="mailto:${esc(f.email)}" style="color:#0C447C;text-decoration:none">${esc(f.email)}</a>`:'<span style="color:#999">—</span>' },
+  { k:'homologado', rot:'Homologação', fil:true, val:f=>f.homologado?'Homologado':'Não homologado',
+    td:f=>f.homologado
+      ?'<span style="background:#E8F5E9;color:#2E7D32;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600">✓ Homologado</span>'
+      :'<span style="background:#FFEBEE;color:#C62828;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600">✗ Não homologado</span>' },
+  { k:'_acoes', rot:'', val:()=>'', tdAttr:'style="white-space:nowrap"',
+    td:f=>`<button onclick="forneEditar('${f.id}')" style="border:none;background:#F0F8FF;color:#0C447C;padding:5px 10px;border-radius:5px;cursor:pointer;margin-right:4px" title="Editar">✏️</button>
+      <button onclick="forneDeletar('${f.id}','${(f.razao_social||'').replace(/'/g,"\\'")}')" style="border:none;background:#FFEBEE;color:#C62828;padding:5px 10px;border-radius:5px;cursor:pointer" title="Excluir">🗑️</button>` },
+]
+
+criarTabelaFiltro({
+  id:'forne', cols:FORNE_COLUNAS, thead:'forne-thead', tbody:'forne-tbody',
+  rodape:'forne-rodape', porPag:50, vazio:'Nenhum fornecedor com esse filtro.',
+})
+
 async function forneCarregar(){
   const q = new URLSearchParams()
   const v = id => document.getElementById(id)?.value?.trim()
@@ -7268,32 +7395,7 @@ async function forneCarregar(){
     const r = await fetch(`${API}/api/fornecedores?${q}`)
     const lista = await r.json()
     forneCache = lista
-    if(!lista.length){
-      tb.innerHTML = '<tr><td colspan="8" style="color:#666;text-align:center;padding:20px">Nenhum fornecedor encontrado com esses filtros.</td></tr>'
-      return
-    }
-    tb.innerHTML = lista.map(f => {
-      const tipos = (f.tipos_servico || []).join(', ') || '<span style="color:#999">—</span>'
-      const cidade = [f.cidade, f.estado].filter(Boolean).join('/') || '—'
-      const contato = [f.contato_principal, f.telefone || f.whatsapp].filter(Boolean).join(' · ') || '—'
-      const email = f.email ? `<a href="mailto:${f.email}" style="color:#0C447C;text-decoration:none">${f.email}</a>` : '<span style="color:#999">—</span>'
-      const homol = f.homologado
-        ? `<span style="background:#E8F5E9;color:#2E7D32;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600">✓ Homologado</span>`
-        : `<span style="background:#FFEBEE;color:#C62828;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600">✗ Não homologado</span>`
-      return `<tr>
-        <td><strong>${f.razao_social || '-'}</strong>${f.nome_fantasia ? `<br><span style="color:#666;font-size:11px">${f.nome_fantasia}</span>` : ''}</td>
-        <td>${forneFmtCnpj(f.cnpj)}</td>
-        <td style="font-size:11px;color:#666">${tipos}</td>
-        <td>${cidade}</td>
-        <td style="font-size:12px">${contato}</td>
-        <td style="font-size:12px">${email}</td>
-        <td>${homol}</td>
-        <td style="white-space:nowrap">
-          <button onclick="forneEditar('${f.id}')" style="border:none;background:#F0F8FF;color:#0C447C;padding:5px 10px;border-radius:5px;cursor:pointer;margin-right:4px" title="Editar">✏️</button>
-          <button onclick="forneDeletar('${f.id}','${(f.razao_social||'').replace(/'/g,"\\'")}')" style="border:none;background:#FFEBEE;color:#C62828;padding:5px 10px;border-radius:5px;cursor:pointer" title="Excluir">🗑️</button>
-        </td>
-      </tr>`
-    }).join('')
+    TF.forne.dados(lista).render(1)
   } catch(e) {
     tb.innerHTML = '<tr><td colspan="7" style="color:#A32D2D">Erro ao carregar fornecedores.</td></tr>'
   }
@@ -7464,6 +7566,44 @@ let veicLista = []
 let veicEditId = null
 const veicEhAtivo = v => v && v.ativo !== false
 
+// Inativo mostra o MOTIVO junto: "Inativo" sozinho não diz se o carro foi
+// vendido, devolvido ou destruído — e é essa diferença que interessa.
+const veicSituacao = v => veicEhAtivo(v) ? 'Ativo' : (String(v.motivo_baixa||'').trim() || 'Inativo')
+
+const VEIC_COLUNAS = (()=>{
+  const falta = t => String(t||'').trim() ? esc(String(t)) : '<span style="color:#B9433E">—</span>'
+  return [
+    { k:'placa', rot:'Placa', fil:true, val:v=>v.placa||'', td:v=>`<strong>${esc(v.placa)||'-'}</strong>` },
+    { k:'modelo', rot:'Modelo', fil:true, val:v=>v.modelo||'', td:v=>esc(v.modelo)||'-' },
+    { k:'localidade', rot:'Localidade', fil:true, val:v=>v.localidade||'', td:v=>esc(v.localidade)||'-' },
+    { k:'supervisor', rot:'Supervisor', fil:true, val:v=>v.supervisor||'', td:v=>esc(v.supervisor)||'-' },
+    // Filtráveis porque o recorte útil é "quais estão SEM documento" — e é
+    // justamente o que está em branco hoje nos 30 veículos.
+    { k:'renavam', rot:'RENAVAM', fil:true, val:v=>String(v.renavam||'').trim()||'(em branco)', td:v=>falta(v.renavam) },
+    { k:'chassi', rot:'Chassi', fil:true, val:v=>String(v.chassi||'').trim()||'(em branco)', td:v=>falta(v.chassi) },
+    { k:'status', rot:'Status', fil:true, val:v=>veicSituacao(v), td:v=>{
+        const ativo=veicEhAtivo(v)
+        const perdaTotal=String(v.motivo_baixa||'')==='Perda total'
+        return (ativo
+          ? '<span style="padding:2px 8px;border-radius:10px;background:#EAF3DE;color:#27500A;font-size:11px">Ativo</span>'
+          : `<span style="padding:2px 8px;border-radius:10px;background:${perdaTotal?'#FBE9E9':'#F5F1E6'};color:${perdaTotal?'#791F1F':'#8A5A00'};font-size:11px">${perdaTotal?'💀 ':''}${esc(v.motivo_baixa || 'Inativo')}</span>`)
+          + (v.data_baixa ? `<div style="font-size:10px;color:#888">${fmtData(v.data_baixa)}</div>` : '')
+          + (v.substituido_por ? `<div style="font-size:10px;color:#1F4E79">↪ ${esc(v.substituido_por.placa||'')}${v.substituido_por.modelo?' — '+esc(v.substituido_por.modelo):''}</div>` : '')
+      } },
+    { k:'observacao', rot:'Observação', val:v=>v.observacao||'',
+      tdAttr:'style="max-width:220px;white-space:normal"', td:v=>esc(v.observacao||'') },
+    { k:'_acoes', rot:'', val:()=>'', tdAttr:'style="white-space:nowrap"',
+      td:v=>`<button class="btn" onclick="veicAbrirModal('${v.id}')">✏️</button>
+        <button class="btn" title="Excluir" onclick="veicExcluir('${v.id}','${esc(v.placa||'')}')">🗑️</button>` },
+  ]
+})()
+
+criarTabelaFiltro({
+  id:'veic', cols:VEIC_COLUNAS, thead:'veic-thead', tbody:'veic-tbody',
+  rodape:'veic-rodape', vazio:'Nenhum veículo com esse filtro.',
+  trAttr:v=>veicEhAtivo(v)?'':'style="opacity:.65"',
+})
+
 async function veicCarregar(){
   const tb = document.getElementById('veic-tbody')
   try{
@@ -7483,36 +7623,7 @@ async function veicCarregar(){
     document.getElementById('veic-kpi-semdoc').textContent   =
       veicLista.filter(v=>!String(v.renavam||'').trim() || !String(v.chassi||'').trim()).length
 
-    if(!veicLista.length){
-      tb.innerHTML = '<tr><td colspan="9" style="color:#666">Nenhum veículo com esse filtro.</td></tr>'
-      return
-    }
-    tb.innerHTML = veicLista.map(v=>{
-      const ativo = veicEhAtivo(v)
-      // Inativo mostra o MOTIVO junto: "Inativo" sozinho não diz se o carro foi
-      // vendido, devolvido ou destruído — e é essa diferença que interessa.
-      const perdaTotal = String(v.motivo_baixa||'') === 'Perda total'
-      const selo = ativo
-        ? '<span style="padding:2px 8px;border-radius:10px;background:#EAF3DE;color:#27500A;font-size:11px">Ativo</span>'
-        : `<span style="padding:2px 8px;border-radius:10px;background:${perdaTotal?'#FBE9E9':'#F5F1E6'};color:${perdaTotal?'#791F1F':'#8A5A00'};font-size:11px">${perdaTotal?'💀 ':''}${esc(v.motivo_baixa || 'Inativo')}</span>`
-        + (v.data_baixa ? `<div style="font-size:10px;color:#888">${fmtData(v.data_baixa)}</div>` : '')
-        + (v.substituido_por ? `<div style="font-size:10px;color:#1F4E79">↪ ${esc(v.substituido_por.placa||'')}${v.substituido_por.modelo?' — '+esc(v.substituido_por.modelo):''}</div>` : '')
-      const falta = t => String(t||'').trim() ? esc(String(t)) : '<span style="color:#B9433E">—</span>'
-      return `<tr style="${ativo?'':'opacity:.65'}">
-        <td><strong>${esc(v.placa||'-')}</strong></td>
-        <td>${esc(v.modelo||'-')}</td>
-        <td>${esc(v.localidade||'-')}</td>
-        <td>${esc(v.supervisor||'-')}</td>
-        <td>${falta(v.renavam)}</td>
-        <td>${falta(v.chassi)}</td>
-        <td>${selo}</td>
-        <td style="max-width:220px;white-space:normal">${esc(v.observacao||'')}</td>
-        <td style="white-space:nowrap">
-          <button class="btn" onclick="veicAbrirModal('${v.id}')">✏️</button>
-          <button class="btn" title="Excluir" onclick="veicExcluir('${v.id}','${esc(v.placa||'')}')">🗑️</button>
-        </td>
-      </tr>`
-    }).join('')
+    TF.veic.dados(veicLista).render(1)
   }catch(e){
     tb.innerHTML = `<tr><td colspan="9" style="color:#A32D2D">Erro ao carregar: ${esc(e.message)}</td></tr>`
   }
