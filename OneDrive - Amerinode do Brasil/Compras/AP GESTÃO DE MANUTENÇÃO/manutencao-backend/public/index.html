@@ -748,6 +748,7 @@ tr:hover td{background:#F9F9F9}
               <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:12px;cursor:pointer">
                 <input type="checkbox" id="al-vencidas"> Incluir também as revisões <strong>já vencidas</strong>
               </label>
+              <div style="font-size:11px;color:#888;margin:4px 0 0 26px">A vencida volta <strong>uma vez por semana</strong> enquanto não for resolvida. Para tirar uma do aviso, marque <strong>Providência tomada</strong> na revisão.</div>
               <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:10px;cursor:pointer">
                 <input type="checkbox" id="al-ativo"> <strong>Ativar</strong> o envio automático
               </label>
@@ -838,7 +839,15 @@ tr:hover td{background:#F9F9F9}
           </div>
           <div class="form-group" style="grid-column:1/-1">
             <label>Observação</label>
-            <input id="rev-f-obs" placeholder="Opcional">
+            <input id="rev-f-obs" placeholder="Ex.: IR NA CARAMURU CAR TROCAR - ADILSON AVISADO DESDE 30/10">
+            <div style="font-size:11px;color:#888;margin-top:4px">Aparece na lista e também no e-mail de alerta.</div>
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="rev-f-providencia" style="width:auto;margin:0">
+              <span>Providência tomada — já autorizado e oficina avisada</span>
+            </label>
+            <div style="font-size:11px;color:#888;margin-top:4px">Marcando, este veículo <strong>sai do e-mail de alerta</strong> até a revisão ser concluída. Continua na lista, com selo próprio.</div>
           </div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:16px">
@@ -4469,7 +4478,7 @@ function renderRevisoes(){
       <td><strong>${r.placa||'-'}</strong></td>
       <td>${r.localidade||'-'}</td>
       <td><span class="badge ${r.tipo==='Corretiva'?'badge-red':(r.tipo==='Segurança'?'badge-amber':(r.tipo==='Preditiva'?'badge-purple':'badge-blue'))}">${r.tipo||'-'}</span></td>
-      <td>${r.servico||'-'}${r.observacao?`<div style="font-size:11px;color:#888">${r.observacao}</div>`:''}</td>
+      <td>${r.servico||'-'}${r.providencia?` <span class="badge badge-green" title="Já autorizado e oficina avisada — fora do e-mail de alerta">✓ Providência tomada</span>`:''}${r.observacao?`<div style="font-size:11px;color:#888">${r.observacao}</div>`:''}</td>
       <td>${fmtData(r.data_prevista)}</td>
       <td>${r.km_atual?Number(r.km_atual).toLocaleString('pt-BR')+' km':'<span style="color:#BBB">—</span>'}</td>
       <td>${revKmPrevisto(r)}</td>
@@ -4494,6 +4503,7 @@ function abrirModalRevisao(id){
   document.getElementById('rev-f-km').value=r&&r.km_previsto?r.km_previsto:''
   document.getElementById('rev-f-servico').value=r?r.servico||'':''
   document.getElementById('rev-f-obs').value=r?r.observacao||'':''
+  document.getElementById('rev-f-providencia').checked=!!(r&&r.providencia)
   document.getElementById('rev-modal-dica').textContent=r
     ?'Para trocar o veículo, crie uma nova revisão e exclua esta.'
     :'A mesma placa pode ter vários serviços agendados em datas diferentes.'
@@ -4508,7 +4518,8 @@ async function salvarRevisao(){
     tipo:     document.getElementById('rev-f-tipo').value,
     km_previsto: document.getElementById('rev-f-km').value||null,
     servico:  document.getElementById('rev-f-servico').value.trim(),
-    observacao: document.getElementById('rev-f-obs').value.trim()
+    observacao: document.getElementById('rev-f-obs').value.trim(),
+    providencia: document.getElementById('rev-f-providencia').checked
   }
   if(!revEditandoId&&!payload.placa){alert('Informe a placa.');return}
   if(!payload.data_prevista){alert('Informe a data prevista.');return}

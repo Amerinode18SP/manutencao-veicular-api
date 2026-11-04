@@ -15,7 +15,9 @@ const supabase = require('../supabase')
 const { enviarEmail, statusEmail } = require('../services/email')
 
 const TZ = process.env.ALERTA_TZ || 'America/Sao_Paulo'
-const VENCIDA = -1  // chave de dedupe do aviso "revisão vencida"
+// Marco da 1ª semana de atraso. Cada semana seguinte desce um (-2, -3...), para
+// que a vencida volte a avisar semanalmente em vez de sair uma vez só.
+const VENCIDA = -1
 
 const PADRAO = {
   alerta_revisao_ativo: false,
@@ -140,16 +142,23 @@ async function montarCandidatos(cfg) {
 
   for (const v of brutos) {
     const dias = diasAte(v.data)
+    // Providência tomada = serviço já autorizado e oficina já avisada. Silencia o
+    // aviso: quem recebe o e-mail não precisa cobrar o que já está resolvido, e a
+    // observação do cadastro conta a quem abre a tela o que ficou combinado.
+    if (v.providencia) continue
     let marco
     if (dias < 0) {
       if (cfg.alerta_revisao_incluir_vencidas === false) continue
-      marco = VENCIDA
+      // Vencida REPETE por semana: cada semana de atraso é um marco próprio, e o
+      // dedupe por marco deixa o aviso voltar. Com um marco só, a vencida saía
+      // UMA vez e sumia — e atraso que ninguém mais vê é pior que atraso nenhum.
+      marco = VENCIDA - Math.floor((-dias - 1) / 7)
     } else {
       if (dias > maior) continue
       marco = marcos.filter(m => dias <= m).pop()   // menor marco alcançado
       if (marco === undefined) continue
     }
-    itens.push({ ...v, proxima_revisao: v.data, dias, marco, vencida: marco === VENCIDA })
+    itens.push({ ...v, proxima_revisao: v.data, dias, marco, vencida: dias < 0 })
   }
   return itens.sort((a, b) => a.dias - b.dias)
 }
@@ -161,7 +170,10 @@ async function lerAgenda() {
   try {
     const { data, error } = await supabase
       .from('revisoes_programadas')
-      .select('id, veiculo_id, placa, data_prevista, km_previsto, tipo, servico, observacao')
+      // `*` de propósito: nomear as colunas faria o SELECT falhar inteiro quando
+      // uma delas ainda não existe (SQL manual pendente), e o catch abaixo cairia
+      // no modelo antigo sem ninguém perceber que o alerta ficou pela metade.
+      .select('*')
       .eq('status', 'Pendente')
       .order('data_prevista')
     if (error) throw error
@@ -186,6 +198,8 @@ async function lerAgenda() {
         km_previsto: r.km_previsto || null,
         tipo: r.tipo || 'Preventiva',
         servico: r.servico || 'Revisão preventiva',
+        observacao: r.observacao || '',
+        providencia: r.providencia === true,
         data: String(r.data_prevista).slice(0, 10)
       }
     })
@@ -206,6 +220,8 @@ async function lerAgenda() {
       km_previsto: null,
       tipo: 'Preventiva',
       servico: 'Revisão preventiva',
+      observacao: '',
+      providencia: false,   // o modelo antigo não tem onde marcar
       data: String(v.proxima_revisao).slice(0, 10)
     }))
   }
@@ -294,7 +310,9 @@ function montarHtml(cfg, itens) {
       <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2"><strong>${escapeHtml(i.placa)}</strong></td>
       <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${escapeHtml(i.localidade || '-')}</td>
       <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${escapeHtml(i.tipo || 'Preventiva')}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${escapeHtml(i.servico || '-')}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${escapeHtml(i.servico || '-')}${
+        i.observacao ? `<div style="font-size:11px;color:#888;margin-top:2px">${escapeHtml(i.observacao)}</div>` : ''
+      }</td>
       <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${i.km_atual ? Number(i.km_atual).toLocaleString('pt-BR') + ' km' : '-'}</td>
       <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${fmtBR(i.proxima_revisao)}</td>
       <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2;color:${cor};font-weight:600">${rotuloPrazo(i)}</td>
@@ -330,7 +348,10 @@ function montarHtml(cfg, itens) {
       <p style="margin:18px 0 0;font-size:12px;color:#777;line-height:1.6">
         Aviso automático configurado para <strong>${marcos}</strong> dia(s) de antecedência
         ${cfg.alerta_revisao_incluir_vencidas === false ? '' : ' (e revisões já vencidas)'}.
-        Cada veículo é avisado uma vez por marco de antecedência.<br>
+        Cada veículo é avisado uma vez por marco de antecedência${
+          cfg.alerta_revisao_incluir_vencidas === false ? '' : '; o que está vencido volta uma vez por semana'
+        }.<br>
+        Marcar <strong>Providência tomada</strong> na revisão tira o veículo deste aviso.<br>
         Para alterar destinatários ou prazos: sistema → <strong>Próximas Revisões → 🔔 Alertas por e-mail</strong>.
       </p>
     </div>
@@ -342,7 +363,8 @@ function montarTexto(cfg, itens) {
   const recado = String(cfg.alerta_revisao_mensagem || '').trim()
   return 'Revisões de manutenção se aproximando:\n\n' +
     (recado ? recado + '\n\n' : '') +
-    itens.map(i => `- ${i.placa} (${i.localidade || 's/ localidade'}) — ${i.servico || 'Revisão'} [${i.tipo || 'Preventiva'}] — ${fmtBR(i.proxima_revisao)} · ${rotuloPrazo(i)}`).join('\n') +
+    itens.map(i => `- ${i.placa} (${i.localidade || 's/ localidade'}) — ${i.servico || 'Revisão'} [${i.tipo || 'Preventiva'}] — ${fmtBR(i.proxima_revisao)} · ${rotuloPrazo(i)}` +
+      (i.observacao ? `\n    obs.: ${i.observacao}` : '')).join('\n') +
     '\n\nSistema de Gestão de Manutenção Veicular — Amerinode'
 }
 

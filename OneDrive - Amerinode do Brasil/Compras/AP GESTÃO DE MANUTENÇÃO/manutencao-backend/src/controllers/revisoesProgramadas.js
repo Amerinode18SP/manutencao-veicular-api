@@ -231,6 +231,7 @@ function prepararItem(item, veics) {
       tipo,
       servico,
       observacao: String(item.observacao || '').trim() || null,
+      providencia: item.providencia === true,
       status: 'Pendente',
       origem: item.origem || 'Manual',
       updated_at: new Date().toISOString()
@@ -284,6 +285,13 @@ async function atualizar(req, res) {
     }
     if ('km_previsto' in req.body) payload.km_previsto = parseKm(req.body.km_previsto)
     if ('observacao' in req.body)  payload.observacao  = String(req.body.observacao || '').trim() || null
+    // Providência tomada tira a revisão do alerta por e-mail (ver alertasRevisao).
+    // Guarda QUANDO foi marcada: sem a data não há como saber se a autorização é
+    // de ontem ou de dois meses atrás, e um carro sumiria do aviso para sempre.
+    if ('providencia' in req.body) {
+      payload.providencia    = req.body.providencia === true
+      payload.providencia_em = payload.providencia ? new Date().toISOString() : null
+    }
     if ('status' in req.body) {
       const st = STATUS.find(x => x.toLowerCase() === String(req.body.status || '').toLowerCase())
       if (!st) return res.status(400).json({ error: `Status inválido. Use: ${STATUS.join(', ')}.` })
