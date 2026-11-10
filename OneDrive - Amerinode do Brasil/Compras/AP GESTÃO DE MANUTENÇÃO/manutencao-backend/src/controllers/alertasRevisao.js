@@ -537,6 +537,22 @@ async function enviarSelecao(req, res) {
   }
 }
 
+// Qual script criar. Antes a mensagem mandava sempre rodar "alertas-revisao.sql",
+// que é o script ANTIGO: quem seguisse a instrução depois de 10/11/2026 rodaria
+// o arquivo errado e continuaria travado no mesmo erro. Agora o nome vem da
+// coluna que o Postgres reclamou.
+const SCRIPT_DA_COLUNA = [
+  [/alerta_revisao_dividir|alerta_revisao_supervisores/i, 'alerta-por-supervisor.sql'],
+  [/km_keepalive_falhas/i,                                'km-alerta-tolerancia.sql'],
+  [/providencia/i,                                        'revisao-providencia.sql'],
+]
+function erroColunaFaltando(detalhe) {
+  const achado = SCRIPT_DA_COLUNA.find(([re]) => re.test(detalhe))
+  const script = achado ? achado[1] : 'alertas-revisao.sql'
+  return `Falta rodar um script no banco. Abra o Supabase → SQL Editor, rode "scripts/${script}" `
+       + `e depois NOTIFY pgrst, 'reload schema'. Detalhe: ${detalhe}`
+}
+
 // ── Handlers HTTP ────────────────────────────────────────────────────────────
 
 // GET /api/alertas/revisao/config
@@ -612,11 +628,7 @@ async function putConfigAlerta(req, res) {
   } catch (err) {
     // Colunas novas → PostgREST reclama até o SQL manual rodar (ver CLAUDE.md).
     const falta = /schema cache|column .* does not exist|alerta_revisao|alerta_tecnico/i.test(err.message)
-    res.status(500).json({
-      error: falta
-        ? `As colunas de configuração ainda não existem no banco. Rode "scripts/alertas-revisao.sql" no Supabase (SQL Editor) e depois NOTIFY pgrst, 'reload schema'. Detalhe: ${err.message}`
-        : err.message
-    })
+    res.status(500).json({ error: falta ? erroColunaFaltando(err.message) : err.message })
   }
 }
 
