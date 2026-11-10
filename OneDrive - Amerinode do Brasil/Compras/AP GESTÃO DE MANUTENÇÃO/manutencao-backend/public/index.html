@@ -710,7 +710,7 @@ tr:hover td{background:#F9F9F9}
 
             <!-- Coluna 1: destinatários -->
             <div>
-              <label style="font-size:12px;font-weight:600;color:#1E3A5F;display:block;margin-bottom:6px">📧 Quem recebe o alerta</label>
+              <label style="font-size:12px;font-weight:600;color:#1E3A5F;display:block;margin-bottom:6px">📧 Gestores — recebem a frota toda</label>
               <div style="display:flex;gap:6px">
                 <input id="al-email-input" type="email" placeholder="nome@amerinode.com.br"
                        onkeydown="if(event.key==='Enter'){event.preventDefault();alertasAddEmail()}"
@@ -719,6 +719,22 @@ tr:hover td{background:#F9F9F9}
               </div>
               <div id="al-emails" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;min-height:30px"></div>
               <div style="font-size:11px;color:#888;margin-top:6px">Pode colar vários de uma vez, separados por vírgula ou ponto e vírgula.</div>
+
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:16px;cursor:pointer;padding-top:14px;border-top:1px solid #EEE">
+                <input type="checkbox" id="al-dividir" onchange="alertasRenderSupervisores()"> <strong>Enviar também um e-mail por supervisor</strong>
+              </label>
+              <div style="font-size:11px;color:#888;margin:4px 0 0 26px">
+                Cada supervisor recebe só os veículos dele; os gestores continuam recebendo a frota toda.
+                Quem estiver nas duas listas sai da cópia geral, para não receber duas vezes.
+              </div>
+              <div id="al-sup-box" style="display:none;margin-top:12px">
+                <label style="font-size:12px;font-weight:600;color:#1E3A5F;display:block;margin-bottom:6px">👷 E-mail de cada supervisor</label>
+                <div id="al-supervisores"></div>
+                <div style="font-size:11px;color:#888;margin-top:6px">
+                  Os nomes vêm do cadastro de veículos. Supervisor deixado em branco não recebe e-mail próprio —
+                  os veículos dele continuam na cópia dos gestores.
+                </div>
+              </div>
             </div>
 
             <!-- Coluna 2: antecedências -->
@@ -800,6 +816,7 @@ tr:hover td{background:#F9F9F9}
             </div>
             <button class="btn" onclick="document.getElementById('al-previa-card').style.display='none'">Fechar</button>
           </div>
+          <div id="al-previa-envios" style="padding:0 2px"></div>
           <div class="table-wrap"><table>
             <thead><tr><th>Placa</th><th>Localidade</th><th>KM atual</th><th>Próxima revisão</th><th>Prazo</th><th>Marco</th><th>Situação do aviso</th></tr></thead>
             <tbody id="al-previa-table"></tbody>
@@ -5043,7 +5060,7 @@ async function confirmarImportRevisoes(){
 // ── ALERTAS DE REVISÃO POR E-MAIL ─────────────────────────────
 // Nada é fixo no código: destinatários, dias de antecedência, horário e
 // "incluir vencidas" são editados aqui e gravados em config_sistema.
-let alertasCfg={ativo:false,emails:[],emails_tecnico:[],dias:[],incluir_vencidas:true,hora:8,assunto:'',email:{configurado:false}}
+let alertasCfg={ativo:false,emails:[],emails_tecnico:[],dias:[],incluir_vencidas:true,dividir:false,supervisores:{},hora:8,assunto:'',email:{configurado:false}}
 
 async function carregarConfigAlertas(){
   const sel=document.getElementById('al-hora')
@@ -5058,14 +5075,66 @@ async function carregarConfigAlertas(){
     document.getElementById('al-assunto').value=cfg.assunto||''
     document.getElementById('al-mensagem').value=cfg.mensagem||''
     sel.value=String(cfg.hora)
+    document.getElementById('al-dividir').checked=!!cfg.dividir
     alertasRenderEmails(); alertasRenderEmailsTecnico(); alertasRenderDias(); alertasRenderStatus()
+    await alertasRenderSupervisores()
   }catch(e){
     document.getElementById('al-status').textContent='— erro ao carregar: '+e.message
   }
   // visualizador não edita
   const isAdmin=currentPerfil==='administrador'
-  ;['al-email-input','al-tec-input','al-dia-input','al-hora','al-vencidas','al-ativo','al-assunto','al-mensagem']
+  ;['al-email-input','al-tec-input','al-dia-input','al-hora','al-vencidas','al-ativo','al-assunto','al-mensagem','al-dividir']
     .forEach(id=>{const el=document.getElementById(id); if(el) el.disabled=!isAdmin})
+  document.querySelectorAll('#al-supervisores input').forEach(el=>el.disabled=!isAdmin)
+}
+
+// Os nomes vêm do cadastro de veículos — é lá que o alerta procura o dono do
+// carro, então oferecer qualquer outra lista aqui criaria nome que nunca casa.
+let alertasSupCache=null
+async function alertasSupervisoresDaFrota(){
+  if(alertasSupCache) return alertasSupCache
+  try{
+    const v=await (await fetch(`${API}/api/veiculos`)).json()
+    const cont={}
+    for(const x of (Array.isArray(v)?v:[])){
+      if(x.ativo===false) continue
+      const n=String(x.supervisor||'').trim().toUpperCase()
+      if(n) cont[n]=(cont[n]||0)+1
+    }
+    alertasSupCache=Object.entries(cont).sort((a,b)=>b[1]-a[1])
+  }catch(e){ alertasSupCache=[] }
+  return alertasSupCache
+}
+
+// Palpite pelo primeiro nome (WALTER -> walter.junior@...), só para quem ainda
+// não tem e-mail salvo. É sugestão: fica no campo para conferir antes de salvar,
+// nunca é usado sem passar pela tela.
+function alertasPalpite(nome,emails){
+  const primeiro=String(nome).trim().toLowerCase().split(/\s+/)[0]
+  if(!primeiro) return ''
+  return emails.find(e=>e.split('@')[0].toLowerCase().startsWith(primeiro))||''
+}
+
+async function alertasRenderSupervisores(){
+  const ligado=document.getElementById('al-dividir').checked
+  document.getElementById('al-sup-box').style.display=ligado?'block':'none'
+  if(!ligado) return
+  const nomes=await alertasSupervisoresDaFrota()
+  const box=document.getElementById('al-supervisores')
+  if(!nomes.length){ box.innerHTML='<div style="font-size:12px;color:#8A5A00">Nenhum veículo ativo tem supervisor preenchido no cadastro.</div>'; return }
+  const salvos=alertasCfg.supervisores||{}
+  box.innerHTML=nomes.map(([nome,qtd])=>{
+    const valor=salvos[nome]||alertasPalpite(nome,alertasCfg.emails||[])
+    const sugerido=!salvos[nome]&&valor
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span style="width:110px;font-size:12px;font-weight:600;color:#1E3A5F" title="${qtd} veículo(s)">${esc(nome)}</span>
+      <input type="email" data-sup="${esc(nome)}" value="${esc(valor)}" placeholder="sem e-mail — não recebe"
+             style="flex:1;padding:6px 10px;border:1px solid ${sugerido?'#D8B468':'#DDD'};border-radius:6px;font-size:12px">
+      ${sugerido?'<span style="font-size:10px;color:#8A5A00;white-space:nowrap">sugerido</span>':''}
+    </div>`
+  }).join('')
+  const isAdmin=currentPerfil==='administrador'
+  box.querySelectorAll('input').forEach(el=>el.disabled=!isAdmin)
 }
 
 function alertasRenderStatus(){
@@ -5148,6 +5217,17 @@ function alertasAddDia(valor){
 }
 function alertasRemoveDia(i){alertasCfg.dias.splice(i,1);alertasRenderDias()}
 
+// Lê a tabela de supervisores da tela. Campo em branco sai do mapa em vez de
+// virar chave vazia — "sem e-mail" e "e-mail apagado" são a mesma coisa aqui.
+function alertasLerSupervisores(){
+  const mapa={}
+  document.querySelectorAll('#al-supervisores input[data-sup]').forEach(el=>{
+    const nome=el.dataset.sup, email=el.value.trim().toLowerCase()
+    if(nome&&email) mapa[nome]=email
+  })
+  return mapa
+}
+
 async function alertasSalvar(){
   const btn=document.getElementById('al-btn-salvar')
   const ativo=document.getElementById('al-ativo').checked
@@ -5161,14 +5241,21 @@ async function alertasSalvar(){
       emails_tecnico: alertasCfg.emails_tecnico||[],
       dias: alertasCfg.dias,
       incluir_vencidas: document.getElementById('al-vencidas').checked,
+      dividir: document.getElementById('al-dividir').checked,
+      supervisores: alertasLerSupervisores(),
       hora: parseInt(document.getElementById('al-hora').value,10),
       assunto: document.getElementById('al-assunto').value,
       mensagem: document.getElementById('al-mensagem').value
     })
     alertasCfg=cfg
     alertasRenderEmails(); alertasRenderEmailsTecnico(); alertasRenderDias(); alertasRenderStatus()
+    await alertasRenderSupervisores()
+    const nSup=Object.keys(cfg.supervisores||{}).length
     alert('✅ Configuração salva.\n\n'+(cfg.ativo
-      ? `O alerta será enviado todo dia às ${String(cfg.hora).padStart(2,'0')}:00 para ${cfg.emails.length} destinatário(s), com ${cfg.dias.join(' e ')} dia(s) de antecedência.`
+      ? `O alerta será enviado todo dia às ${String(cfg.hora).padStart(2,'0')}:00, com ${cfg.dias.join(' e ')} dia(s) de antecedência.\n`
+        + (cfg.dividir && nSup
+            ? `${nSup} supervisor(es) recebem só os veículos deles; os gestores recebem a frota toda.`
+            : `${cfg.emails.length} destinatário(s) recebem a frota toda.`)
       : 'O envio automático está DESATIVADO (marque "Ativar" para começar a disparar).'))
   }catch(e){ alert('Erro ao salvar: '+e.message) }
   finally{ if(btn){btn.disabled=false;btn.textContent='💾 Salvar configuração'} }
@@ -5183,6 +5270,19 @@ async function alertasVerPrevia(){
     const p=await apiCall('/api/alertas/revisao/previa')
     document.getElementById('al-previa-resumo').textContent=
       `— ${p.total} veículo(s) no critério · ${p.novos} ainda não avisado(s) · antecedências: ${p.dias.join(', ')} dia(s)`
+    // Quem receberia o quê, se o disparo saísse agora. É a conferência antes de
+    // ligar a divisão — depois de ligada, o erro chega pela caixa de entrada.
+    const box=document.getElementById('al-previa-envios')
+    if(box){
+      box.innerHTML=(p.envios||[]).length
+        ? '<div style="font-size:12px;font-weight:600;color:#1E3A5F;margin:10px 0 6px">📬 Sairia assim</div>'
+          + p.envios.map(e=>`<div style="font-size:12px;color:#444;padding:4px 0;border-bottom:1px solid #F0F0F0">
+              <strong>${e.supervisor?esc(e.supervisor):'Gestores'}</strong>
+              <span style="color:#888">· ${esc(e.para.join(', '))}</span>
+              <div style="color:#666">${e.veiculos} veículo(s): ${esc(e.placas.join(', '))||'—'}</div>
+            </div>`).join('')
+        : '<div style="font-size:12px;color:#888;margin-top:10px">Nada a enviar agora.</div>'
+    }
     if(!p.itens.length){tb.innerHTML='<tr><td colspan="7" class="empty">Nenhum veículo dentro dos prazos configurados.</td></tr>';return}
     tb.innerHTML=p.itens.map(i=>{
       const prazo=i.vencida?`<span style="color:#B22;font-weight:600">vencida há ${Math.abs(i.dias)} dia(s)</span>`

@@ -24,6 +24,10 @@ const PADRAO = {
   alerta_revisao_emails: [],
   alerta_revisao_dias: [10, 7],
   alerta_revisao_incluir_vencidas: true,
+  // Divisão por supervisor desligada por padrão: ligar sozinha mudaria quem
+  // recebe o quê sem ninguém pedir.
+  alerta_revisao_dividir: false,
+  alerta_revisao_supervisores: {},   // { "WALTER": "walter.junior@..." }
   alerta_revisao_hora: 8,
   alerta_revisao_assunto: '',
   alerta_revisao_mensagem: '',
@@ -105,6 +109,8 @@ function recorteConfig(cfg) {
     emails_tecnico:   cfg.alerta_tecnico_emails,
     dias:             cfg.alerta_revisao_dias,
     incluir_vencidas: cfg.alerta_revisao_incluir_vencidas !== false,
+    dividir:          !!cfg.alerta_revisao_dividir,
+    supervisores:     cfg.alerta_revisao_supervisores || {},
     hora:             cfg.alerta_revisao_hora,
     assunto:          cfg.alerta_revisao_assunto || '',
     mensagem:         cfg.alerta_revisao_mensagem || '',
@@ -179,7 +185,7 @@ async function lerAgenda() {
     if (error) throw error
 
     // localidade/km atual vêm do cadastro do veículo
-    const { data: veics } = await supabase.from('veiculos').select('id, localidade, km_atual, ativo')
+    const { data: veics } = await supabase.from('veiculos').select('id, localidade, supervisor, km_atual, ativo')
     const porId = new Map((veics || []).map(v => [v.id, v]))
     const { veiculoAtivo } = require('./outros')
 
@@ -194,6 +200,7 @@ async function lerAgenda() {
         veiculo_id: r.veiculo_id,
         placa: r.placa,
         localidade: v.localidade || '',
+        supervisor: v.supervisor || '',
         km_atual: v.km_atual || null,
         km_previsto: r.km_previsto || null,
         tipo: r.tipo || 'Preventiva',
@@ -216,6 +223,7 @@ async function lerAgenda() {
       veiculo_id: v.id,
       placa: v.placa,
       localidade: v.localidade || '',
+      supervisor: v.supervisor || '',
       km_atual: v.km_atual || null,
       km_previsto: null,
       tipo: 'Preventiva',
@@ -308,7 +316,9 @@ function montarHtml(cfg, itens, opts = {}) {
     const cor = i.vencida ? '#B22222' : (i.dias <= 3 ? '#B26A00' : '#0C447C')
     return `<tr>
       <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2"><strong>${escapeHtml(i.placa)}</strong></td>
-      <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${escapeHtml(i.localidade || '-')}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${escapeHtml(i.localidade || '-')}${
+        opts.supervisor ? '' : `<div style="font-size:11px;color:#888">${escapeHtml(i.supervisor || 'sem supervisor')}</div>`
+      }</td>
       <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${escapeHtml(i.tipo || 'Preventiva')}</td>
       <td style="padding:8px 10px;border-bottom:1px solid #E6ECF2">${escapeHtml(i.servico || '-')}${
         i.observacao ? `<div style="font-size:11px;color:#888;margin-top:2px">${escapeHtml(i.observacao)}</div>` : ''
@@ -327,8 +337,9 @@ function montarHtml(cfg, itens, opts = {}) {
       <div style="font-size:12px;opacity:.9;margin-top:3px">Amerinode · Gestão de Manutenção Veicular · ${fmtBR(hojeISO())}</div>
     </div>
     <div style="padding:18px 20px">
-      <p style="margin:0 0 14px;font-size:14px">
-        <strong>${itens.length}</strong> veículo(s) precisam de atenção.
+      <p style="margin:0 0 14px;font-size:14px">${opts.supervisor
+        ? `<strong>${escapeHtml(opts.supervisor)}</strong>, <strong>${itens.length}</strong> veículo(s) sob sua responsabilidade precisam de atenção.`
+        : `<strong>${itens.length}</strong> veículo(s) precisam de atenção.`}
       </p>
       ${blocoMensagem(cfg)}
       <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -345,7 +356,10 @@ function montarHtml(cfg, itens, opts = {}) {
         </thead>
         <tbody>${linhas}</tbody>
       </table>
-      <p style="margin:18px 0 0;font-size:12px;color:#777;line-height:1.6">${opts.avulso ? `
+      <p style="margin:18px 0 0;font-size:12px;color:#777;line-height:1.6">${opts.supervisor ? `
+        Esta lista traz <strong>apenas os veículos sob sua responsabilidade</strong>.
+        O Departamento de Compras recebe a lista completa da frota.
+      ` : opts.avulso ? `
         Envio manual feito pelo Departamento de Compras em <strong>${fmtBR(hojeISO())}</strong>,
         com os veículos filtrados na tela. Não substitui o aviso automático, que continua
         saindo normalmente para a lista completa.
@@ -394,18 +408,28 @@ async function executarAlerta(opcoes = {}) {
   }
 
   try {
-    const res = await enviarEmail({
-      para: cfg.alerta_revisao_emails,
-      assunto: montarAssunto(cfg, itens),
-      html: montarHtml(cfg, itens),
-      texto: montarTexto(cfg, itens)
-    })
-    await registrarEnvios(itens, cfg.alerta_revisao_emails)
-    const detalhe = `${itens.length} veículo(s) para ${cfg.alerta_revisao_emails.length} destinatário(s)${opcoes.origem ? ' · ' + opcoes.origem : ''}`
-    await marcarExecucao('ok', detalhe)
+    const envios = montarEnvios(cfg, itens)
+    let provedor = null
+    const destinatarios = new Set()
+    for (const e of envios) {
+      const r = await enviarEmail({
+        para: e.para,
+        assunto: montarAssunto(cfg, e.itens) + (e.supervisor ? ` — ${e.supervisor}` : ''),
+        html: montarHtml(cfg, e.itens, { supervisor: e.supervisor }),
+        texto: montarTexto(cfg, e.itens)
+      })
+      provedor = r.provedor
+      e.para.forEach(p => destinatarios.add(p))
+    }
+    // Registra UMA vez, com todos que receberam. Registrar por envio marcaria o
+    // mesmo veículo duas vezes (fatia do supervisor + cópia dos gestores) e a
+    // segunda gravação só seria descartada pelo UNIQUE — melhor não depender disso.
+    await registrarEnvios(itens, [...destinatarios])
+    await marcarExecucao('ok', detalheEnvios(cfg, itens, envios, opcoes))
     return {
       enviado: true, status: 'ok', total: itens.length,
-      destinatarios: cfg.alerta_revisao_emails, provedor: res.provedor,
+      destinatarios: [...destinatarios], provedor,
+      emails: envios.map(e => ({ para: e.para, supervisor: e.supervisor || null, veiculos: e.itens.length })),
       veiculos: itens.map(i => ({ placa: i.placa, proxima_revisao: i.proxima_revisao, dias: i.dias, marco: i.marco }))
     }
   } catch (err) {
@@ -413,6 +437,52 @@ async function executarAlerta(opcoes = {}) {
     err.status = err.status || 500
     throw err
   }
+}
+
+// ── A quem mandar o quê ──────────────────────────────────────────────────────
+// Desligada a divisão, devolve UM envio com tudo — o comportamento de sempre.
+// Ligada: uma fatia por supervisor com e-mail cadastrado, mais a cópia completa
+// para quem acompanha. Quem está na lista geral E é supervisor cadastrado sai da
+// cópia completa: receber a frota inteira junto com a própria fatia desfaz o
+// motivo de dividir.
+function montarEnvios(cfg, itens) {
+  const geral = cfg.alerta_revisao_emails || []
+  if (!cfg.alerta_revisao_dividir) return [{ para: geral, itens }]
+
+  const mapa = cfg.alerta_revisao_supervisores || {}
+  const porNome = new Map()
+  for (const [nome, email] of Object.entries(mapa)) {
+    const e = String(email || '').trim().toLowerCase()
+    if (e) porNome.set(String(nome).trim().toUpperCase(), e)
+  }
+
+  const envios = []
+  const fatias = new Map()
+  for (const i of itens) {
+    const nome = String(i.supervisor || '').trim().toUpperCase()
+    if (!nome || !porNome.has(nome)) continue   // sem dono conhecido: fica só na cópia completa
+    if (!fatias.has(nome)) fatias.set(nome, [])
+    fatias.get(nome).push(i)
+  }
+  for (const [nome, lista] of fatias) {
+    envios.push({ para: [porNome.get(nome)], supervisor: nome, itens: lista })
+  }
+
+  const enderecosDeSupervisor = new Set(porNome.values())
+  const gestores = geral.filter(e => !enderecosDeSupervisor.has(String(e).toLowerCase()))
+  if (gestores.length) envios.push({ para: gestores, itens })
+  return envios
+}
+
+function detalheEnvios(cfg, itens, envios, opcoes) {
+  const fatias = envios.filter(e => e.supervisor).length
+  const semDono = cfg.alerta_revisao_dividir
+    ? itens.filter(i => !envios.some(e => e.supervisor && e.itens.includes(i))).length
+    : 0
+  return `${itens.length} veículo(s) em ${envios.length} e-mail(s)`
+    + (fatias ? ` (${fatias} por supervisor)` : '')
+    + (semDono ? ` · ${semDono} sem supervisor cadastrado, só na cópia geral` : '')
+    + (opcoes.origem ? ' · ' + opcoes.origem : '')
 }
 
 // ── Envio avulso: só o que está filtrado na tela, só para quem se escolheu ───
@@ -503,6 +573,23 @@ async function putConfigAlerta(req, res) {
       payload.alerta_revisao_dias = dias
     }
     if ('incluir_vencidas' in body) payload.alerta_revisao_incluir_vencidas = !!body.incluir_vencidas
+    if ('dividir' in body) payload.alerta_revisao_dividir = !!body.dividir
+    if ('supervisores' in body) {
+      // { "WALTER": "walter.junior@..." } — nome como está no cadastro do veículo.
+      // E-mail em branco = supervisor sem endereço: some do mapa em vez de virar
+      // uma chave vazia que depois ninguém entende.
+      const mapa = {}
+      const ruins = []
+      for (const [nome, email] of Object.entries(body.supervisores || {})) {
+        const n = String(nome || '').trim().toUpperCase()
+        const e = String(email || '').trim().toLowerCase()
+        if (!n || !e) continue
+        if (!RE_EMAIL.test(e)) { ruins.push(`${n}: ${e}`); continue }
+        mapa[n] = e
+      }
+      if (ruins.length) return res.status(400).json({ error: `E-mail inválido em ${ruins.join('; ')}` })
+      payload.alerta_revisao_supervisores = mapa
+    }
     if ('hora' in body) {
       const h = parseInt(body.hora, 10)
       if (!Number.isFinite(h) || h < 0 || h > 23) return res.status(400).json({ error: 'Horário inválido (0 a 23).' })
@@ -538,13 +625,21 @@ async function previaAlerta(_req, res) {
   try {
     const cfg = await lerConfig()
     const itens = await marcarJaEnviados(await montarCandidatos(cfg))
+    // Mostra a divisão ANTES de ativar: mudar quem recebe o quê sem poder
+    // conferir é o tipo de coisa que só se descobre pelo e-mail errado.
+    const novos = itens.filter(i => !i.ja_enviado)
     res.json({
       hoje: hojeISO(),
       dias: cfg.alerta_revisao_dias,
       incluir_vencidas: cfg.alerta_revisao_incluir_vencidas !== false,
       destinatarios: cfg.alerta_revisao_emails,
+      dividir: !!cfg.alerta_revisao_dividir,
+      envios: montarEnvios(cfg, novos).map(e => ({
+        para: e.para, supervisor: e.supervisor || null,
+        veiculos: e.itens.length, placas: e.itens.map(i => i.placa)
+      })),
       total: itens.length,
-      novos: itens.filter(i => !i.ja_enviado).length,
+      novos: novos.length,
       itens
     })
   } catch (err) {
