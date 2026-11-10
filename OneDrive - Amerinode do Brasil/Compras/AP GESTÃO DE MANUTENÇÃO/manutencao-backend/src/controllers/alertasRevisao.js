@@ -474,6 +474,11 @@ function montarEnvios(cfg, itens) {
   return envios
 }
 
+const resumirEnvio = e => ({
+  para: e.para, supervisor: e.supervisor || null,
+  veiculos: e.itens.length, placas: e.itens.map(i => i.placa)
+})
+
 function detalheEnvios(cfg, itens, envios, opcoes) {
   const fatias = envios.filter(e => e.supervisor).length
   const semDono = cfg.alerta_revisao_dividir
@@ -646,10 +651,12 @@ async function previaAlerta(_req, res) {
       incluir_vencidas: cfg.alerta_revisao_incluir_vencidas !== false,
       destinatarios: cfg.alerta_revisao_emails,
       dividir: !!cfg.alerta_revisao_dividir,
-      envios: montarEnvios(cfg, novos).map(e => ({
-        para: e.para, supervisor: e.supervisor || null,
-        veiculos: e.itens.length, placas: e.itens.map(i => i.placa)
-      })),
+      envios: montarEnvios(cfg, novos).map(resumirEnvio),
+      // A divisão de TODOS os veículos no critério, inclusive os já avisados.
+      // Sem isso a prévia fica vazia justamente no dia em que o alerta já saiu —
+      // que é quando se está configurando e mais se precisa conferir para quem
+      // cada carro iria.
+      envios_exemplo: montarEnvios(cfg, itens).map(resumirEnvio),
       total: itens.length,
       novos: novos.length,
       itens

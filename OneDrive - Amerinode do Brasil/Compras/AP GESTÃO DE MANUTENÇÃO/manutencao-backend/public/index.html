@@ -5274,14 +5274,26 @@ async function alertasVerPrevia(){
     // ligar a divisão — depois de ligada, o erro chega pela caixa de entrada.
     const box=document.getElementById('al-previa-envios')
     if(box){
-      box.innerHTML=(p.envios||[]).length
-        ? '<div style="font-size:12px;font-weight:600;color:#1E3A5F;margin:10px 0 6px">📬 Sairia assim</div>'
-          + p.envios.map(e=>`<div style="font-size:12px;color:#444;padding:4px 0;border-bottom:1px solid #F0F0F0">
+      const comVeiculo=e=>e.veiculos>0
+      const reais=(p.envios||[]).filter(comVeiculo)
+      const exemplo=(p.envios_exemplo||[]).filter(comVeiculo)
+      // Quando nada está pendente (o alerta do dia já saiu), mostra a divisão dos
+      // veículos no critério. Deixar vazio seria esconder o roteamento justo na
+      // hora de conferir — mas o rótulo tem de dizer que ninguém vai receber nada.
+      const usarExemplo=!reais.length&&exemplo.length
+      const lista=usarExemplo?exemplo:reais
+      const titulo=usarExemplo
+        ? `📬 Nada a enviar agora — todos já foram avisados. Se saísse, iria assim:`
+        : `📬 Sairia assim`
+      box.innerHTML=lista.length
+        ? `<div style="font-size:12px;font-weight:600;color:#1E3A5F;margin:10px 0 6px">${titulo}</div>`
+          + lista.map(e=>`<div style="font-size:12px;color:#444;padding:4px 0;border-bottom:1px solid #F0F0F0">
               <strong>${e.supervisor?esc(e.supervisor):'Gestores'}</strong>
               <span style="color:#888">· ${esc(e.para.join(', '))}</span>
               <div style="color:#666">${e.veiculos} veículo(s): ${esc(e.placas.join(', '))||'—'}</div>
             </div>`).join('')
-        : '<div style="font-size:12px;color:#888;margin-top:10px">Nada a enviar agora.</div>'
+          + (p.dividir?'':'<div style="font-size:11px;color:#8A5A00;margin-top:8px">A divisão por supervisor está <strong>desligada</strong> — por isso sai um e-mail só.</div>')
+        : '<div style="font-size:12px;color:#888;margin-top:10px">Nenhum veículo dentro dos prazos configurados.</div>'
     }
     if(!p.itens.length){tb.innerHTML='<tr><td colspan="7" class="empty">Nenhum veículo dentro dos prazos configurados.</td></tr>';return}
     tb.innerHTML=p.itens.map(i=>{
